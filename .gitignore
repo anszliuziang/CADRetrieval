@@ -1,11 +1,16 @@
 # Only the experiment package is sent to the GPU server.
 /*
 !/.gitignore
+!/CLAUDE.md
 !/experiments/
 
 # Local or generated experiment artifacts.
 /experiments/runs/
 /experiments/outputs/
+/experiments/artifacts/
+/experiments/results/
+/experiments/logs/
+/experiments/data/
 /experiments/data_cache/
 /experiments/checkpoints/
 /experiments/weights/
@@ -24,3 +29,4 @@
 /experiments/**/.env.*
 /experiments/**/*.pem
 /experiments/**/*.key
+/experiments/**/.ssh/
