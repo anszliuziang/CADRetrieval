@@ -1,0 +1,26 @@
+# Only the experiment package is sent to the GPU server.
+/*
+!/.gitignore
+!/experiments/
+
+# Local or generated experiment artifacts.
+/experiments/runs/
+/experiments/outputs/
+/experiments/data_cache/
+/experiments/checkpoints/
+/experiments/weights/
+/experiments/models/
+/experiments/.venv/
+/experiments/.cache/
+/experiments/**/__pycache__/
+/experiments/**/.pytest_cache/
+/experiments/**/.mypy_cache/
+/experiments/**/.ruff_cache/
+/experiments/**/*.py[cod]
+/experiments/**/*.log
+
+# Credentials stay on the local machine.
+/experiments/**/.env
+/experiments/**/.env.*
+/experiments/**/*.pem
+/experiments/**/*.key
