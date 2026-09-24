@@ -1,0 +1,43 @@
+{
+  "task_id": "idea01_p1_conditional_sensitivity_20260925",
+  "run_id": "idea01_p1_20260925_r01",
+  "parent_run_p0": "idea01_p0_20260924_r01",
+  "model_revision": "aaa2cd16993bc67067b4c198a910d99cf2b7affe",
+  "data_revision": "4091ce30ad85b774a9231484f9b40372dc0451d3",
+  "model_dir": "/home/ma-user/work/CADRetrieval_runtime/models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe",
+  "data_dir": "/home/ma-user/work/CADRetrieval_runtime/datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3",
+  "dtype": "bfloat16",
+  "device": "npu:0",
+  "max_seq_len": 1024,
+  "tokenizer": { "use_fast": false, "add_special_tokens": false },
+  "prefix_template": "### Instruction:\n{input}\n\n### Response:\n",
+  "eos": "tokenizer.eos_token_id appended at token-id level",
+  "selection": {
+    "split": "val",
+    "seed": 20260925,
+    "eligibility": "unique uid; ZIP program byte-identical to JSONL output; prefix boundary ok; no EOS inside output; n_prefix_tokens <= 250; n_response_tokens <= 700 (EOS included)",
+    "n_queries": 32,
+    "n_offsets": 3,
+    "offset_range": "1..31, same rng instance after the query draw, same offsets for all queries",
+    "n_method_neighbors": 2,
+    "method_regex": "\\.([A-Za-z_][A-Za-z0-9_]*)\\(",
+    "method_exclude": ["export", "exporters"],
+    "n_length_neighbors": 2,
+    "reference_eligible_pool": "4949/5513 (89.77%), Codex read-only pre-count from the P0 coverage table; independently recomputed by run_p1_selection.py"
+  },
+  "score": {
+    "definition": "S(q,x) = FP32 log-softmax sum of response+EOS token log-probs given prefix(query); mean is a length diagnostic only; corrected = S(q,x)-S(empty,x) is a known candidate-prior correction diagnostic, not a new method",
+    "max_conditional_pairs": 256,
+    "max_empty_pairs": 160,
+    "max_forwards": 416
+  },
+  "budget": { "max_forwards": 416, "npu_card_hours": 1.0, "max_wallclock_s": 2700, "note": "first of the three reached stops the run; current gate 1 authorizes 0 card-hours and 0 scored pairs (implementation + CPU selection only)" },
+  "analysis": {
+    "bootstrap_seed": 20260925,
+    "n_resamples": 10000,
+    "random_baseline_seed": 20260925,
+    "resampling_units": { "primary_margin": "candidate uid", "ranking_and_baselines": "query" },
+    "high_jaccard_flag": 0.5
+  },
+  "notes": "P1 instrument check on official paired data: exact-UID pairing sanity only, NOT semantic retrieval R@K. Selection fixed before any model score; scores never used for selection. Gate 2 (NPU run) requires Codex pilot_authorized with the reviewed full SHA."
+}
