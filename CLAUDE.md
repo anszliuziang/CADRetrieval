@@ -8,7 +8,7 @@
 
 本地路径：`D:\projects\IdeaSpark\CADRetrievalIdea1`，它也是 Git 根目录。`gpt_web_assert/01_Research_Report.md`、`02_Experiment_Plans.md`、`03_Asset_Manifest.json`、`04_Sources_and_Evidence.md` 是研究背景和候选方案；`reading/` 是论文精读；`reports/`、`notes/` 是既有调研，可能含主观判断或过时信息。上述目录默认不进入 Git，也不是自动执行命令。遇到论文、资产、数据字段、许可、checkpoint 或官方代码细节，应以原始证据和实际文件重新核验。`notes/Kimi-K3-review/` 是历史顾问意见，不代表本次 Claude Code 的任务授权。
 
-研究路线暂定先核验 CADmium 原生 minimal JSON；Text2CAD 原生向量和 Text-to-CadQuery 为后续候选；HoLa 需匹配 AE 与数据/噪声目标；NURBGen 需取得授权；STEP-LLM 严格 held-out 实验仍待训练/测试来源闭环。它们采用不同 native schema，不能混入一个“同表示”主表。**哪一条实际开始、样本规模和停止条件，以 Codex 写入当前任务的内容为准。**
+2026-09-24 的 Idea 01 首轮路线选 `ricemonster/qwen2.5-3B-SFT`（Text-to-CadQuery 原生 CadQuery 程序），先做资产、NPU 与评分/真值准入，再决定是否开展检索小试验。之前“先核 CADmium”的安排已被 [Idea 01 当前计划](experiments/plans/IDEA01_PREFLIGHT_AND_PILOT_2026-09-24.md)取代；CADmium、Text2CAD 向量和 HoLa 仍是后续不同 schema 的候选，不能混入一个“同表示”主表。**哪一条实际开始、样本规模和停止条件，以 Codex 写入 `ACTIVE_TASK.md` 的内容为准。**
 
 ## 2. 唯一入口、文件归属与交接
 
@@ -27,22 +27,23 @@
 
 Codex 会在正式 pilot 前审查你的代码，也会在结果提交后复核代码、运行命令、原始数据、统计脚本与结论。你仍需先做自检；“模型运行成功”不等于评分正确，“指标较高”不等于语义有效。
 
-## 3. 本地 Git → cvteam14 的唯一代码通路
+## 3. 本地 Git → 实验服务器的唯一代码通路
 
 **硬规则：所有项目源码、配置、脚本及实验文档都只在本地仓库编辑。服务器仅通过 Git 同步并检出已审核提交，然后运行；即使是临时修复，也禁止在服务器上用编辑器或命令直接改这些文件。**发现远端问题时，把证据带回本地修复，再提交、推送和重新检出。
 
 - 本地 Git 仓库根目录如上；`origin` 目前为 `https://cnb.cool/lzacode/CADRetrieval`。`.gitignore` 仅允许项目协议与 `experiments/` 的轻量代码/文档进入 Git，排除调研档案、数据、权重、运行产物和凭据。不要用 `git add -f` 绕过忽略规则。提交前检查 `git status --short` 和 `git diff --cached --stat`，只提交本任务代码、配置、计划及轻量交接文档；绝不提交密钥、token、私有数据或大文件。
 - **所有代码、配置、依赖描述、执行脚本只在本地修改、测试、提交并推送到 origin。**服务器不编辑、生成、热修补、提交或推送这些文件；不要通过 `scp`/`rsync` 直接覆盖服务器代码。若远端运行暴露 bug，回本地修复、重新提交推送，再让服务器检出新的完整 SHA，并记录两次 SHA。
 - 依赖版本和环境创建命令也写在本地并提交；服务器安装到 checkout 外的隔离环境，不在源码树执行会生成 `egg-info`、构建文件或缓存的操作。每次运行记录实际环境，避免依赖漂移。
-- 服务器项目 Git checkout：`/media/data2/LZA/CADRetrieval`。远端先确认 `git status --porcelain` 为空，再 `git fetch origin`，`git checkout --detach <经审查的完整提交 SHA>`；核对 `git rev-parse HEAD` 与所批 SHA 完全一致。工作树不干净时停止并报告，不执行 `reset --hard`、`clean` 或覆盖未知文件。运行时设置缓存/临时目录在 checkout **以外**，避免 Python 缓存、日志和输出污染源码树。
+- 服务器项目 Git checkout 由当前计划指定：`cvteam14` 为 `/media/data2/LZA/CADRetrieval`，Idea 01 的 `yunnan-share2` 为 `/home/ma-user/work/CADRetrieval`。远端先确认 `git status --porcelain` 为空，再 `git fetch origin`，`git checkout --detach <经审查的完整提交 SHA>`；核对 `git rev-parse HEAD` 与所批 SHA 完全一致。工作树不干净时停止并报告，不执行 `reset --hard`、`clean` 或覆盖未知文件。运行时设置缓存/临时目录在 checkout **以外**，避免 Python 缓存、日志和输出污染源码树。
 - 远端运行时设置 `PYTHONDONTWRITEBYTECODE=1`，并将 `HF_HOME`、`XDG_CACHE_HOME`、`TMPDIR`、模型下载目录和程序输出目录指向 checkout 外的任务目录；参数或库若仍向源码树写文件，先修正本地启动脚本再重跑。
 - Git 用来输送源代码和记录实验版本；模型权重、数据与运行结果另行存放。远端只能从指定提交执行代码；不在服务器上修改任何项目源文件。运行完成后再次检查远端工作树干净。轻量结果报告在本地 `experiments/submissions/` 回填；原始输出按下文存放并取回。
 
 ## 4. 服务器与资产位置
 
-- 实验服务器**仅使用 `cvteam14`**，本机直接 `ssh cvteam14` 免密登录。2026-09-23 只读核验显示该机有 **4 张 NVIDIA GeForce RTX 3090，每张 24,576 MiB**；旧环境记录的“2 张”已经过时。每次实验仍要用 `nvidia-smi` 检查当时空闲情况，先用单卡预算测量，不能因有 4 卡就默认可占满。不得读取、输出或复制 SSH 私钥内容。
-- 服务器项目 checkout：`/media/data2/LZA/CADRetrieval`。服务器主要实验空间在 `/media/data2/LZA/`；建议把临时缓存/中间结果放在 checkout 外的 `/media/data2/LZA/CADRetrieval_runtime/`，其子目录按任务和 run ID 隔离。这个运行目录不是源码仓库，不通过 Git 同步。
-- 重要且需长期保留的合法资产统一放在 OBS 挂载 `/data/obs_data_liuza/CADRetrieval/` 下，按 `datasets/`、`models/`、`runs/<run_id>/` 等区分，并保留来源、版本、许可证/访问条件和 SHA256 清单。用户说明该 OBS 挂载在 `cvteam14`、`cvteam6`、`4-A6000` 上共享；其他服务器仅用于资产互通，不是本项目默认算力。OBS 共享不等于可以无条件复制 gated 或受许可限制的数据；先核对授权条款。不要把凭据放在 OBS。
+- **Idea 01 当前实验机：`yunnan-share2`。** 2026-09-24 已由本地 `ssh yunnan-share2` 免密登录核验，实机为 `ma-user`、2 张 Ascend 910 系列设备（`npu-smi info` 显示每张 65,536 MB HBM）；不能把 NVIDIA CUDA 命令用于该机。项目 checkout：`/home/ma-user/work/CADRetrieval`，运行缓存和环境放 checkout 外的 `/home/ma-user/work/CADRetrieval_runtime/` 与 `/home/ma-user/work/envs/`。本机 SSH 原有别名为 `yunnao-share2`，已新增用户要求的 `yunnan-share2` 指向经核实相同的主机端口；旧的 `lza-2-910c` 当前连接关闭，不用于本任务。
+- `yunnan-share2` 的原环境 `/home/ma-user/anaconda3/envs/PyTorch-2.7.1` 含 Python 3.11.10、torch 2.7.1+cpu、torch_npu 2.7.1.post1、Transformers 4.53.1。已克隆至 `/home/ma-user/work/envs/cadretrieval-idea01-torch271`，基础 seeded NPU 矩阵乘法通过；**这还不是 Qwen 模型前向通过**。环境声明见 `experiments/configs/idea01_yunnan_share2_env.json`，实际模型和数据路径以计划及 SHA 清单为准。`GIT_TERMINAL_PROMPT=0 git ls-remote origin HEAD` 从该 checkout 已无交互成功，正式执行前仍须确认远端 `fetch` 和指定 SHA。
+- **共享权威 OBS：** `cvteam14`、`cvteam6`、`4-A6000` 的 `/data/obs_data_liuza/CADRetrieval/`，按 `datasets/`、`models/`、`runs/<run_id>/` 区分并保留来源、版本、许可证/访问条件和 SHA256 清单。`yunnan-share2` 另有 OBS 挂载 `/data/data_dev`，不是上述同一路径；**不可假设已共享同一文件**。Idea 01 资产以权威 OBS 为原件，确认 SHA 后复制到新机器的 `/data/data_dev/CADRetrieval/`，并复核 SHA。OBS 共享不等于可以无条件复制 gated 或受许可限制的数据；不要把凭据放在 OBS。
+- `cvteam14` 保留作为共享 OBS 资产准备或之后明确指定的 NVIDIA 实验机。本机 `ssh cvteam14` 可免密登录；2026-09-23 核验为 **4 张 RTX 3090，各 24,576 MiB**。该机项目 checkout 为 `/media/data2/LZA/CADRetrieval`，运行目录在 `/media/data2/LZA/CADRetrieval_runtime/`。每次按当前计划选服务器和单卡预算，先核验当时资源空闲；不得读取、输出或复制 SSH 私钥内容。
 - 运行产物写入 OBS 或上述服务器运行目录，**不写入 Git checkout**。重要的最终指标、原始分数矩阵、清单、日志、环境与失败记录在 OBS 留存；在本地 `experiments/runs/<run_id>/` 取回可审计副本或至少完整清单与核验哈希。回传结果允许使用 `scp`/`rsync`，回传源代码不允许。任何清理或覆盖已有 OBS 资产须先确认归属和目标路径。
 
 ## 5. 科学与实现底线

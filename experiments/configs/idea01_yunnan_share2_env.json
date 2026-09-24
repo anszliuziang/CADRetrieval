@@ -1,0 +1,40 @@
+{
+  "base": "clone:/home/ma-user/anaconda3/envs/PyTorch-2.7.1",
+  "env_name": "cadretrieval-idea01-torch271",
+  "env_prefix": "/home/ma-user/work/envs/cadretrieval-idea01-torch271",
+  "python": "3.11.10",
+  "torch": "2.7.1+cpu",
+  "torch_npu": "2.7.1.post1",
+  "pip_phases": [],
+  "expected_packages": {
+    "transformers": "4.53.1",
+    "accelerate": "1.0.1",
+    "huggingface_hub": "0.36.0",
+    "safetensors": "0.4.5",
+    "peft": "0.14.0"
+  },
+  "env": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "HF_HOME": "/home/ma-user/work/CADRetrieval_runtime/hf_cache",
+    "XDG_CACHE_HOME": "/home/ma-user/work/CADRetrieval_runtime/xdg_cache",
+    "TMPDIR": "/home/ma-user/work/CADRetrieval_runtime/tmp",
+    "OMP_NUM_THREADS": "4"
+  },
+  "weight_dirs": {
+    "text_to_cadquery_qwen3b": {
+      "path": "/data/data_dev/CADRetrieval/models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe",
+      "source": "Hugging Face official pinned revision, mirrored from cvteam14 OBS after SHA verification",
+      "gated": false
+    }
+  },
+  "smoke": {
+    "import_names": ["torch", "torch_npu", "transformers", "safetensors"],
+    "cli_checks": ["npu-smi info"],
+    "gpu_tests": [
+      {
+        "cmd": "python -c 'import torch,torch_npu; torch.manual_seed(7); x=torch.arange(16,dtype=torch.float32).reshape(4,4).npu(); y=x@x; print(\"NPU_WITNESS\",tuple(y.shape),float(y.sum().cpu()))'",
+        "expect": "NPU_WITNESS (4, 4) 3920.0"
+      }
+    ]
+  }
+}
