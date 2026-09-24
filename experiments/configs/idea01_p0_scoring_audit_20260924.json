@@ -1,0 +1,24 @@
+{
+  "task_id": "idea01_p0_scoring_audit_20260924",
+  "run_id": "idea01_p0_20260924_r01",
+  "model_revision": "aaa2cd16993bc67067b4c198a910d99cf2b7affe",
+  "data_revision": "4091ce30ad85b774a9231484f9b40372dc0451d3",
+  "model_dir": "/home/ma-user/work/CADRetrieval_runtime/models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe",
+  "data_dir": "/home/ma-user/work/CADRetrieval_runtime/datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3",
+  "dtype": "bfloat16",
+  "device": "npu:0",
+  "max_seq_len": 1024,
+  "tokenizer": { "use_fast": false, "add_special_tokens": false },
+  "prefix_template": "### Instruction:\n{input}\n\n### Response:\n",
+  "eos": "tokenizer.eos_token_id appended at token-id level",
+  "selection": {
+    "split": "val",
+    "n_candidates": 20,
+    "seed": 20260924,
+    "rule": "eligible=(unique uid, full<=1024 tokens, boundary_ok); sort uid asc; first 20; mismatch partner drawn with random.Random(seed) from other candidates"
+  },
+  "conditions": ["correct", "mismatched", "empty"],
+  "max_pairs": 60,
+  "budget": { "npu_card_hours": 1.0, "max_wallclock_s": 3300 },
+  "notes": "P0 smoke only: no retrieval metrics, no R@K, no gallery. Score = sum of response+EOS token log-probs (log_softmax in FP32); mean kept as length diagnostic only."
+}
