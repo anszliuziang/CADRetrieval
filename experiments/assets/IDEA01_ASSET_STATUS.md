@@ -20,8 +20,8 @@
 | `IEEE-T-ASE/data/data_test.jsonl` | 8527216 | `de31c643a6731271855be07473e22a8c7334b3cfa3621ce31a058adb6657590c` | 三处核对通过 |
 | `IEEE-T-ASE/text2cad_v1.1.csv` | 1298988495 | `cded1b8048f432c192127a5d177da59dc926149ac02fb9ae31e1015ee6219136` | 本地、yunnan OBS、cvteam14 OBS 核对通过 |
 | `IEEE-T-ASE/CadQuery.zip` | 102915929 | `1748082daef341f5f81d273cd4290e8e1c8d0d943928ddf22c6ca90e5a2e67c0` | 三处核对通过 |
-| `qwen2.5-3B-SFT/model-00001-of-00002.safetensors` | 4957560304 | `377dad432a50cdb51ca3995d4f8237722d7d3e4e5b97540a8fd1f6acb4631997` | 本地下载完成、yunnan OBS 核对通过；cvteam14 OBS 传输中 |
-| `qwen2.5-3B-SFT/model-00002-of-00002.safetensors` | 1214366696 | `3a4f707655fe8b114826cb55d8f9f31f2d74ccb30aea6ee4f4e90ed72879dfcb` | 本地下载完成、yunnan OBS 核对通过；cvteam14 OBS 传输中 |
+| `qwen2.5-3B-SFT/model-00001-of-00002.safetensors` | 4957560304 | `377dad432a50cdb51ca3995d4f8237722d7d3e4e5b97540a8fd1f6acb4631997` | 本地下载完成、yunnan OBS、cvteam14 OBS 核对通过 |
+| `qwen2.5-3B-SFT/model-00002-of-00002.safetensors` | 1214366696 | `3a4f707655fe8b114826cb55d8f9f31f2d74ccb30aea6ee4f4e90ed72879dfcb` | 三处核对通过 |
 
 模型的 `config.json`、`model.safetensors.index.json`、`generation_config.json`、`added_tokens.json`、`special_tokens_map.json`、`tokenizer_config.json`、`vocab.json`、`merges.txt`、README 已从相同 pinned revision 取得，yunnan OBS 的完整 `SHA256SUMS` 校验通过，并完成本地目录加载。没有下载 `optimizer.pt`、scheduler、trainer state。数据仅有 `input`、`output` 两字段；逐行统计得到 train 99,236 / val 5,513 / test 5,514。源 CSV 可恢复 UID，但**没有家族字段**，不能宣称 family-disjoint 或多正例语义真值。
 
@@ -34,8 +34,8 @@
 ## 存储与复制路径
 
 - 本地临时源（Git 忽略）：`D:\projects\IdeaSpark\CADRetrievalIdea1\.cache\idea01_assets\`。
-- 权威 OBS：`cvteam14:/data/obs_data_liuza/CADRetrieval/datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3/`；模型待放 `.../models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe/`。
-- 910C OBS 副本：`yunnan-share2:/data/data_dev/CADRetrieval/datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3/`；模型待放 `.../models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe/`。
+- 权威 OBS：`cvteam14:/data/obs_data_liuza/CADRetrieval/datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3/`；模型在同一 `CADRetrieval/models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe/`。
+- 910C OBS 副本：`yunnan-share2:/data/data_dev/CADRetrieval/datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3/`；模型在同一 `CADRetrieval/models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe/`。
 - 910C 本机运行副本：`/home/ma-user/work/CADRetrieval_runtime/models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe/`，从已校验 OBS 复制，11 文件 `sha256sum -c` 再通过；仅作模型加载缓存，不作为权威资产，不在 Git checkout 内。
 - 数据本机运行副本：`/home/ma-user/work/CADRetrieval_runtime/datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3/`，同样从已校验 OBS 复制，6 文件 `sha256sum -c` 全部通过；供 CSV/ZIP 随机读取审计使用。
 - 两个 OBS 挂载不在同一路径；当前核验使用本地 `scp` 到各位置、远端重算 SHA，不依据挂载名称推断共享。
@@ -52,6 +52,6 @@
 
 ## 未闭合项
 
-1. cvteam14 共享 OBS 的数据 6 文件全部 `sha256sum -c` 通过；模型两片仍须完成传输并在该位置执行自己的 `sha256sum -c SHA256SUMS`。
+1. 两处 OBS 的数据 6 文件均由各自 `sha256sum -c` 全部通过；模型 11 文件在 yunnan OBS 全部通过，在 cvteam14 OBS 第一片直接 `sha256sum` 与官方值一致、其余 10 文件由清单剩余部分 `sha256sum -c` 全部通过。两处资产准备闭合。
 2. 已恢复 UID，但设计家族/近重复、数据许可链、CadQuery 程序可执行率和独立语义 qrels 尚未闭合；P0 可做仪器核验，不可宣称语义检索有效。
-3. Kimi 实现任务尚未发布；`experiments/ACTIVE_TASK.md` 仍为 `idle`，待资产与文档最终复核。
+3. `experiments/ACTIVE_TASK.md` 已激活 `idea01_p0_scoring_audit_20260924` 的实现与限定烟雾测试；正式 gallery 检索和 P1/P2 仍需代码与结果审核后另行授权。

@@ -1,6 +1,6 @@
 # Idea 01：冻结文生 CAD 模型做文本→CAD 检索
 
-状态：**准备阶段；尚未授权 Kimi 写实验代码或运行正式检索。** 日期：2026-09-24。计划负责人：Codex；后续实现与运行：本地 Claude Code / Kimi K3，经 Codex 代码审核后执行。
+状态：**资产与环境准备完成；是否激活 P0 实现以 `experiments/ACTIVE_TASK.md` 为准，正式检索仍未授权。** 日期：2026-09-24。计划负责人：Codex；后续实现与运行：本地 Claude Code / Kimi K3，P0 提交后由 Codex 审核代码与原始结果。
 
 ## 0. 问题、边界和结论标准
 
@@ -42,7 +42,7 @@ E0 检查顺序：
 | P2 小库检索与校正 | 最多 256×256，需新的 `pilot_authorized` 和已审核代码 SHA | U1 R@1/5/10、MRR、每 query 多正例口径与 UID 口径分开；`b̂`、CPN `α∈{0,.25,.5,.75,.8,.9,1}`、`S_corr` 仅在确有收益假设且成本可控时加 | 独立语义 qrels 有足够覆盖，至少一个条件分数臂超过最强无条件/词面基线且区间支持有用效应 |
 | P3 主矩阵 | gallery 1,003 → 全 test，另行预算和审核 | 相同 gallery 上的强判别式或 caption-then-embed 对照；按家族聚类 CI、长度/复杂度/模板分层、wall-clock 与 NPU 时长 | 只在 P2 明确通过后启动；失败也原样报告 |
 
-P0/P1 的**授权对象是后续 Kimi 任务**，此文当前只用于 Codex 资产/环境准备；`ACTIVE_TASK.md` 保持 `idle` 直至 Codex 完成准备并发布实施任务。P2/P3 不因本计划存在而自动授权。任何模型、数据、依赖或代码版本变化均重新核验打分正确性与 SHA。
+各阶段只有被 `ACTIVE_TASK.md` 明确激活才授权。首个 Kimi 合同只限 P0 实现、来源审计和至多 60 对烟雾测试；P1/P2/P3 不因本计划存在而自动授权。任何模型、数据、依赖或代码版本变化均重新核验打分正确性与 SHA。
 
 主表最低三类基线：查询无关（随机、长度、模板/复杂度）、同分数家族（sum/mean/`b̂`/CPN）、同 gallery 的现成检索器或 caption-then-embed；后一类即使需要生成 gallery caption，也明确计入推理成本与输入条件。正式指标以 query 为重抽样单位，并按 CAD 家族聚类；调参只看 validation，不按 test 结果重新挑 `α`/模板/清洗规则。零效应须报告置信区间，不能把“无显著性”写成“等效”。
 
@@ -60,10 +60,10 @@ P0/P1 的**授权对象是后续 Kimi 任务**，此文当前只用于 Codex 资
 | `ssh yunnan-share2` | 本地原只有 `yunnao-share2`；已添加同端口别名，登录到 `ma-user` 的两 NPU 机器 | 通过 |
 | Git 免交互 | 远端 checkout `/home/ma-user/work/CADRetrieval` 干净；本地计划提交 `40fd5ee2f7862e4ea35e862b1970abd5e75d2ebe` 已 push，远端无交互 fetch/detach 到同 SHA | 通过；本轮文档最终提交后须再同步 |
 | 910C 基础环境 | 克隆 PyTorch-2.7.1 到 checkout 外；Python 3.11.10、torch 2.7.1+cpu、torch_npu 2.7.1.post1；2 设备，seeded NPU kernel 与真实 Qwen 11-token FP16 前向通过 | 环境和模型小规模前向通过；条件评分未实现 |
-| OBS | 老机器 `/data/obs_data_liuza`；新机 `/data/data_dev`，不能假定同桶 | 910C OBS 模型及数据全部 SHA 通过；共享 OBS 数据 6 文件全部 SHA 通过，模型仍在传输/核验 |
+| OBS | 老机器 `/data/obs_data_liuza`；新机 `/data/data_dev`，不能假定同桶 | 两处模型 11 文件及数据 6 文件全部逐文件 SHA 通过；910C 另有 checkout 外的模型/数据运行副本且 SHA 通过 |
 | 数据 | train/val/test 分别 99,236/5,513/5,514 行，仅 `input`、`output`；CSV `intermediate` 逐字映射全 110,263 条 UID，split UID 无交集，val/test 程序与 ZIP 全一致，train 有 2 条不同 | 来源 UID 初步闭合；家族、几何与语义 qrels 未闭合 |
-| 模型 | 两片权重官方 SHA 对应；`AutoTokenizer` + `AutoModelForCausalLM` 从 910C OBS 本地目录加载，logits 全有限，峰值分配 6.35 GB | 910C 上可前向；共享 OBS 备份待核验 |
+| 模型 | 两片权重官方 SHA 对应；`AutoTokenizer` + `AutoModelForCausalLM` 从 910C OBS 与本机运行副本加载，11 与 455-token logits 全有限，BF16 455-token 前向通过、峰值分配约 6.55 GB | 910C 上可前向；条件评分正确性待 P0 |
 
 ## 5. 准备完成后的启动条件
 
-只有模型/数据完整落盘、SHA 清单核对、环境 kernel + Qwen 前向通过、数据 qrels 可用性至少获得初步证据，并且 Codex 把本计划落实为一个**限定 P0/P1 的** `ACTIVE_TASK.md` 后，才向 Kimi 下发实现工作。下发时注明每阶段资源上限、允许的远端路径、代码审核点、结果回填格式；Kimi 不得把本准备计划当 P2/P3 的开跑许可。
+模型/数据完整落盘、两处 OBS 的 SHA 核对、环境 kernel + Qwen 前向、CSV→JSONL→ZIP 的 UID 链均已实测通过；因此可以把本计划落实为一个**只限 P0** 的 `ACTIVE_TASK.md`。下发时注明资源上限、允许的远端路径、代码审核点、结果回填格式。P0 的 UID 链只支持配对 sanity，不支持“独立语义理解”主张；Kimi 不得把本准备计划当 P1/P2/P3 的开跑许可。
