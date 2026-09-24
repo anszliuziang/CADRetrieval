@@ -23,7 +23,7 @@
   "weight_dirs": {
     "text_to_cadquery_qwen3b": {
       "path": "/data/data_dev/CADRetrieval/models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe",
-      "source": "Hugging Face official pinned revision, mirrored from cvteam14 OBS after SHA verification",
+      "source": "Hugging Face official pinned revision, downloaded to local Windows and uploaded independently to yunnan-share2 and cvteam14 OBS; each copy SHA-verified",
       "gated": false
     }
   },

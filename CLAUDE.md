@@ -8,7 +8,7 @@
 
 本地路径：`D:\projects\IdeaSpark\CADRetrievalIdea1`，它也是 Git 根目录。`gpt_web_assert/01_Research_Report.md`、`02_Experiment_Plans.md`、`03_Asset_Manifest.json`、`04_Sources_and_Evidence.md` 是研究背景和候选方案；`reading/` 是论文精读；`reports/`、`notes/` 是既有调研，可能含主观判断或过时信息。上述目录默认不进入 Git，也不是自动执行命令。遇到论文、资产、数据字段、许可、checkpoint 或官方代码细节，应以原始证据和实际文件重新核验。`notes/Kimi-K3-review/` 是历史顾问意见，不代表本次 Claude Code 的任务授权。
 
-2026-09-24 的 Idea 01 首轮路线选 `ricemonster/qwen2.5-3B-SFT`（Text-to-CadQuery 原生 CadQuery 程序），先做资产、NPU 与评分/真值准入，再决定是否开展检索小试验。之前“先核 CADmium”的安排已被 [Idea 01 当前计划](experiments/plans/IDEA01_PREFLIGHT_AND_PILOT_2026-09-24.md)取代；CADmium、Text2CAD 向量和 HoLa 仍是后续不同 schema 的候选，不能混入一个“同表示”主表。**哪一条实际开始、样本规模和停止条件，以 Codex 写入 `ACTIVE_TASK.md` 的内容为准。**
+2026-09-24 的 Idea 01 首轮路线选 `ricemonster/qwen2.5-3B-SFT`（Text-to-CadQuery 原生 CadQuery 程序），先做资产、NPU 与评分/真值准入，再决定是否开展检索小试验。之前“先核 CADmium”的安排已被 [Idea 01 当前计划](experiments/plans/IDEA01_PREFLIGHT_AND_PILOT_2026-09-24.md)取代；CADmium、Text2CAD 向量和 HoLa 仍是后续不同 schema 的候选，不能混入一个“同表示”主表。**哪一条实际开始、样本规模和停止条件，以 Codex 写入 `ACTIVE_TASK.md` 的内容为准。** P0 的细化合同见 `experiments/plans/IDEA01_P0_IMPLEMENTATION_2026-09-24.md`，只有被 `ACTIVE_TASK.md` 激活才生效。
 
 ## 2. 唯一入口、文件归属与交接
 
@@ -41,14 +41,14 @@ Codex 会在正式 pilot 前审查你的代码，也会在结果提交后复核�
 ## 4. 服务器与资产位置
 
 - **Idea 01 当前实验机：`yunnan-share2`。** 2026-09-24 已由本地 `ssh yunnan-share2` 免密登录核验，实机为 `ma-user`、2 张 Ascend 910 系列设备（`npu-smi info` 显示每张 65,536 MB HBM）；不能把 NVIDIA CUDA 命令用于该机。项目 checkout：`/home/ma-user/work/CADRetrieval`，运行缓存和环境放 checkout 外的 `/home/ma-user/work/CADRetrieval_runtime/` 与 `/home/ma-user/work/envs/`。本机 SSH 原有别名为 `yunnao-share2`，已新增用户要求的 `yunnan-share2` 指向经核实相同的主机端口；旧的 `lza-2-910c` 当前连接关闭，不用于本任务。
-- `yunnan-share2` 的原环境 `/home/ma-user/anaconda3/envs/PyTorch-2.7.1` 含 Python 3.11.10、torch 2.7.1+cpu、torch_npu 2.7.1.post1、Transformers 4.53.1。已克隆至 `/home/ma-user/work/envs/cadretrieval-idea01-torch271`，基础 seeded NPU 矩阵乘法通过；**这还不是 Qwen 模型前向通过**。环境声明见 `experiments/configs/idea01_yunnan_share2_env.json`，实际模型和数据路径以计划及 SHA 清单为准。`GIT_TERMINAL_PROMPT=0 git ls-remote origin HEAD` 从该 checkout 已无交互成功，正式执行前仍须确认远端 `fetch` 和指定 SHA。
-- **共享权威 OBS：** `cvteam14`、`cvteam6`、`4-A6000` 的 `/data/obs_data_liuza/CADRetrieval/`，按 `datasets/`、`models/`、`runs/<run_id>/` 区分并保留来源、版本、许可证/访问条件和 SHA256 清单。`yunnan-share2` 另有 OBS 挂载 `/data/data_dev`，不是上述同一路径；**不可假设已共享同一文件**。Idea 01 资产以权威 OBS 为原件，确认 SHA 后复制到新机器的 `/data/data_dev/CADRetrieval/`，并复核 SHA。OBS 共享不等于可以无条件复制 gated 或受许可限制的数据；不要把凭据放在 OBS。
+- `yunnan-share2` 的原环境 `/home/ma-user/anaconda3/envs/PyTorch-2.7.1` 含 Python 3.11.10、torch 2.7.1+cpu、torch_npu 2.7.1.post1、Transformers 4.53.1。已克隆至 `/home/ma-user/work/envs/cadretrieval-idea01-torch271`，seeded NPU 矩阵乘法与真实 Qwen2.5-3B-SFT 的短文本/455-token CAD 前向均通过，BF16 也通过；这些只验证可运行性，条件评分实现仍须单独审核。环境声明见 `experiments/configs/idea01_yunnan_share2_env.json`，实际模型和数据路径以计划及 SHA 清单为准。模型经 OBS SHA 校验后另有 checkout 外运行副本 `/home/ma-user/work/CADRetrieval_runtime/models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe/`；数据运行副本在 `/home/ma-user/work/CADRetrieval_runtime/datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3/`。二者都通过自身的 `sha256sum -c SHA256SUMS`；P0 优先从运行副本读取，减少 OBS 随机读取延迟。`GIT_TERMINAL_PROMPT=0 git ls-remote origin HEAD`、本地 push 与远端 fetch/detach 指定 SHA 均已无交互通过，正式执行前仍须确认运行 SHA。
+- **共享权威 OBS：** `cvteam14`、`cvteam6`、`4-A6000` 的 `/data/obs_data_liuza/CADRetrieval/`，按 `datasets/`、`models/`、`runs/<run_id>/` 区分并保留来源、版本、许可证/访问条件和 SHA256 清单。`yunnan-share2` 另有 OBS 挂载 `/data/data_dev`，不是上述同一路径；**不可假设已共享同一文件**。本轮从官方 pinned revision 下载到本地后分别上传两处 OBS，并逐处复核 SHA；后续以共享 OBS 为权威原件，必要时再复制至 910C OBS 并复核。实际完成状态以 `experiments/assets/IDEA01_ASSET_STATUS.md` 为准。OBS 共享不等于可以无条件复制 gated 或受许可限制的数据；不要把凭据放在 OBS。
 - `cvteam14` 保留作为共享 OBS 资产准备或之后明确指定的 NVIDIA 实验机。本机 `ssh cvteam14` 可免密登录；2026-09-23 核验为 **4 张 RTX 3090，各 24,576 MiB**。该机项目 checkout 为 `/media/data2/LZA/CADRetrieval`，运行目录在 `/media/data2/LZA/CADRetrieval_runtime/`。每次按当前计划选服务器和单卡预算，先核验当时资源空闲；不得读取、输出或复制 SSH 私钥内容。
 - 运行产物写入 OBS 或上述服务器运行目录，**不写入 Git checkout**。重要的最终指标、原始分数矩阵、清单、日志、环境与失败记录在 OBS 留存；在本地 `experiments/runs/<run_id>/` 取回可审计副本或至少完整清单与核验哈希。回传结果允许使用 `scp`/`rsync`，回传源代码不允许。任何清理或覆盖已有 OBS 资产须先确认归属和目标路径。
 
 ## 5. 科学与实现底线
 
-1. 查询、gallery 与 qrels **物理分离**。评分函数只能读当前文本查询、当前候选的原生表示和模型固定 prompt；qrels 只供评价模块读取。gallery metadata 不得夹带匹配 caption、描述性文件名或可推回标签的文本。保存原始 UID、设计家族/父装配体分组与最终抽样清单，防止 train/dev/test 泄漏。
+1. 查询、gallery 与 qrels **物理分离**。评分函数只能读当前文本查询、当前候选的原生表示和模型固定 prompt；qrels 只供评价模块读取。gallery metadata 不得夹带匹配 caption、描述性文件名或可推回标签的文本。配套 JSONL 没有 UID，但 pinned `text2cad_v1.1.csv` 的 `intermediate` 可与 `input` 逐字连接恢复源 UID，`CadQuery.zip` 的路径是 `CQ/{uid}.py`；实施时须独立复算映射和例外。UID 不代表设计家族，仍须防止近重复/等价设计跨 train/dev/test。保存原始 UID、可证的设计家族/父装配体分组与最终抽样清单。
 2. 优先官方 held-out test，validation 用于冻结 prompt、分数归一化、阈值与其他超参数；不能看 test 后改规则。相同 CAD 的多个 caption/等价序列化不可当独立样本。记录官方总数、读入数、可评分数、剔除原因和覆盖率；不能按模型表现挑样本。
 3. 自回归评分从**原始 logits**计算目标有效 token/字段的 log probability，核对 shift、mask、EOS、chat template、完整上下文、padding 和多输出头分解。保存 sum、有效长度、mean 等诊断分数；mean/长度归一化不是完整条件概率。绝不能直接把含 label smoothing 的训练 loss 当目标 NLL，或截断后声称完整 likelihood。
 4. 扩散路线须先核验 checkpoint 的 AE、latent scaling、padding、噪声 schedule 与预测目标；denoising MSE 应如实命名，未经推导不得称 CAD 几何的精确 likelihood。固定随机数方案，报告不同采样数/种子的排序稳定性。

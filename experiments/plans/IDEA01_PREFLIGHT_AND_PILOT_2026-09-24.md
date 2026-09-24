@@ -17,7 +17,7 @@
 
 ## 1. 数据、资产和准入 E0
 
-固定来源：模型 `ricemonster/qwen2.5-3B-SFT@aaa2cd16993bc67067b4c198a910d99cf2b7affe`；配套仓库 `ricemonster/IEEE-T-ASE@4091ce30ad85b774a9231484f9b40372dc0451d3`。需下载模型推理文件（两片 safetensors、index、config、tokenizer 和 README）以及 `data_train.jsonl`、`data_val.jsonl`、`data_test.jsonl` 与 README；不下载 optimizer/scheduler、1.3 GB CSV 或 103 MB zip，除非后续审查证实必要。仓库为 Hugging Face **model** 类型，数据仓库 `license` 元数据为空；内部研究可做资产核验，公开再分发与许可链另行核查。权重页面标 `apache-2.0`，不能据此推断数据也同许可。
+固定来源：模型 `ricemonster/qwen2.5-3B-SFT@aaa2cd16993bc67067b4c198a910d99cf2b7affe`；配套仓库 `ricemonster/IEEE-T-ASE@4091ce30ad85b774a9231484f9b40372dc0451d3`。模型只需推理文件（两片 safetensors、index、config、tokenizer 和 README），不下载 optimizer/scheduler。数据需 `data_train.jsonl`、`data_val.jsonl`、`data_test.jsonl`、README；因 JSONL 没有 UID，而官方 README 指明 CSV 含上游 Text2CAD 描述、程序 ZIP 含 170,000 个源程序，现将 `text2cad_v1.1.csv` 和 `CadQuery.zip` 列为来源/去泄漏核验资产。它们是否真能映射每条 JSONL，必须测量，不能仅因下载成功就宣称已解决。仓库为 Hugging Face **model** 类型，数据仓库 `license` 元数据为空；内部研究可做资产核验，公开再分发与许可链另行核查。权重页面标 `apache-2.0`，不能据此推断数据也同许可。
 
 OBS 权威副本计划放在 `cvteam14:/data/obs_data_liuza/CADRetrieval/{models,datasets}/...`，版本路径含完整 commit SHA，保存 `SHA256SUMS` 与 `PROVENANCE.md`。910C 机器的 OBS 挂载是 `/data/data_dev`，已观察到的根目录与前者不同；不得假设它们共享内容。若不共通，将核验过的相同资产复制到 `yunnan-share2:/data/data_dev/CADRetrieval/...`，再次逐文件比对 SHA256。模型缓存、临时文件、conda 环境和运行输出放在 `/home/ma-user/work/CADRetrieval_runtime/` 或 checkout 外的其他确定目录。任何仓库源码和计划只在 Windows 本地改，Git push 后远端检出指定 SHA；资产不进 Git。
 
@@ -25,11 +25,13 @@ E0 检查顺序：
 
 1. **资产**：公开仓库 revision/文件哈希/许可字段与已下载大小一致；每个文件非空。检查 tokenizers、safetensors 索引和模型 config 能组成完整加载目录。下载异常保留错误，不把空文件算成功。
 2. **环境**：`ssh yunnan-share2`、远端 `git ls-remote origin HEAD` 无交互成功；远端 checkout 干净。克隆已有 PyTorch-2.7.1 环境到 checkout 外，逐项记录 Python/torch/torch_npu/Transformers/CANN 版本；至少通过 seeded NPU matmul，继而通过 Qwen 小文本前向和数值非空检查。不以 `import` 成功宣布环境可用。
-3. **数据**：从原始 JSONL 记录每个 split 的行数、输入/输出字段、来源 UID 或可追溯映射、父设计家族、精确/近似重复与 train/val/test 交叉。若无 UID，就明确只能做按样本/模板隔离，不能宣称 family-disjoint。统计 1024-token 截断比例、可执行 CadQuery 覆盖、`cq.exporters` 等样板覆盖。固定保留/剔除清单，不能因模型分数筛样本。
+3. **数据**：从原始 JSONL 记录每个 split 的行数、输入/输出字段、来源 UID 或可追溯映射、父设计家族、精确/近似重复与 train/val/test 交叉。现已从 CSV `intermediate` 逐字连接恢复全部 JSONL 的 UID，Kimi 仍须独立复算；UID 互斥不能替代 family-disjoint。统计 1024-token 覆盖比例、可执行 CadQuery 覆盖、`cq.exporters` 等样板覆盖。固定保留/剔除清单，不能因模型分数筛样本。
 4. **qrels**：官方 input/output 对可用于**配对 UID 检索 sanity**，不能直接声称自然语义多正例金标。主张 C1 至少还需从独立几何或可执行谓词建立一批正负例；若覆盖不足，首轮只报 sanity，不报“理解 CAD”的结论。
 5. **打分定义**：只对输出 token teacher force，明确 chat/instruction 模板、shift、EOS、pad、长度、截断。原始全程序 `Σ log pθ(t_i|q,t_<i)` 作为序列概率主臂；设计 token subset、均值和去导出样板均明确标为诊断分数，不能称完整 NLL。保存逐 token 对齐的人工复核样例。
 
-**E0 阻断条件**：资产/许可来源不清、模型无法在 NPU 正常前向、分数掩码有误、query 与 gallery 文本泄漏、有效 qrels/程序覆盖太低，均不扩到正式检索。可以回本地更正计划；不得静默改规则或更换模型。
+官方代码 `Text-to-CadQuery/Text-to-CadQuery@4f7f50176f3c642f6d897c4a8670f7a83acb31bd` 的 `train/train_qwen-3B.py` 与 `inference/step1_generate_CadQuery/inference_qwen-3B.py` 都使用 `### Instruction:\n{input}\n\n### Response:\n` 作为 Qwen 前缀；训练完整串尾加 tokenizer EOS。训练只保留完整串长度 ≤1024 的样本，`DataCollatorForLanguageModeling(mlm=False)` 对整串做因果 LM 标签，并没有只对 response 训练。首轮评分据此固定前缀、目标为原样 `output + EOS`，只汇总 response token；这是从模型联合分布取条件分数，不要把训练 loss 误写成只训练 response。完整串超过 1024 token 的候选先标记为覆盖失败，并报告比例；不得截断后称全程序 NLL。tokenizer 的前缀与完整串 token 边界必须显式断言或记录不一致。
+
+**E0 阻断条件**：资产来源或使用条件无法支持内部评测、模型无法在 NPU 正常前向、分数掩码有误、query 与 gallery 文本泄漏、有效 qrels/程序覆盖太低，均不扩到正式检索。数据仓库 license 元数据为空，须继续追查并禁止公开再分发；这项未决本身不妨碍内部 P0 仪器核验。可以回本地更正计划；不得静默改规则或更换模型。
 
 ## 2. 实验块与运行顺序
 
@@ -56,11 +58,11 @@ P0/P1 的**授权对象是后续 Kimi 任务**，此文当前只用于 Codex 资
 | 检查 | 当前证据 | 状态 |
 | --- | --- | --- |
 | `ssh yunnan-share2` | 本地原只有 `yunnao-share2`；已添加同端口别名，登录到 `ma-user` 的两 NPU 机器 | 通过 |
-| Git 免交互 | 远端 checkout `/home/ma-user/work/CADRetrieval` 干净；`GIT_TERMINAL_PROMPT=0 git ls-remote origin HEAD` 返回 `dc220c5...`，与当前远端 HEAD 一致 | 通过（只读） |
-| 910C 基础环境 | `/home/ma-user/anaconda3/envs/PyTorch-2.7.1`，Python 3.11.10，torch 2.7.1+cpu，torch_npu 2.7.1.post1；`torch.npu.is_available()` 真、2 设备 | 仅导入通过，内核/模型未测 |
-| OBS | 老机器 `/data/obs_data_liuza`；新机 `/data/data_dev`，不能假定同桶 | 配套 JSONL 已分别复制，两端 SHA 与官方一致；模型仍待复制 |
-| 数据 | 官方 API revision 已复核；train/val/test 分别 99,236/5,513/5,514 行，仅有 `input`、`output` 字段 | 三份 JSONL 已就绪；UID/家族映射未闭合 |
-| 模型 | 小型推理元数据已从 pinned revision 获取；大权重分片仍在传输 | 不就绪；Qwen NPU 前向未测 |
+| Git 免交互 | 远端 checkout `/home/ma-user/work/CADRetrieval` 干净；本地计划提交 `40fd5ee2f7862e4ea35e862b1970abd5e75d2ebe` 已 push，远端无交互 fetch/detach 到同 SHA | 通过；本轮文档最终提交后须再同步 |
+| 910C 基础环境 | 克隆 PyTorch-2.7.1 到 checkout 外；Python 3.11.10、torch 2.7.1+cpu、torch_npu 2.7.1.post1；2 设备，seeded NPU kernel 与真实 Qwen 11-token FP16 前向通过 | 环境和模型小规模前向通过；条件评分未实现 |
+| OBS | 老机器 `/data/obs_data_liuza`；新机 `/data/data_dev`，不能假定同桶 | 910C OBS 模型及数据全部 SHA 通过；共享 OBS 数据 6 文件全部 SHA 通过，模型仍在传输/核验 |
+| 数据 | train/val/test 分别 99,236/5,513/5,514 行，仅 `input`、`output`；CSV `intermediate` 逐字映射全 110,263 条 UID，split UID 无交集，val/test 程序与 ZIP 全一致，train 有 2 条不同 | 来源 UID 初步闭合；家族、几何与语义 qrels 未闭合 |
+| 模型 | 两片权重官方 SHA 对应；`AutoTokenizer` + `AutoModelForCausalLM` 从 910C OBS 本地目录加载，logits 全有限，峰值分配 6.35 GB | 910C 上可前向；共享 OBS 备份待核验 |
 
 ## 5. 准备完成后的启动条件
 
