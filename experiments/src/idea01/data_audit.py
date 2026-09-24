@@ -11,6 +11,7 @@ never receives them (input isolation contract).
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import sys
 import zipfile
@@ -22,6 +23,12 @@ csv.field_size_limit(sys.maxsize)
 
 CSV_INTERMEDIATE_COL = "intermediate"
 CSV_UID_COL = "uid"
+
+
+def text_digest(text: str) -> str:
+    """sha256 hexdigest of the utf-8 text; digest equality implies byte-identical
+    text up to collision resistance (any hit is re-verified byte-exact by callers)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def read_jsonl(path: str | Path) -> list[dict]:
@@ -67,6 +74,9 @@ class SplitAudit:
     exact_duplicate_inputs: int = 0  # rows beyond first occurrence
     exact_duplicate_outputs: int = 0
     unique_uids: int = 0
+    # sha256 digest sets of raw text, for cross-split exact-duplicate checks
+    input_hashes: set[str] = field(default_factory=set)
+    output_hashes: set[str] = field(default_factory=set)
 
 
 def audit_split(
@@ -81,6 +91,8 @@ def audit_split(
     out_ctr = Counter(r["output"] for r in rows)
     out.exact_duplicate_inputs = sum(c - 1 for c in in_ctr.values() if c > 1)
     out.exact_duplicate_outputs = sum(c - 1 for c in out_ctr.values() if c > 1)
+    out.input_hashes = {text_digest(t) for t in in_ctr}
+    out.output_hashes = {text_digest(t) for t in out_ctr}
 
     names: set[str] | None = None
     if zf is not None:
@@ -119,15 +131,38 @@ def audit_split(
     return out
 
 
+def load_text_digest_sets(jsonl_path: str | Path) -> tuple[set[str], set[str]]:
+    """Streaming digest sets of `input` / `output` text for one JSONL split."""
+    inputs: set[str] = set()
+    outputs: set[str] = set()
+    with open(jsonl_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            inputs.add(text_digest(r["input"]))
+            outputs.add(text_digest(r["output"]))
+    return inputs, outputs
+
+
 def cross_split_overlap(audits: dict[str, SplitAudit]) -> dict:
-    """UID / input / output intersections between split pairs (leakage check)."""
+    """UID / exact-input / exact-output intersections between split pairs.
+
+    Input/output intersections use sha256 digest sets (see text_digest); a zero
+    count means no byte-identical text is shared (up to collision resistance).
+    """
     res = {}
     splits = sorted(audits)
     for i, sa in enumerate(splits):
         for sb in splits[i + 1 :]:
             ua = {u for u in audits[sa].row_uids if u}
             ub = {u for u in audits[sb].row_uids if u}
-            res[f"{sa}__{sb}"] = {"uid_intersection": len(ua & ub)}
+            res[f"{sa}__{sb}"] = {
+                "uid_intersection": len(ua & ub),
+                "input_intersection": len(audits[sa].input_hashes & audits[sb].input_hashes),
+                "output_intersection": len(audits[sa].output_hashes & audits[sb].output_hashes),
+            }
     return res
 
 

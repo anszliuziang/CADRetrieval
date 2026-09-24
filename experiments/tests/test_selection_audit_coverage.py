@@ -118,10 +118,17 @@ class TestDataAudit(unittest.TestCase):
 
     def test_cross_split_overlap(self):
         class A:
-            def __init__(self, uids):
+            def __init__(self, uids, inputs, outputs):
                 self.row_uids = uids
-        res = cross_split_overlap({"train": A(["a", "b"]), "val": A(["b", "c"])})
+                self.input_hashes = inputs
+                self.output_hashes = outputs
+        res = cross_split_overlap({
+            "train": A(["a", "b"], {"i1", "i2"}, {"o1", "o2"}),
+            "val": A(["b", "c"], {"i2", "i3"}, {"o9"}),
+        })
         self.assertEqual(res["train__val"]["uid_intersection"], 1)
+        self.assertEqual(res["train__val"]["input_intersection"], 1)
+        self.assertEqual(res["train__val"]["output_intersection"], 0)
 
 
 class TestCoverageHelpers(unittest.TestCase):
