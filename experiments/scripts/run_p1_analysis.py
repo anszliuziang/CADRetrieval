@@ -2,14 +2,16 @@
 """P1 analysis driver: recompute every summary from the RAW per-pair records.
 
 Reads pairs.jsonl (raw per-pair score records from run_p1_matrix.py), the fixed
-selection manifest (p1_selection.json) and the pinned validation texts; writes
-to --out-dir:
+selection manifest (p1_selection.json) and the pinned validation texts. The raw
+records are verified FIRST (p1_verify: per-token sums/shift/boundaries/token
+ids/coverage) — analysis never runs on unverified or success-only records
+(Codex review 2026-09-25, R2). Writes to --out-dir:
   metrics.json            all diagnostics with bootstrap CIs and baseline timing
   per_query_table.jsonl   per-query ranks/win rates for the three score arms
   near_duplicates.jsonl   score-independent program token Jaccard screen
 
-Exits non-zero if the raw records do not exactly cover the fixed pair plan
-with status ok + finite scores (no success-only subsets, plan sec.4).
+Exits non-zero if verification fails or the raw records do not exactly cover
+the fixed pair plan with status ok + finite scores (plan sec.4).
 """
 
 from __future__ import annotations
@@ -61,9 +63,33 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     selection = json.loads(Path(args.selection).read_text(encoding="utf-8"))
-    records = [json.loads(ln) for ln in Path(args.pairs).read_text(encoding="utf-8").splitlines() if ln.strip()]
+    pairs_file = Path(args.pairs)
+    records = [json.loads(ln) for ln in pairs_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
 
     expected_ids = [p["pair_id"] for p in selection["pairs"]]
+
+    # R2: verify raw evidence BEFORE any analysis (per-token sums, shift,
+    # boundaries, token ids vs input_ids, coverage). Any failure -> non-zero.
+    from idea01.p1_verify import verify_run
+
+    tokens_dir = pairs_file.parent / "tokens"
+
+    def load_tokens(pair_id: str) -> list[dict] | None:
+        path = tokens_dir / f"{pair_id}.jsonl"
+        if not path.exists():
+            return None
+        return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+
+    tokens_by_pair = {pid: load_tokens(pid) for pid in {r["pair_id"] for r in records} | set(expected_ids)}
+    report = verify_run(records, tokens_by_pair, expected_ids)
+    if not report["ok"]:
+        print(f"[p1-analysis] raw-run verification FAILED ({report['n_failures']} failures):", flush=True)
+        for f in report["failures"][:20]:
+            print(f"[p1-analysis]   {f}", flush=True)
+        print("[p1-analysis] refusing to analyze unverified records (R2)", flush=True)
+        return EXIT_ANOMALY
+    print(f"[p1-analysis] raw-run verification passed ({report['n_records']} records)", flush=True)
+
     try:
         validate_pair_records(records, expected_ids)
     except AnalysisError as e:

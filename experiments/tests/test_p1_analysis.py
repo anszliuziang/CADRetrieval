@@ -1,5 +1,6 @@
 """Tests for the P1 pre-registered analysis (plan sec.3) on synthetic scores."""
 
+import json
 import statistics
 import sys
 import unittest
@@ -25,6 +26,7 @@ from idea01.p1_analysis import (  # noqa: E402
     validate_pair_records,
 )
 from idea01.p1_selection import build_pair_plan, select_p1  # noqa: E402
+from idea01.p1_verify import EOS_ID  # noqa: E402
 from test_p1_selection import mkpool  # noqa: E402
 
 
@@ -47,7 +49,8 @@ def synthetic_selection(n_queries=8, n_offsets=3, n_method=1, n_length=1, pool=6
 
 def synthetic_records(manifest, own_bonus=100.0):
     """Score fabricator: own pair = base(candidate) + own_bonus; everything
-    deterministic from uid strings so tests are reproducible."""
+    deterministic from uid strings so tests are reproducible. Records carry
+    input_ids so per-token evidence files can be fabricated consistently."""
     def base(uid):
         return -50.0 - (sum(ord(c) for c in uid) % 37)
 
@@ -57,6 +60,7 @@ def synthetic_records(manifest, own_bonus=100.0):
             s = base(p["candidate_uid"]) - 20.0  # empty condition is worst
         else:
             s = base(p["candidate_uid"]) + (own_bonus if p["query_uid"] == p["candidate_uid"] else 0.0)
+        ids = [1000 + k for k in range(10)] + [2000 + k for k in range(9)] + [EOS_ID]
         recs.append(
             {
                 "pair_id": p["pair_id"],
@@ -68,11 +72,34 @@ def synthetic_records(manifest, own_bonus=100.0):
                 "all_finite": True,
                 "sum_logprob": s,
                 "mean_logprob": s / 10.0,
+                "n_prefix_tokens": 10,
+                "n_input_tokens": len(ids),
                 "n_target_tokens": 10,
-                "eos_logprob": -3.0,
+                "input_ids": ids,
+                "eos_logprob": s / 10.0,
             }
         )
     return recs
+
+
+def write_token_evidence(tokens_dir, rec):
+    """Fabricate the per-token evidence file consistent with rec (needed since
+    run_p1_analysis verifies raw evidence before analyzing, R2)."""
+    tokens_dir.mkdir(parents=True, exist_ok=True)
+    per_tok = rec["sum_logprob"] / rec["n_target_tokens"]
+    with open(tokens_dir / f"{rec['pair_id']}.jsonl", "w", encoding="utf-8") as f:
+        for k in range(rec["n_target_tokens"]):
+            f.write(
+                json.dumps(
+                    {
+                        "position": rec["n_prefix_tokens"] + k,
+                        "pred_row": rec["n_prefix_tokens"] + k - 1,
+                        "token_id": rec["input_ids"][rec["n_prefix_tokens"] + k],
+                        "logprob": per_tok,
+                    }
+                )
+                + "\n"
+            )
 
 
 class TestValidate(unittest.TestCase):
@@ -293,6 +320,8 @@ class TestEndToEndDriver(unittest.TestCase):
             with open(pairs_path, "w", encoding="utf-8") as f:
                 for r in recs:
                     f.write(json.dumps(r) + "\n")
+            for r in recs:
+                write_token_evidence(root / "tokens", r)
             out_dir = root / "out"
             argv = [
                 "run_p1_analysis.py",
@@ -339,6 +368,8 @@ class TestEndToEndDriver(unittest.TestCase):
             with open(pairs_path, "w", encoding="utf-8") as f:
                 for r in recs:
                     f.write(json.dumps(r) + "\n")
+            for r in recs:
+                write_token_evidence(root / "tokens", r)
             argv = [
                 "run_p1_analysis.py",
                 "--pairs", str(pairs_path),
