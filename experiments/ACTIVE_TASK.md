@@ -1,11 +1,11 @@
 # 当前实验任务
 
-- `state`: `implementation`（**仅 P1 代码与 CPU 准备**；NPU pilot 尚未授权）
+- `state`: `review_required`（Kimi 已交付 P1 第一门，Codex 正在审核并要求补正；**NPU pilot 尚未授权**）
 - `task_id`: `idea01_p1_conditional_sensitivity_20260925`
 - `plan`: `experiments/plans/IDEA01_P1_CONDITIONAL_SENSITIVITY_2026-09-25.md`
 - `parent_plan`: `experiments/plans/IDEA01_PREFLIGHT_AND_PILOT_2026-09-24.md`
 - `prior_review`: `experiments/reviews/IDEA01_P0_CODEX_REVIEW_2026-09-25.md`；P0 原始执行 SHA `4e19259fd7f05cdddbb95ab11ea36a723a46d2aa`，补正 SHA `660e4228b338430bc1899f5e5bfe1069adcfd5e7`
-- `approved_sha`: 无；Codex 审查 P1 实现后方可填入完整 SHA 并将状态改为 `pilot_authorized`
+- `approved_sha`: 无；Kimi 第一版实现 `10c734451ee22e608eaf0d119521c092fc7b8f62` **未通过代码审核**，见 `experiments/reviews/IDEA01_P1_CODEX_CODE_REVIEW_2026-09-25.md`；补正并重新审核后方可填入完整 SHA、改为 `pilot_authorized`
 - `server`: `ssh yunnan-share2`，Git checkout `/home/ma-user/work/CADRetrieval`；当前实现门仅可在远端做 CPU-only 数据/选择预核，不可占用 NPU
 - `gpu_budget`: **0 卡小时**（当前门）
 - `max_scored_pairs`: **0**（当前门）；计划中的 ≤416 对只是下一门的拟定上限，并非当前授权
