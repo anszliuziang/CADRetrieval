@@ -1,6 +1,6 @@
 # Idea 01：冻结文生 CAD 模型做文本→CAD 检索
 
-状态：**资产与环境准备完成；是否激活 P0 实现以 `experiments/ACTIVE_TASK.md` 为准，正式检索仍未授权。** 日期：2026-09-24。计划负责人：Codex；后续实现与运行：本地 Claude Code / Kimi K3，P0 提交后由 Codex 审核代码与原始结果。
+状态：**资产与环境准备完成；P0 于 2026-09-25 经 Codex 审核为 reviewed；P1 与正式检索仍未授权。** 本文制定于 2026-09-24。计划负责人：Codex；后续实现与运行：本地 Claude Code / Kimi K3。P0 代码、原始结果和补证裁决见 [Codex 审核](../reviews/IDEA01_P0_CODEX_REVIEW_2026-09-25.md)，当前授权以 `experiments/ACTIVE_TASK.md` 为准。
 
 ## 0. 问题、边界和结论标准
 

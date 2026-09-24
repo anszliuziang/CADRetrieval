@@ -4,7 +4,7 @@
 
 ## 裁决
 
-**P0 数值证据可信；交接尚需补正，不能据此启动 P1 或正式检索。** 本次只证明固定 20 个验证候选上的条件评分器可运行、有有限值且对配对文本敏感；没有 gallery 排序、R@K、语义有效性或跨设计家族泛化结论。
+**P0 数值证据可信；四项交接补正已通过复核，P0 可记为 reviewed；不能据此启动 P1 或正式检索。** 本次只证明固定 20 个验证候选上的条件评分器可运行、有有限值且对配对文本敏感；没有 gallery 排序、R@K、语义有效性或跨设计家族泛化结论。
 
 ## 我独立复核的事实
 
@@ -28,4 +28,14 @@
 
 ## 下一关
 
-上述补正经再次代码/清单复核后，P0 可以记为 `reviewed`。P1 需单独制定样本、难负例、长度/模板/词面基线、近重复筛查、预算和停止条件；本审核不授权 P1。
+### 补正复核（2026-09-25）
+
+- Kimi 在本地提交 `660e4228b338430bc1899f5e5bfe1069adcfd5e7`，仅改评分器的记录/异常停点、数据审计及 CPU 补证工具；原评分核心 `scoring.py` 和原始运行文件未更改。Codex 将该提交 fast-forward 合入本地 `master` 并推送。Windows 本地 `python -m pytest experiments/tests/ -q`：**42 passed**。未来运行的评分器已直接记录完整输入 ID、路径和两种环境哈希，按调用另存环境文件；边界错误、非有限值、普通异常或预算终止时记录后返回非零。新增代码未重新进行 NPU 前向，后续扩大前仍需按新 SHA 做受限真实样本验证。
+- 在 910C checkout 外，修复 SHA 的 CPU 脚本生成 `review_supplement/`：`verification_summary.json` 报 **60/60** 个完整输入 token 重建和原始目标逐 token 对齐通过、0 失败；`cross_split_duplicates.json` 报 train/val/test 两两 UID、相同输入、相同程序交集全 0。原始 `smoke/pairs.jsonl` 与 `smoke/tokens/` 保持执行 SHA `4e19259...` 的字节原貌。
+- 新 `MANIFEST_SHA256_v2.txt` 不自引用，列出旧原始文件和补证文件共 **78** 项。Codex 在 910C 运行目录和本地镜像分别逐项校验 78/78；并通过 `cvteam6` 上传完整 79 文件目录到共享 OBS `/data/obs_data_liuza/CADRetrieval/runs/idea01_p0_20260924_r01/`，在该挂载上 `sha256sum -c MANIFEST_SHA256_v2.txt` 返回 0（78/78）。这份共享 OBS 是本轮完整结果的权威副本。
+- 910C 的 `/data/data_dev` OBS 原始 P0 结果之前已落盘，但补证复制在挂载 I/O 上长时间等待，进程 `cp` 为不可中断 `D` 状态；已发送 `TERM`，需等待挂载恢复后退出。**不能声称 910C OBS 的补证副本完整。** 运行目录原件、本地镜像和三机共享 OBS 完整，910C Git checkout 在 `660e422...` 且 `git status --porcelain` 为空。`cvteam14` 当时 SSH 握手超时，改由同挂载的 `cvteam6` 完成共享 OBS 校验。
+- 环境双哈希完整值：canonical JSON `10c18c17a7d4ff7d37720a7b847079b88e823c86a13b8d232ce4d3063447117e`；Git 文件字节 `b6cdd884975302701d7c236c2f00d1ae8586804dd19b58c4fe596fec29033193`。补证记录同时保存两种算法；差异不代表环境变化。
+
+### 下一关
+
+P1 需单独制定样本、难负例、长度/模板/词面基线、近重复筛查、预算和停止条件，并核验补正后 SHA 的至少一个真实样本；本审核不授权 P1。P0 的 20/20 正边际不能当检索或独立语义理解结果。
