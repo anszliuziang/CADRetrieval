@@ -31,6 +31,8 @@
 
 调度器目前只检查 Git 工作树干净、清单自报 `n_gate_fail=0` 和 pair 数 ≤416，未验证当前 `ACTIVE_TASK` 已是 `pilot_authorized`、运行 SHA 等于 `approved_sha`、清单 SHA 等于 Codex 审核的固定清单、模型与数据副本的 SHA256。`--model-dir`/`--data-dir` 还可覆盖配置；任意自造的 gate summary 为 0 的清单可被执行。需在载入权重前有可审计的强制前置校验，或由 Codex 审核的启动脚本严格执行并记录所有检查；在 `ACTIVE_TASK` 中钉住获批清单 SHA。任何不符都停止，不能只把 SHA 写进输出作为事后信息。现在 `/data/data_dev` 挂载仍有 D 状态复制，先解决或由 Codex 明确修订资产核验路径，不能把不可核验的 910C OBS 写成已通过。
 
+**实现注意：**`ACTIVE_TASK.md` 含 `approved_sha`，不能让该字段等于包含该字段的同一 Git 提交 SHA；这是自引用。运行已审核代码的 detached HEAD 时，应在 `git fetch` 后从 Codex 控制的 `origin/master:experiments/ACTIVE_TASK.md` 读取最新授权（或使用等价的仓库外授权证明），验证 `pilot_authorized`、`approved_sha == HEAD` 与获批选择清单 SHA。不得从 detached HEAD 中的旧 `ACTIVE_TASK.md` 误判为已授权；当前 master 仍是 `review_required`。
+
 ### R4（应修）：运行失败证据与输出路径
 
 模型载入、数据读取、环境写入等发生在逐 pair 的 `try` 之外；异常可能不留下失败记录。环境文件名只有秒级时间戳，快速两次调用可能覆盖；输出目录也未检查在 Git checkout 外。请保证异常非零且留存原因、每次调用的环境文件不覆盖、所有输出在 checkout 外。预算参数不能被命令行放宽。已授权的三个全程上限（416 前向、1 卡小时、45 分钟）应在多次调用中统一约束，达到任一条件即非零停止。
