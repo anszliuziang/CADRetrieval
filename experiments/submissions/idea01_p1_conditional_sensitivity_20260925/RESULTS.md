@@ -68,3 +68,65 @@ timeout 600 /home/ma-user/work/envs/cadretrieval-idea01-torch271/bin/python \
 - 若阶段 1 复审通过，建议按已批准框架授权阶段 2：`--pair-ids "0-9" --resume`（新增 9 对，验证 `--resume` 跳过逻辑在真实文件上的行为），随后再授权阶段 3 的 `all --resume`。
 - `--resume` 在真实已有记录上的逐字段绑定核验（R1）在阶段 2 会首次真实触发；建议 Codex 在阶段 2 前后比对 `pairs.jsonl` 仍恰为 1/10 条唯一记录。
 - 910C `/data/data_dev` 挂载恢复前，继续按 P1 计划替代路径归档；本阶段产物待 Codex 指示后转存共享 OBS。
+
+---
+
+# 阶段 2 追加记录（2026-09-25，`--pair-ids "0-9" --resume` 新增 9 对、累计 10 对）
+
+状态：**等待 Codex 阶段 2 复审**。仅执行了 db0f944 授权的内容：同一 run 目录追加 9 对。**未运行 `all`、其他任何前向或排名分析；不进入全量。**
+
+## 1. 授权与前置核验（事实）
+
+- 授权：origin/master `db0f9446a6f29c39f05729a9a07fa7b2fa1c3c30` 的 `ACTIVE_TASK.md`（阶段 2，`pilot_authorized`；阶段 1+2 累计 ≤0.25 卡小时/10 分钟）。runner 运行时再次 fetch 校验，阶段 2 environment 记录授权 blob sha256 `e88b8cd2060b685092608e75eae6434463ca2240729933c96d111445b03ffd65`、`origin_ref_sha=db0f9446…`、`fetch_returncode=0`、problems 空。
+- 运行前逐项核验通过：Git 工作树干净；`checkout --detach 52ad27f2…` 后 `git rev-parse HEAD` 一致；模型/数据 `SHA256SUMS` 文件哈希 `98c1c44b…`/`f75a7a48…` 与批准值一致；选择清单 sha256 `c86fb569…` 一致；`npu-smi` 无进程；**未访问 `/data/data_dev`**。
+- 阶段 1 原始字节（运行前记录）：`pairs.jsonl` 1 行/3240 字节/sha `ed0da343…`；`tokens/q00_0_self.jsonl` sha `d3abdb18…`。
+
+## 2. 执行命令（事实）
+
+```bash
+RUN=/home/ma-user/work/CADRetrieval_runtime/runs/idea01_p1_20260925_r01
+timeout 600 /home/ma-user/work/envs/cadretrieval-idea01-torch271/bin/python \
+  experiments/scripts/run_p1_matrix.py \
+  --config experiments/configs/idea01_p1_conditional_sensitivity_20260925.json \
+  --selection .../plans/idea01_p1_20260925/p1_selection.json \
+  --out-dir $RUN --pair-ids "0-9" --resume --device npu:0 | tee $RUN/stage2_console.log
+# MATRIX-EXIT=0；preflight 资产复核模型 11/11、数据 6/6；载入权重前通过授权与已有记录绑定核验
+```
+
+## 3. 结果与运行后核验（事实）
+
+- **resume 跳过证据**：控制台日志含 `[p1-matrix] resume: skipping verified-completed pair q00_0_self`；preflight 报 `9 new forwards planned (1 completed skipped)`。
+- **阶段 1 原始字节不变**：运行后 `head -c 3240 pairs.jsonl` 的 sha256 仍为 `ed0da343…`（服务器端）；本地复核首行+换行与阶段 1 整文件哈希一致；`tokens/q00_0_self.jsonl` sha 仍为 `d3abdb18…`。
+- **pairs.jsonl 恰 10 个不同 pair_id**：`q00_0_self, q00_1_off, q00_2_off, q00_3_off, q00_4_method, q00_5_method, q00_6_length, q00_7_length, q01_0_self, q01_1_off`；全部 `status=ok`、`all_finite=true`；两条 invocation 记录（`…e541c97f`、`…80042d56`）。
+- **台账**：累计 **10 前向 / 75.42 s（0.0209 卡小时）**；两次调用均 `finalized: true, exit 0`（36.81 s + 38.61 s）——阶段 1+2 累计预算（0.25 卡小时/600 s）与全程硬上限均未触及。
+- **逐 token 核验**：本地 `p1_verify.verify_pair_record` 对全部 10 对复核 **10/10 通过**（token 和↔sum、mean、EOS、位置连续、shift、`token_id==input_ids[position]`）。
+- **镜像一致性**：本地 `experiments/runs/idea01_p1_20260925_r01/` 与服务器逐文件 sha256 **14/14 一致**（pairs.jsonl `b625f987…`、10 个 token 文件、ledger `8cbda253…`、stage-2 environment `970d2374…`、stage2_console.log `9f0dd864…`）。新增 environment 文件名独立（`…T002610Z-80042d56`），未覆盖阶段 1 文件。
+- 运行后服务器 `git status --porcelain` 为空；失败/偏差：**无**（无哈希失败、非有限、OOM、超时、预算触发）。
+
+原始分数（仅逐对事实，**未计算名次/胜率/R@K**）：
+
+| pair_id | 来源 | n_target | sum | mean | eos_logprob | 峰值显存 | 耗时 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| q00_0_self | self（阶段 1） | 221 | -40.376 | -0.1827 | -21.364 | 6.64 GB | 0.868 s |
+| q00_1_off | selected-offset | 261 | -105.401 | -0.4038 | -20.057 | 6.68 GB | 0.973 s |
+| q00_2_off | selected-offset | 232 | -85.966 | -0.3705 | -20.243 | 6.65 GB | 0.220 s |
+| q00_3_off | selected-offset | 409 | -174.239 | -0.4260 | -21.434 | 6.81 GB | 0.362 s |
+| q00_4_method | method-neighbor | 221 | -60.983 | -0.2759 | -21.195 | 6.64 GB | 0.213 s |
+| q00_5_method | method-neighbor | 221 | -68.615 | -0.3105 | -20.118 | 6.64 GB | 0.210 s |
+| q00_6_length | length-neighbor | 221 | -120.884 | -0.5470 | -20.140 | 6.64 GB | 0.209 s |
+| q00_7_length | length-neighbor | 221 | -129.609 | -0.5865 | -21.046 | 6.64 GB | 0.210 s |
+| q01_0_self | self | 243 | -44.337 | -0.1825 | -18.964 | 6.64 GB | 0.230 s |
+| q01_1_off | selected-offset | 399 | -184.529 | -0.4625 | -21.988 | 6.78 GB | 0.347 s |
+
+## 4. 解释（我的分析，非结论）
+
+1. **R1 的 resume/累计机制在真实文件上首次按设计工作**：已有记录绑定核验通过 → 显式跳过 → 只追加 → 累计 10 对恰好 10 条唯一记录；阶段 1 字节零改动；台账两次调用独立收尾。这支持阶段 3（`all --resume`，新增 404 对）的同一机制，但是否执行取决于 Codex。
+2. **耗时结构**：9 对前向合计约 2.99 s（0.21–0.97 s/对，随 token 数增长），模型加载 3.4 s，每次调用固定开销（授权 fetch + 资产复核）约 30 s。按此外推全量 414 对：前向约 2–4 分钟 + 固定开销，总墙钟远低于 45 分钟/1 卡小时上限。
+3. **分数形态**：与 P0/阶段 1 一致，EOS logprob 全部在 -19~-22 区间，占各对 sum 比重很大（如 q00_0_self 的 52.9%）；这些只是仪器一致性事实。self 对（-40.4、-44.3）与其余 8 对的关系、候选间边际等**留待 Codex 授权的分析阶段**，此处不做任何排序解读。
+4. 单对峰值显存 6.64–6.81 GB，随输入长度温和增长；最长计划配对 697 token 预计仍 ≪ 65 GB HBM。
+
+## 5. 建议（供 Codex 决定，非授权）
+
+- 若阶段 2 复审通过，建议授权阶段 3：`--pair-ids "all" --resume`（新增 404 对，累计 414），完成后先 `verify_p1_run.py` 全量验证再 `run_p1_analysis.py`。
+- 建议阶段 3 授权前 Codex 抽查本阶段任一新增对的 `input_ids` 与 pinned JSONL 重建一致性（与阶段 1 复核方式相同）。
+
