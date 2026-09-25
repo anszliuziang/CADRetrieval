@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from idea01.p1_analysis import (  # noqa: E402
     AnalysisError,
+    baseline_empty,
     baseline_length,
     baseline_random,
     baseline_tfidf,
@@ -232,9 +233,32 @@ class TestBaselines(unittest.TestCase):
     def test_length_orders_shortest_first(self):
         res = baseline_length(self.manifest)
         for p, qp in zip(res["per_query"], self.manifest["queries"]):
-            cands = sorted(qp["candidates"], key=lambda c: (c["n_response_tokens"], c["uid"]))
-            self.assertEqual(p["rank"], [c["uid"] for c in cands].index(qp["uid"]) + 1)
-            self.assertAlmostEqual(p["win_rate"], (8 - p["rank"]) / 7)
+            own = qp["candidates"][0]["n_response_tokens"]
+            others = [c["n_response_tokens"] for c in qp["candidates"][1:]]
+            self.assertEqual(p["rank"], 1 + sum(x < own for x in others))
+            self.assertEqual(p["top1_strict"], all(own < x for x in others))
+            self.assertAlmostEqual(p["win_rate"], sum(1 if own < x else .5 if own == x else 0 for x in others) / len(others))
+
+    def test_query_independent_baselines_do_not_use_uid_to_break_score_ties(self):
+        qp = self.manifest["queries"][0]
+        uids = [c["uid"] for c in qp["candidates"]]
+        # Force eight identical length scores; the paired UID must tie for first,
+        # not be demoted according to its arbitrary identifier.
+        for c in qp["candidates"]:
+            c["n_response_tokens"] = 100
+        one = {"queries": [qp], "distinct_candidate_uids": uids}
+        length = baseline_length(one)["per_query"][0]
+        self.assertEqual(length["rank"], 1)
+        self.assertFalse(length["top1_strict"])
+        self.assertAlmostEqual(length["win_rate"], 0.5)
+        empty = baseline_empty(one, {uid: -100.0 for uid in uids})["per_query"][0]
+        self.assertEqual(empty["rank"], 1)
+        self.assertFalse(empty["top1_strict"])
+        self.assertAlmostEqual(empty["win_rate"], 0.5)
+        tfidf = baseline_tfidf(one, {qp["uid"]: "ZZZ"}, {uid: "aaa" for uid in uids})["per_query"][0]
+        self.assertEqual(tfidf["rank"], 1)
+        self.assertFalse(tfidf["top1_strict"])
+        self.assertAlmostEqual(tfidf["win_rate"], 0.5)
 
     def test_tfidf_self_top1_when_texts_match(self):
         # craft texts so each query shares unique 3-grams with its own program only

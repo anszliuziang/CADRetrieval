@@ -220,6 +220,38 @@ def _order_summary(orders: list[list[str]], selection: dict) -> dict:
     }
 
 
+def _score_summary(score_rows: list[list[float]], selection: dict) -> dict:
+    """Summarize scalar baselines without using a UID to resolve score ties.
+
+    Candidate order is the fixed manifest order, with the paired candidate at
+    index zero. Equal scalar scores receive a half win in pairwise comparisons
+    and never a strict top-1, matching the model score arms.
+    """
+    if len(score_rows) != len(selection["queries"]):
+        raise AnalysisError("baseline score rows do not match query count")
+    per = []
+    for qp, scores in zip(selection["queries"], score_rows):
+        if len(scores) != len(qp["candidates"]):
+            raise AnalysisError(f"baseline candidate count mismatch for {qp['uid']}")
+        rank, top1, win = rank_of_self(scores, 0)
+        per.append({
+            "query_uid": qp["uid"],
+            "query_index": qp["query_index"],
+            "rank": rank,
+            "top1_strict": top1,
+            "win_rate": win,
+        })
+    return {
+        "per_query": per,
+        "mean_rank": statistics.mean(p["rank"] for p in per),
+        "median_rank": statistics.median(p["rank"] for p in per),
+        "top1_strict_rate": bootstrap_ci([float(p["top1_strict"]) for p in per], statistics.mean),
+        "mean_win_rate": bootstrap_ci([p["win_rate"] for p in per], statistics.mean),
+        "resampling_unit": "query (32 queries)",
+        "tie_policy": "equal scalar scores tie; strict top-1 requires a unique maximum; pairwise tie=0.5",
+    }
+
+
 def baseline_random(selection: dict, seed: int = RANDOM_BASELINE_SEED) -> dict:
     """Fixed-seed uniform permutation per query (one rng stream for all)."""
     rng = random.Random(seed)
@@ -232,21 +264,15 @@ def baseline_random(selection: dict, seed: int = RANDOM_BASELINE_SEED) -> dict:
 
 
 def baseline_length(selection: dict) -> dict:
-    """Shorter response first; ties by uid ascending."""
-    orders = []
-    for qp in selection["queries"]:
-        cands = sorted(qp["candidates"], key=lambda c: (c["n_response_tokens"], c["uid"]))
-        orders.append([c["uid"] for c in cands])
-    return {"baseline": "response_length_ascending", **_order_summary(orders, selection)}
+    """Shorter response first; equal lengths remain tied."""
+    rows = [[-float(c["n_response_tokens"]) for c in qp["candidates"]] for qp in selection["queries"]]
+    return {"baseline": "response_length_ascending", **_score_summary(rows, selection)}
 
 
 def baseline_empty(selection: dict, empty_sums: dict[str, float]) -> dict:
-    """Query-independent candidate prior S(empty,x), higher first; ties uid asc."""
-    orders = []
-    for qp in selection["queries"]:
-        cands = sorted(qp["candidates"], key=lambda c: (-empty_sums[c["uid"]], c["uid"]))
-        orders.append([c["uid"] for c in cands])
-    return {"baseline": "empty_query_score", **_order_summary(orders, selection)}
+    """Query-independent candidate prior S(empty,x), higher first; ties stay tied."""
+    rows = [[empty_sums[c["uid"]] for c in qp["candidates"]] for qp in selection["queries"]]
+    return {"baseline": "empty_query_score", **_score_summary(rows, selection)}
 
 
 def char_ngrams(text: str, n: int = 3) -> list[str]:
@@ -290,17 +316,15 @@ def baseline_tfidf(selection: dict, query_texts: dict[str, str], programs: dict[
         for g in set(char_ngrams(programs[uid], n)):
             df[g] = df.get(g, 0) + 1
     idf = {g: math.log((1 + N) / (1 + d)) + 1.0 for g, d in df.items()}
-    orders = []
+    score_rows = []
     for qp in selection["queries"]:
         q = query_texts[qp["uid"]]
-        scored = [(tfidf_cosine(q, programs[c["uid"]], idf, n), c["uid"]) for c in qp["candidates"]]
-        scored.sort(key=lambda t: (-t[0], t[1]))
-        orders.append([u for _s, u in scored])
+        score_rows.append([tfidf_cosine(q, programs[c["uid"]], idf, n) for c in qp["candidates"]])
     return {
         "baseline": "char3_tfidf_cosine",
         "idf_corpus": "distinct candidate programs of this round only",
         "n_docs_idf": N,
-        **_order_summary(orders, selection),
+        **_score_summary(score_rows, selection),
     }
 
 
