@@ -130,3 +130,67 @@ timeout 600 /home/ma-user/work/envs/cadretrieval-idea01-torch271/bin/python \
 - 若阶段 2 复审通过，建议授权阶段 3：`--pair-ids "all" --resume`（新增 404 对，累计 414），完成后先 `verify_p1_run.py` 全量验证再 `run_p1_analysis.py`。
 - 建议阶段 3 授权前 Codex 抽查本阶段任一新增对的 `input_ids` 与 pinned JSONL 重建一致性（与阶段 1 复核方式相同）。
 
+---
+
+# 阶段 3 追加记录（2026-09-25，`--pair-ids "all" --resume` 新增 404 对、累计 414 对 + 全量验证 + 预定分析）
+
+状态：**等待 Codex 阶段 3 复审**。仅执行 9390e7c 授权内容。分析严格在验证器 414/414 通过之后、按固定脚本与固定参数运行；未根据分数改任何筛选/阈值/候选/脚本。**未启动 P2/P3，未改代码/配置/选择清单/模型/数据。**
+
+## 1. 授权与前置核验（事实）
+
+- 授权：origin/master `9390e7cfac8a09f05ce7319d02cf7966bf71994b` 的 `ACTIVE_TASK.md`（阶段 3；全程 416 前向/45 分钟/1 卡小时，外层 `timeout 1200`）。runner 再 fetch 校验：environment（`environment_20260925T003722Z-d88fff78.json`）记录 `origin_ref_sha=9390e7cf…`、blob sha256 `66c83a3d55a8d18a1fcccfe7afa802911a6eeeaee496f69ffea62264893ac642`、fetch rc 0、problems 空。
+- 运行前核验：Git 干净；HEAD=`52ad27f2…`；模型/数据 `SHA256SUMS` 文件哈希 `98c1c44b…`/`f75a7a48…` 一致；选择清单 `c86fb569…` 一致；NPU 无进程；**未访问 `/data/data_dev`**。
+- **resume 审计（运行前记录）**：10 对原始字节——`pairs.jsonl` 10 行/34,167 字节/`b625f987…`、10 个 token 文件（`d3abdb18…` 等）、ledger `8cbda253…`。
+
+## 2. 执行与运行后核验（事实）
+
+命令（唯一一次评分调用）：`timeout 1200 ... run_p1_matrix.py --config $CFG --selection $SEL --out-dir $RUN --pair-ids "all" --resume --device npu:0`，`MATRIX-EXIT=0`。
+
+- resume：明确跳过已有 10 对，**新增 404 次前向**；全部 `status=ok`、`all_finite=true`。
+- **10 对原始字节不变**：运行后 `head -c 34167 pairs.jsonl` sha 仍 `b625f987…`；抽查 token 文件未变。
+- **pairs.jsonl 恰 414 行、414 个不同 pair_id**；台账：累计 **414 前向 / 217.19 s（0.0603 卡小时）**，三次调用均 finalized/exit 0（36.81 + 38.61 + 141.77 s）；三个全程硬上限未触及；timeout 未触发；运行后 Git 树干净。
+- **全量验证（分析的必要前提）**：服务器 `verify_p1_run.py --run-dir $RUN --selection $SEL` → **records=414 expected=414 failures=0，exit 0**（逐 token 和↔sum、mean、EOS、位置连续、shift、`token_id==input_ids[position]`、覆盖无重复/缺失/多余）。本地镜像独立复核 `verify_pair_record` **414/414 通过**。
+- 镜像与归档：本地 `experiments/runs/idea01_p1_20260925_r01/`（430 文件：414 token + pairs/ledger/3 environment/5 log/3 分析产物/2 审计清单）与服务器 sha256 **422/422 一致**；本地生成不自引用 `MANIFEST_SHA256.txt`（429 条）后经 cvteam14 转存共享 OBS `/data/obs_data_liuza/CADRetrieval/runs/idea01_p1_20260925_r01/stage3_full_mirror/`，挂载上 `sha256sum -c` **429/429 通过**（stage1/stage2 快照未触碰；staging 已清理）。
+
+## 3. 预定分析结果（事实；固定脚本、固定 seed 20260925、bootstrap 10,000 次，分析总耗时 4.66 s）
+
+**主诊断（同候选边际，32 个被选中程序各自 own vs 3 个偏移 query，raw sum）**：
+- **32/32 正边际**；均值 **60.138**（95% CI **[56.450, 64.190]**，候选 UID 重抽样）；中位数 58.018（CI [52.092, 65.569]）；最小 46.48、最大 91.84。
+
+**次诊断（8 候选 exact-UID 配对 sanity；非语义检索 R@K）**：
+
+| 分数臂 | mean_rank | top-1（严格） | 95% CI | 逐对胜率 | 95% CI |
+| --- | --- | --- | --- | --- | --- |
+| raw sum | 1.47 | 0.781 | [0.625, 0.906] | 0.933 | [0.871, 0.978] |
+| mean（长度诊断） | 1.22 | 0.875 | [0.750, 0.969] | 0.969 | [0.933, 0.996] |
+| corrected=S(q,x)−S(∅,x)（候选先验校正诊断） | 1.06 | 0.938 | [0.844, 1.000] | 0.991 | [0.978, 1.000] |
+
+**基线（同一 8 候选集合）**：固定种子随机 top-1 0.156 / 胜率 0.464；response 长度升序 0.000 / 0.384；空 query 分数 0.062 / 0.545；字符 3-gram TF-IDF（IDF 仅本轮 158 个候选程序拟合）0.375 / 0.710。三个分数臂全部显著高于全部基线。
+
+**分层诊断（描述性）**：正例 response 较长者边际更大（短组均值 52.72 vs 长组 67.55）；注释比例较低者边际更大（64.77 vs 55.51）；方法相似度分层退化（32 个 query 的最大方法近邻相似度全为 1.0，无法二分——CadQuery 方法词汇高度共享的既有事实）。self 对 EOS logprob 均值 -21.36（min -23.25, max -18.96），EOS 支配效应持续存在。
+
+**近重复粗筛（分数无关）**：224 个正例-候选对，**103 对 token Jaccard ≥ 0.5**（最高 0.947），**0 对逐字相同**（无数据准入错误）。高相似对集中在 method-neighbor（构造使然：方法名集合全等 → 程序 token 高度重叠）。
+
+**未 top-1 的 query（事实清单）**：q12（0045/00450329：三臂均 rank 2–3，其 0.922 近重复 method 候选胜出）、q13（0001/00018422：三臂 rank 2，其 0.947 近重复候选胜出）、q15/q17/q22（仅 sum 臂 rank 2）、q23（sum rank 3）、q25（sum rank 4）、q28（sum rank 6、mean rank 4）。corrected 臂仅 q12、q13 未 top-1——两例都有 token Jaccard >0.92 的近重复候选排在配对 UID 前。
+
+## 4. 解释（我的分析，非结论）
+
+1. **仪器检查通过且与 P0 一致**：同候选正确文本相对其他 UID 文本的边际在 32/32 程序上稳定为正（均值 60.1，P0 在 20 候选上为 58.2），CI 不含 0；同一程序 token 完全相同，边际不可能由候选长度单独产生。
+2. **exact-UID 配对链可检索性良好**：corrected 臂 30/32 top-1、胜率 0.991，远高于所有基线；sum<mean<corrected 的梯度与长度先验效应一致（sum 惩罚长度；空 query 校正去除候选先验）。这支持"配对数据上分数对文本条件敏感且可用于排序"的仪器结论。
+3. **两个持续失败案例恰好是最近重复对**：q12/q13 的胜出候选都是 token Jaccard >0.92 的近重复程序——这更像"近似等价设计竞争"而非评分器失效；它直接印证计划警告：其他 UID **可能几何等价**，exact-UID 名次会系统性低估语义可接受度。
+4. **EOS 支配未消除**：EOS 一项约占 sum 的 40–53%；边际结论对 EOS 稳健（同候选 EOS 项相同会抵消），但 sum 臂的排名会被 EOS 噪声影响，corrected/mean 更可靠。
+
+## 5. 限制（必须随结论一起引用）
+
+- 全部数字是**官方配对数据上的 exact-UID 配对 sanity**，不是独立语义检索 R@K；无独立 qrels、无设计家族/几何等价核验，P2 问题未闭合。
+- 32 个 query、每 query 8 候选的小矩阵；103/224 对高 token 相似说明候选集合含大量近重复，名次口径偏保守。
+- UID ≠ 设计家族；近重复粗筛是 token 级提示，不是几何证明。
+- mean 臂只是长度诊断；corrected 是已知候选先验校正诊断，均非新方法或完整条件概率。
+
+## 6. 建议（供 Codex 决定，非授权）
+
+- P1 目标（计划 §1 的仪器检查）已达成，建议 Codex 复核原始文件后按 §5 裁决；在独立语义真值闭合前不启动 P2/P3。
+- 若进入后续轮次，建议优先做 q12/q13 类近重复对的几何等价核验与 EOS/长度分层的更大样本确认。
+- 910C `/data/data_dev` 挂载恢复前，本轮归档以共享 OBS `stage3_full_mirror/` 为权威副本。
+
+
