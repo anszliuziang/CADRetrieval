@@ -11,8 +11,13 @@ these. Codex review 2026-09-25 (R1/R3/R4):
       invocations; the authorized whole-run caps (416 forwards / 45 min / 1
       card-hour) bind across ALL invocations. Staged plan: 1 -> +9 -> +404,
       ending with exactly 414 unique raw records.
-  R3  Authorization is enforced BEFORE loading weights: ACTIVE_TASK must be
-      `pilot_authorized` with `approved_sha` == HEAD and
+  R3  Authorization is enforced BEFORE loading weights and is read from the
+      Codex-controlled `origin/master:experiments/ACTIVE_TASK.md` AFTER a git
+      fetch — never from the detached HEAD's working tree: a commit cannot
+      contain its own approved_sha, so the working-tree file can never prove
+      authorization for the checked-out code (Codex review addendum). The
+      origin remote URL is validated against the expected project remote;
+      ACTIVE_TASK must be `pilot_authorized` with `approved_sha` == HEAD and
       `approved_selection_sha256` == the selection manifest's sha256; the
       model/data runtime copies must pass their SHA256SUMS. CLI cannot relax
       budgets or override model/data dirs.
@@ -28,7 +33,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -199,7 +206,7 @@ class BudgetLedger:
             if pending:
                 raise ValueError(
                     f"ledger has unfinalized invocation(s) {pending}: previous run crashed or was killed; "
-                    "stop and report to Codex — no automatic resume with uncertain cost accounting"
+                    "stop and report to Codex - no automatic resume with uncertain cost accounting"
                 )
         else:
             data = {
@@ -276,10 +283,70 @@ class BudgetLedger:
 
 # ------------------------------------------------------- authorization (R3)
 
+EXPECTED_ORIGIN_URL = "https://cnb.cool/lzacode/CADRetrieval"
+ACTIVE_TASK_BLOB = "experiments/ACTIVE_TASK.md"
+AUTHORIZATION_REF = "origin/master"
+
+
+def normalize_remote_url(url: str) -> str:
+    u = url.strip().lower().rstrip("/")
+    if u.endswith(".git"):
+        u = u[: -len(".git")]
+    return u
+
+
+def fetch_authorized_active_task(repo_root: Path, expected_origin: str = EXPECTED_ORIGIN_URL, ref: str = AUTHORIZATION_REF) -> tuple[str | None, dict]:
+    """R3 (review addendum): read the authorization from the Codex-controlled
+    origin ref AFTER `git fetch`, never from the detached HEAD's working tree
+    (a commit cannot contain its own approved_sha; the working-tree file could
+    be stale or self-authored). Validates the origin remote URL first.
+
+    Returns (text, meta): text is None on refusal; meta carries audit fields
+    (origin url, ref sha, blob sha256, fetch rc) and problems."""
+    meta: dict = {"expected_origin": expected_origin, "ref": ref, "problems": []}
+    repo_root = Path(repo_root)
+
+    def git(*args: str, timeout: int = 120, text: bool = True) -> subprocess.CompletedProcess:
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        return subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=text, timeout=timeout, env=env)
+
+    try:
+        url = git("remote", "get-url", "origin").stdout.strip()
+    except Exception as e:  # noqa: BLE001
+        meta["problems"].append(f"cannot read origin remote url: {e}")
+        return None, meta
+    meta["origin_url"] = url
+    if normalize_remote_url(url) != normalize_remote_url(expected_origin):
+        meta["problems"].append(f"origin remote {url!r} != expected {expected_origin!r}")
+        return None, meta
+    try:
+        r = git("fetch", "origin", timeout=300)
+        meta["fetch_returncode"] = r.returncode
+        if r.returncode != 0:
+            meta["problems"].append(f"git fetch origin failed: {r.stderr.strip()[:300]}")
+            return None, meta
+    except Exception as e:  # noqa: BLE001
+        meta["problems"].append(f"git fetch origin error: {type(e).__name__}: {e}")
+        return None, meta
+    try:
+        meta["origin_ref_sha"] = git("rev-parse", ref).stdout.strip()
+        r = git("show", f"{ref}:{ACTIVE_TASK_BLOB}", text=False)
+        if r.returncode != 0:
+            meta["problems"].append(f"cannot read {ref}:{ACTIVE_TASK_BLOB}")
+            return None, meta
+        blob = r.stdout
+        meta["active_task_source"] = f"{ref}:{ACTIVE_TASK_BLOB} @ {meta['origin_ref_sha']}"
+        meta["active_task_blob_sha256"] = hashlib.sha256(blob).hexdigest()
+        return blob.decode("utf-8"), meta
+    except Exception as e:  # noqa: BLE001
+        meta["problems"].append(f"error reading authorized ACTIVE_TASK: {type(e).__name__}: {e}")
+        return None, meta
+
+
 def active_task_field(text: str, key: str) -> str | None:
     """Extract `key`: value from ACTIVE_TASK.md. Value is read up to the next
     backtick, full-width parenthesis, semicolon or line end (Codex format:
-    - `key`: `value`（annotation）)."""
+    - `key`: `value`(annotation))."""
     m = re.search(rf"^\s*-?\s*`{re.escape(key)}`:\s*(.+?)\s*$", text, re.MULTILINE)
     if not m:
         return None
@@ -291,11 +358,12 @@ def active_task_field(text: str, key: str) -> str | None:
 
 
 def check_authorization(active_task_text: str, git_sha: str, selection_sha256: str, task_id: str) -> list[str]:
-    """R3: hard authorization gate, evaluated BEFORE loading weights.
+    """R3: hard authorization gate on the (fetched origin/master) ACTIVE_TASK,
+    evaluated BEFORE loading weights.
 
-    Requires in ACTIVE_TASK.md: state == pilot_authorized, approved_sha ==
-    current HEAD, approved_selection_sha256 == the manifest's sha256 (Codex
-    pins the reviewed manifest when authorizing), task_id match."""
+    Requires: state == pilot_authorized, approved_sha == current HEAD,
+    approved_selection_sha256 == the manifest's sha256 (Codex pins the
+    reviewed manifest when authorizing), task_id match."""
     problems: list[str] = []
     state = active_task_field(active_task_text, "state")
     approved_sha = active_task_field(active_task_text, "approved_sha")
@@ -304,14 +372,14 @@ def check_authorization(active_task_text: str, git_sha: str, selection_sha256: s
     if at_task is not None and at_task != task_id:
         problems.append(f"ACTIVE_TASK task_id {at_task!r} != config {task_id!r}")
     if state != "pilot_authorized":
-        problems.append(f"ACTIVE_TASK state is {state!r}, not 'pilot_authorized' — NPU run NOT authorized")
+        problems.append(f"ACTIVE_TASK state is {state!r}, not 'pilot_authorized' - NPU run NOT authorized")
     if not approved_sha:
         problems.append("ACTIVE_TASK approved_sha missing")
     elif approved_sha != git_sha:
         problems.append(f"approved_sha {approved_sha} != current HEAD {git_sha}")
     if not approved_sel:
         problems.append(
-            "ACTIVE_TASK approved_selection_sha256 missing — Codex must pin the reviewed manifest SHA when authorizing"
+            "ACTIVE_TASK approved_selection_sha256 missing - Codex must pin the reviewed manifest SHA when authorizing"
         )
     elif approved_sel != selection_sha256:
         problems.append(f"approved_selection_sha256 {approved_sel} != selection file sha256 {selection_sha256}")

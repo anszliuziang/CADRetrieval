@@ -10,6 +10,7 @@ R4  budget clamping, out-of-checkout guard, unique invocation ids.
 """
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -24,7 +25,9 @@ from idea01.p1_runner import (  # noqa: E402
     check_authorization,
     effective_budgets,
     ensure_outside_checkout,
+    fetch_authorized_active_task,
     new_invocation_id,
+    normalize_remote_url,
     parse_pair_ids,
     plan_invocation,
     verify_existing_records,
@@ -319,6 +322,77 @@ class TestR3Authorization(unittest.TestCase):
         text = (REPO / "experiments" / "ACTIVE_TASK.md").read_text(encoding="utf-8")
         probs = check_authorization(text, "a" * 40, "b" * 64, "idea01_p1_conditional_sensitivity_20260925")
         self.assertTrue(any("pilot_authorized" in p for p in probs))
+
+
+class TestR3OriginAuthorization(unittest.TestCase):
+    """Authorization is read from origin/master after fetch (review addendum:
+    a commit cannot contain its own approved_sha, so the detached HEAD's
+    working-tree ACTIVE_TASK can never prove authorization)."""
+
+    def _git(self, cwd, *args):
+        r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, f"git {' '.join(args)}: {r.stderr}")
+        return r.stdout.strip()
+
+    def _make_remote(self):
+        """Two-commit 'Codex' repo: commit1 = code, commit2 = ACTIVE_TASK
+        authorizing commit1's sha. Returns (bare, work, code_sha)."""
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        src = Path(td.name) / "src"
+        src.mkdir()
+        self._git(src, "init", "-q")
+        self._git(src, "config", "user.email", "t@example.com")
+        self._git(src, "config", "user.name", "t")
+        (src / "code.txt").write_text("code v1", encoding="utf-8")
+        self._git(src, "add", ".")
+        self._git(src, "commit", "-qm", "code")
+        code_sha = self._git(src, "rev-parse", "HEAD")
+        (src / "experiments").mkdir()
+        (src / "experiments" / "ACTIVE_TASK.md").write_text(
+            AT_TMPL.format(
+                state="pilot_authorized",
+                sha_line="`" + code_sha + "`",
+                sel_line="`" + "b" * 64 + "`",
+            ),
+            encoding="utf-8",
+        )
+        self._git(src, "add", ".")
+        self._git(src, "commit", "-qm", "authorize")
+        bare = Path(td.name) / "remote.git"
+        self._git(src, "clone", "-q", "--bare", str(src), str(bare))
+        work = Path(td.name) / "work"
+        self._git(Path(td.name), "clone", "-q", str(bare), str(work))
+        # consumer runs the CODE commit detached, not the authorization commit
+        self._git(work, "checkout", "-q", "--detach", code_sha)
+        return bare, work, code_sha
+
+    def test_fetch_and_authorize_from_origin_master(self):
+        bare, work, code_sha = self._make_remote()
+        text, meta = fetch_authorized_active_task(work, expected_origin=str(bare))
+        self.assertEqual(meta["problems"], [])
+        self.assertIsNotNone(text)
+        self.assertIn("origin_ref_sha", meta)
+        self.assertNotEqual(meta["origin_ref_sha"], code_sha)  # authorization commit != code commit
+        probs = check_authorization(text, code_sha, "b" * 64, "idea01_p1_conditional_sensitivity_20260925")
+        self.assertEqual(probs, [])
+
+    def test_detached_head_alone_would_refuse(self):
+        # the code commit's OWN working tree has no ACTIVE_TASK at all; even if
+        # it had one, it could not name its own sha (self-reference)
+        _bare, work, code_sha = self._make_remote()
+        wt = work / "experiments" / "ACTIVE_TASK.md"
+        self.assertFalse(wt.exists(), "code commit predates the authorization commit")
+
+    def test_wrong_origin_refused(self):
+        bare, work, _ = self._make_remote()
+        text, meta = fetch_authorized_active_task(work, expected_origin="https://example.com/attacker")
+        self.assertIsNone(text)
+        self.assertTrue(any("expected" in p for p in meta["problems"]))
+
+    def test_normalize_url(self):
+        self.assertEqual(normalize_remote_url("https://h/a/b.git"), normalize_remote_url("https://h/a/b/"))
+        self.assertEqual(normalize_remote_url("HTTPS://H/A/B"), "https://h/a/b")
 
 
 class TestR3Sha256Sums(unittest.TestCase):

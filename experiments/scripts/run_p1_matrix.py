@@ -1,6 +1,7 @@
 #!/usr/bin/env python
-"""P1 scoring matrix runner (gate 2 ONLY — requires ACTIVE_TASK=pilot_authorized
-with approved_sha == HEAD and approved_selection_sha256 == manifest sha256).
+"""P1 scoring matrix runner (gate 2 ONLY — requires the Codex-controlled
+origin/master ACTIVE_TASK to be pilot_authorized with approved_sha == HEAD and
+approved_selection_sha256 == manifest sha256, re-fetched at every invocation).
 
 Codex review 2026-09-25 fixes:
   R1  Resume/cumulative budget: before weights load, existing pairs.jsonl
@@ -13,9 +14,12 @@ Codex review 2026-09-25 fixes:
       ledger entry (crash) refuses the next invocation. Staged plan:
       --pair-ids "0"  ->  --pair-ids "0-9" --resume  ->  --pair-ids "all" --resume
       yielding exactly 414 unique raw records.
-  R3  Pre-flight BEFORE weights: ACTIVE_TASK authorization (state/approved_sha/
-      approved_selection_sha256), model+data SHA256SUMS verified in Python.
-      --model-dir/--data-dir/--max-wallclock-s overrides REMOVED.
+  R3  Pre-flight BEFORE weights: authorization is read from
+      origin/master:experiments/ACTIVE_TASK.md after `git fetch` (NEVER from
+      the detached HEAD's working tree — a commit cannot contain its own
+      approved_sha); the origin remote URL is validated; model+data
+      SHA256SUMS verified in Python. --model-dir/--data-dir/--max-wallclock-s
+      overrides REMOVED.
   R4  out_dir must be outside the Git checkout; environment files are unique
       (timestamp+uuid); ANY exception after startup leaves a failure record
       and exits non-zero.
@@ -56,6 +60,7 @@ from idea01.p1_runner import (  # noqa: E402
     check_authorization,
     effective_budgets,
     ensure_outside_checkout,
+    fetch_authorized_active_task,
     new_invocation_id,
     parse_pair_ids,
     plan_invocation,
@@ -68,7 +73,6 @@ from idea01.scoring import ScoringError, build_scored_sequence, gather_response_
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_SPEC_REL = "experiments/configs/idea01_yunnan_share2_env.json"
 ENV_SPEC_PATH = REPO_ROOT / ENV_SPEC_REL
-ACTIVE_TASK_PATH = REPO_ROOT / "experiments" / "ACTIVE_TASK.md"
 
 
 def git_sha() -> str:
@@ -104,7 +108,7 @@ def spec_hashes() -> dict:
     }
 
 
-def write_environment(out_dir: Path, cfg: dict, argv: list[str], device: str, invocation_id: str, pair_ids: str, selection_sha256: str) -> Path:
+def write_environment(out_dir: Path, cfg: dict, argv: list[str], device: str, invocation_id: str, pair_ids: str, selection_sha256: str, authorization: dict | None = None) -> Path:
     env = {
         "invocation_id": invocation_id,
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -121,6 +125,7 @@ def write_environment(out_dir: Path, cfg: dict, argv: list[str], device: str, in
         "data_revision": cfg["data_revision"],
         "data_dir": cfg["data_dir"],
         "selection_sha256": selection_sha256,
+        "authorization": authorization or {},
         "requested_pair_ids": pair_ids,
         "command": " ".join(argv),
         "env_var_names": sorted(
@@ -200,10 +205,13 @@ def main() -> int:
 
     selection_path = Path(args.selection)
     sel_sha = file_sha256(selection_path)
-    write_environment(out_dir, cfg, sys.argv, device, invocation_id, args.pair_ids, sel_sha)
+    # R3 (review addendum): authorization comes from the fetched origin/master,
+    # never from the detached HEAD's working tree; validated + audited here.
+    at_text, at_meta = fetch_authorized_active_task(REPO_ROOT)
+    write_environment(out_dir, cfg, sys.argv, device, invocation_id, args.pair_ids, sel_sha, at_meta)
 
     try:
-        return _run(args, cfg, budgets, device, out_dir, invocation_id, sel_sha, selection_path, t_start, fail_early)
+        return _run(args, cfg, budgets, device, out_dir, invocation_id, sel_sha, selection_path, t_start, fail_early, at_text, at_meta)
     except Exception as e:  # noqa: BLE001  (R4: any failure leaves evidence + non-zero)
         rec = {
             "invocation_id": invocation_id,
@@ -219,7 +227,7 @@ def main() -> int:
         return EXIT_ANOMALY
 
 
-def _run(args, cfg, budgets, device, out_dir, invocation_id, sel_sha, selection_path, t_start, fail_early) -> int:
+def _run(args, cfg, budgets, device, out_dir, invocation_id, sel_sha, selection_path, t_start, fail_early, at_text, at_meta) -> int:
     selection = json.loads(selection_path.read_text(encoding="utf-8"))
     pairs = selection["pairs"]
     problems: list[str] = []
@@ -228,9 +236,11 @@ def _run(args, cfg, budgets, device, out_dir, invocation_id, sel_sha, selection_
     if len(pairs) > MAX_PAIRS:
         problems.append(f"pair plan has {len(pairs)} pairs, exceeds hard cap {MAX_PAIRS}")
 
-    # R3: authorization gate (ACTIVE_TASK must name this exact HEAD + manifest SHA)
-    at_text = ACTIVE_TASK_PATH.read_text(encoding="utf-8") if ACTIVE_TASK_PATH.exists() else ""
-    problems += check_authorization(at_text, git_sha(), sel_sha, cfg.get("task_id", ""))
+    # R3: authorization gate (fetched origin/master ACTIVE_TASK must name this
+    # exact HEAD + manifest SHA); fetch/remote problems are also fatal
+    problems += at_meta.get("problems", [])
+    if at_text is not None:
+        problems += check_authorization(at_text, git_sha(), sel_sha, cfg.get("task_id", ""))
 
     # R3: model/data runtime copies must pass their SHA256SUMS before weights load
     for label, d in (("model", Path(cfg["model_dir"])), ("data", Path(cfg["data_dir"]))):
