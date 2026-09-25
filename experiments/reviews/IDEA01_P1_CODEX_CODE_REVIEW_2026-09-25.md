@@ -40,3 +40,11 @@
 ## 复审门槛
 
 Kimi 在 `experiments/submissions/idea01_p1_conditional_sensitivity_20260925/IMPLEMENTATION.md` 追加修复记录：新完整代码 SHA、改动说明、反向测试命令/结果、全程预算与断点规则、远端拟运行命令。不要覆盖原始 CPU 清单；若必须重生，另存新路径并给出逐字段差异与 SHA。Codex 将复核代码、测试和清单后，再决定是否授权单卡的 1 对验证。任何 P1 NPU 前向仍须等待 `ACTIVE_TASK.md` 的明确授权。
+
+## 补正复审与阶段 1 授权（2026-09-25）
+
+Kimi 完整交接 SHA `52ad27f2da5070e3f4a3ab6d66a11f79bd514b3c`（评分代码最后修改在 `0a513a7...`）已由 Codex fast-forward 合入本地 `master` 并推送。Codex 本地复跑 `python -m pytest experiments/tests/ -q`：**126 passed**；服务器同提交的 CPU 测试也是 126 passed，CPU 选择复跑 414/414 通过，且未覆盖权威清单。未授权 `run_p1_matrix.py --pair-ids 0` 在服务器返回 **exit 2**，原因明确为 `review_required` 与缺少批准 SHA/清单 SHA，载入权重前停止；远端工作树干净。我用旧审核的篡改样例再次跑新版验证器，逐 token 和 `-2`、记录 sum `-1` 时正确返回 **exit 2**。新 runner 从 fetch 后的 `origin/master` 读取授权，解决了 detached HEAD 的自引用问题；累计算账、显式 resume、出错停点与 checkout 外输出均有反向测试。首版 R1–R4 的阻塞项已闭合到**可做 1 对真实评分**，尚不能据此直接扩到全矩阵。
+
+资产例外：910C `/data/data_dev` 的旧 `cp` 仍在 `D` 状态，不访问该挂载。Codex 于 2026-09-25 独立在 910C 本机运行副本执行 `sha256sum -c`：模型 **11/11**、数据 **6/6**；两份 `SHA256SUMS` 文件的 SHA256 与 `cvteam6` 所见共享 OBS 同名清单逐字节一致，完整值已写入 `ACTIVE_TASK.md`。P1 计划新增有限替代路径，要求 runner 在评分前复核运行副本，结果经本地归档到共享 OBS。Kimi 的 `BLOCKERS.md` 保留 910C OBS 未恢复的事实，不能宣称该挂载已核验。
+
+**裁决：只批准第 0 号配对 1 次 NPU 前向。** 运行 SHA 必须是 `52ad27f2da5070e3f4a3ab6d66a11f79bd514b3c`，选择清单 SHA 必须是 `c86fb56993af62f08079ff3f8f88af3f2d1ad33ac28cd2273ae0d7bb03028964`；全程下一阶段尚未授权。阶段 1 完成后由 Codex 对完整输入 ID、逐 token、有限值、环境绑定、显存、耗时和原始文件逐项审核。`--resume` 自动跳过旧配对的安全性仍须在继续到累计 10 对前结合真实原始文件审计；本批准不允许 Kimi自行运行该阶段。

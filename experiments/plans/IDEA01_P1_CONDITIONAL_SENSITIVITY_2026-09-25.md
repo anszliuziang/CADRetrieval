@@ -39,6 +39,10 @@ P0 在 20 个固定 UID 上发现正确描述相对错配/空描述的正边际�
 
 **第二门受限真实运行**：远端 `ssh yunnan-share2` 只 `git fetch`、`checkout --detach <approved_sha>`，确认 checkout 干净；对模型、数据的 910C OBS 与本机运行副本各自 `sha256sum -c SHA256SUMS`。先在新 SHA 上运行 1 对并审逐 token、有限值、HBM、耗时；再 10 对估算总时间；两门通过后才完成全部矩阵。单张 NPU，**最多 416 次前向、1 卡小时、45 分钟墙钟**，三者先到即停。不得在服务器源码树修改脚本或结果；缓存、日志、原始矩阵写 `/home/ma-user/work/CADRetrieval_runtime/runs/idea01_p1_20260925_r01/` 并复制到 OBS，本地镜像置于 Git 忽略的 `experiments/runs/`。
 
+**2026-09-25 资产核验替代路径（仅在 `/data/data_dev` 的 `fuse.obsfs` 挂载仍卡住期间适用）**：P0 补证复制 PID 2602998 已在该挂载的 `request_wait_answer` 处保持 `D` 状态近五小时，因此本阶段不在 910C OBS 上再发起读取、校验或写入。上述“910C OBS 与本机副本各自校验”的 910C OBS 一项由以下证据链替代：共享权威 OBS `/data/obs_data_liuza/CADRetrieval/` 上的模型与数据 `SHA256SUMS` 文件 SHA256 分别为 `98c1c44b9052218a79f48e2c5f7879b579031981048612c23304bfdc9fe2c785`、`f75a7a48c9c97fe6933f8b10dbe13e779da95fbeeab88bb1a612104a5f57fd34`；910C checkout 外运行副本中的两个清单与其逐字节哈希相同。2026-09-25 对运行副本已重新执行逐项校验，模型 **11/11**、数据 **6/6** 均通过；共享 OBS 资产此前按官方 pinned revision 逐文件核过，记录见 `experiments/assets/IDEA01_ASSET_STATUS.md`。正式评分前仍须由 runner 再验运行副本，并记录这两个清单哈希及结果。运行产物先写 checkout 外，随后取回本地、转存共享 OBS，并以不自引用的 SHA256 清单在本地和共享 OBS 逐项复核；910C OBS 归档留待挂载恢复。这个替代路径只修改存储核验，不改变模型、数据、选择清单、评分或预算。
+
+第二门按 **1 对 → 累计 10 对 → 全部 414 对**分三次审查，每阶段需要 `ACTIVE_TASK.md` 另行明确批准；`--resume` 只跳过已核实的已有配对，整个 run 的前向与墙钟预算累计。阶段 1 仅 `--pair-ids 0`，在 Codex 复核完整输入 ID、逐 token、有限值、环境、成本和 Git/清单绑定之前不得运行下一阶段。阶段 1 的小样本只能证明修复后代码可实际评分，不能得出排序结论。
+
 任何哈希失败、输入边界错位、非有限分数、OOM、超长计划配对、实际 pair 超预算、重复/污染源映射、远端 Git 变脏都记录该失败并停止，退出非零；不能以跳过失败样本后只报成功集替代。保留每对完整 input IDs、目标位置/ID/logprob、sum/mean/EOS、query/candidate UID（簿记）、Git SHA、模型/数据 revision 与完整路径、环境双哈希、精度、设备、耗时和失败原因；环境按调用分文件。汇总表必须从原始逐对文件复算。
 
 ## 5. 裁决与下一步
