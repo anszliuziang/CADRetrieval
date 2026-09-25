@@ -48,3 +48,11 @@ Kimi 完整交接 SHA `52ad27f2da5070e3f4a3ab6d66a11f79bd514b3c`（评分代码�
 资产例外：910C `/data/data_dev` 的旧 `cp` 仍在 `D` 状态，不访问该挂载。Codex 于 2026-09-25 独立在 910C 本机运行副本执行 `sha256sum -c`：模型 **11/11**、数据 **6/6**；两份 `SHA256SUMS` 文件的 SHA256 与 `cvteam6` 所见共享 OBS 同名清单逐字节一致，完整值已写入 `ACTIVE_TASK.md`。P1 计划新增有限替代路径，要求 runner 在评分前复核运行副本，结果经本地归档到共享 OBS。Kimi 的 `BLOCKERS.md` 保留 910C OBS 未恢复的事实，不能宣称该挂载已核验。
 
 **裁决：只批准第 0 号配对 1 次 NPU 前向。** 运行 SHA 必须是 `52ad27f2da5070e3f4a3ab6d66a11f79bd514b3c`，选择清单 SHA 必须是 `c86fb56993af62f08079ff3f8f88af3f2d1ad33ac28cd2273ae0d7bb03028964`；全程下一阶段尚未授权。阶段 1 完成后由 Codex 对完整输入 ID、逐 token、有限值、环境绑定、显存、耗时和原始文件逐项审核。`--resume` 自动跳过旧配对的安全性仍须在继续到累计 10 对前结合真实原始文件审计；本批准不允许 Kimi自行运行该阶段。
+
+## 阶段 1 原始结果复审与阶段 2 授权（2026-09-25）
+
+Kimi 仅用批准代码 SHA `52ad27f2da5070e3f4a3ab6d66a11f79bd514b3c`、批准选择清单 SHA `c86fb56993af62f08079ff3f8f88af3f2d1ad33ac28cd2273ae0d7bb03028964` 执行 `--pair-ids 0`。环境文件记录的授权来源是 `origin/master` 的 `a3de6f0c163d7aa72c88df5049c8c042fc9bd212`，状态及两项 SHA 均匹配；环境 spec 双哈希与 P0 一致。runner 在载入权重前校验本机模型 **11/11**、数据 **6/6**。原始 `pairs.jsonl` 仅 1 行，`budget_ledger.json` 仅 1 次成功且已收尾的前向，累计 **36.81 秒 / 0.0102 卡小时**；服务器 Git 工作树干净。
+
+Codex 独立用 pinned validation 原文与本地 checkpoint 的 slow tokenizer 重建 `q00_0_self`：完整输入 **361 token**，前缀 **140**、目标 **221**；原始记录的全部 `input_ids` 与重建结果相同，221 条 token 的位置连续、`pred_row=position-1`、ID 逐条匹配输入、末位 EOS；逐 token logprob 求和与 `sum_logprob=-40.3757508507636` 一致，mean、EOS 与有限值均通过。单对前向 **0.868 秒**、峰值 NPU 分配 **6,640,821,248 字节**。原始 5 文件的本地镜像与服务器 SHA256 全同；Codex 另将这 5 文件加不自引用清单归档到共享 OBS `/data/obs_data_liuza/CADRetrieval/runs/idea01_p1_20260925_r01/stage1_snapshot/`，在 `cvteam6` 挂载上 `sha256sum -c` **5/5 通过**。未接触故障中的 `/data/data_dev`。
+
+EOS logprob 为 `-21.3638`，约占该对总负 logprob 的 **52.9%**，后续须作为诊断单列；**这一对不能支持任何排序或语义结论**。阶段 1 的评分、证据与成本门通过。现仅授权同一 run 目录执行 `--pair-ids "0-9" --resume`，应跳过第 0 对，新增 **9** 次前向、累计 **10** 条唯一原始记录；`--resume` 后原始第 0 对文件必须字节不变，累计台账及新环境均需审计。`all` 与任何排名分析尚未授权。
