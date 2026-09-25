@@ -56,3 +56,11 @@ Kimi 仅用批准代码 SHA `52ad27f2da5070e3f4a3ab6d66a11f79bd514b3c`、批准�
 Codex 独立用 pinned validation 原文与本地 checkpoint 的 slow tokenizer 重建 `q00_0_self`：完整输入 **361 token**，前缀 **140**、目标 **221**；原始记录的全部 `input_ids` 与重建结果相同，221 条 token 的位置连续、`pred_row=position-1`、ID 逐条匹配输入、末位 EOS；逐 token logprob 求和与 `sum_logprob=-40.3757508507636` 一致，mean、EOS 与有限值均通过。单对前向 **0.868 秒**、峰值 NPU 分配 **6,640,821,248 字节**。原始 5 文件的本地镜像与服务器 SHA256 全同；Codex 另将这 5 文件加不自引用清单归档到共享 OBS `/data/obs_data_liuza/CADRetrieval/runs/idea01_p1_20260925_r01/stage1_snapshot/`，在 `cvteam6` 挂载上 `sha256sum -c` **5/5 通过**。未接触故障中的 `/data/data_dev`。
 
 EOS logprob 为 `-21.3638`，约占该对总负 logprob 的 **52.9%**，后续须作为诊断单列；**这一对不能支持任何排序或语义结论**。阶段 1 的评分、证据与成本门通过。现仅授权同一 run 目录执行 `--pair-ids "0-9" --resume`，应跳过第 0 对，新增 **9** 次前向、累计 **10** 条唯一原始记录；`--resume` 后原始第 0 对文件必须字节不变，累计台账及新环境均需审计。`all` 与任何排名分析尚未授权。
+
+## 阶段 2 原始结果复审与阶段 3 授权（2026-09-25）
+
+Kimi 的阶段 2 交接 `8be3985...` 只追加 `RESULTS.md`，经 Codex cherry-pick 到本地 master 为 `a793ea0...`。我对照远端运行目录与报告：代码 checkout 仍为获批 `52ad27f2da5070e3f4a3ab6d66a11f79bd514b3c`，`git status --porcelain` 为空；第二次 environment 的授权源是 `origin/master@db0f9446a6f29c39f05729a9a07fa7b2fa1c3c30`，fetch 返回 0、problems 空，模型/数据清单逐项通过 **11/11、6/6**。`pairs.jsonl` 恰含清单前 10 个不同 pair ID，全部 `ok` 且有限；console 明确跳过 `q00_0_self`，只做 **9** 次新前向。台账有两次 finalized/exit 0 调用，分别为 1 与 9 次前向，累计 **10 次、75.42 秒、0.0209 卡小时**；阶段 1 的 `tokens/q00_0_self.jsonl` SHA256 仍为 `d3abdb18...`。
+
+Codex 将远端 16 个原始文件取回到 Git 忽略的审计副本，逐文件 SHA256 与服务器一致，包含阶段 1/2 的环境、日志、台账、`pairs.jsonl` 和 10 个 token 文件。我独立用 pinned validation JSONL 原文与 pinned checkpoint 的 **slow tokenizer** 重建这 10 对的完整输入 ID：10/10 相同；逐 token 目标位置连续、`pred_row=position-1`、token ID 等于对应 input ID、末位 EOS，sum/mean/EOS 与原始记录一致，均有限。选择清单 SHA256 仍为 `c86fb56993af62f08079ff3f8f88af3f2d1ad33ac28cd2273ae0d7bb03028964`，环境 spec 双哈希未漂移。阶段 2 快照已归档到共享 OBS `/data/obs_data_liuza/CADRetrieval/runs/idea01_p1_20260925_r01/codex_p1_stage2_snapshot/`，不自引用清单在 `cvteam6` 上 **16/16** 通过；未触及卡住的 `/data/data_dev`。
+
+**裁决：阶段 2 通过，现仅授权阶段 3 的 `--pair-ids "all" --resume`。** 同一 run 目录应跳过已有 10 对，新增最多 404 次前向，累计恰 414 条唯一记录；代码/选择/模型/数据、单卡 BF16 与原计划固定不变，全程受 416 次前向、45 分钟、1 卡小时三个硬上限约束，本次外层 `timeout 1200`。在跑完后，先要求完整逐 token 验证器通过，才可计算 P1 预注册的敏感性、exact-UID 配对 sanity 与基线，并回填原始证据。若失败或超限，停下报错，不能只分析成功子集。**阶段 2 的 10 对不足以支持可靠排序，更不能构成语义检索结果。**
