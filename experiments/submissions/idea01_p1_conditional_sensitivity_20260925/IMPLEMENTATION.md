@@ -98,5 +98,70 @@ python experiments/scripts/run_p1_analysis.py --pairs .../runs/idea01_p1_2026092
 
 - 本门不含任何模型分数；P1 一切排名结论在第二门后才存在，且全部为 **exact-UID 配对 sanity**，不是独立语义检索 R@K。UID ≠ 设计家族；近重复/几何等价未闭合前不启动 P2/P3。
 - `run_p1_matrix.py`、`run_p1_analysis.py`、`verify_p1_run.py` 已交付并单测/合成端到端验证，但**未在真实模型/真实分数上运行**；第二门须在新审核 SHA 上先做 1 对/10 对受限验证。
-- 无 BLOCKERS（本门未受阻；`BLOCKERS.md` 不需要）。
+- 无 BLOCKERS（首版交付时未受阻；补正阶段新增 R3 相关 OBS 阻塞，见文末补正记录与 `BLOCKERS.md` B1）。
 - 本地为跑 tokenizer 彩排新装了 `transformers==4.53.1`（tokenizer-only，与服务器版本一致；不进入仓库依赖声明，仅本地工具）。
+
+---
+
+# 补正记录（2026-09-25，响应 Codex 代码审核 R1–R4 及追加阻塞项）
+
+状态：**review_required**（补正后复审）。上文 §1–§8 保留为首版交付原貌；本节及以后的命令/规则**取代** §5 的第二门准备命令。
+
+- **补正代码 SHA（已推送 origin，服务器已检出做 CPU 复核）**：`0a513a7810604b7e1e5c62acda10bdef78db2072`（分支 `worktree-idea01-p1-impl`；含 R1–R4 修复 `c55b71c`、origin/master 授权修复 `ccab7b5`、顺序与解析修复本提交；并已合入 origin/master `f54af46` 的审核补充说明）。
+- 选择逻辑（`p1_selection.py`、`run_p1_selection.py`）**零改动**；权威 CPU 清单 `p1_selection.json` sha256 `c86fb56993af62f08079ff3f8f88af3f2d1ad33ac28cd2273ae0d7bb03028964` 未被覆盖，仍是待评清单（审核要求不覆盖原件；补正 SHA 的复跑见下方证据，写在新路径）。
+
+## R1（分阶段重复评分/预算重置）— 已修复
+
+- `run_p1_matrix.py` 在**载入权重前**核验已有 `pairs.jsonl`：pair_id 唯一、status ok 且有限、selection/git/model/data/dtype/双环境哈希逐字段一致（`verify_existing_records`）；任何重复、失败或混版记录直接拒绝（非零）。
+- 续跑必须显式 `--resume`：跳过已验证完成的配对并逐条打印（非静默）；不带 `--resume` 且目录已有记录即拒绝。
+- 新增 `budget_ledger.json`（输出目录内）：逐次调用登记，累计前向数与墙钟；三项全程上限（**416 前向 / 2700 s / 1 卡时**，配置只能收紧不能放宽，CLI 已删 `--max-wallclock-s`）跨全部调用统一约束，触顶即非零（`EXIT_BUDGET=3`）；台账有未收尾调用（崩溃）即拒绝继续并提示报告 Codex，不自动续跑。
+- 阶段方案固定为 **1 → 新增 9 → 剩余 404**：`--pair-ids "0"`（新目录）→ `--pair-ids "0-9" --resume`（新 9 对）→ `--pair-ids "all" --resume`（新 404 对）；结束后恰好 **414 条唯一原始记录**，累计前向 414 ≤ 416。
+
+## R2（验证器放过篡改分数）— 已修复
+
+- 新模块 `experiments/src/idea01/p1_verify.py`：逐对核对 token 和与记录 sum（相对容差 1e-6）、mean==sum/n、eos_logprob==末 token logprob、目标位置恰为 `n_prefix..n_prefix+n_target-1` 连续、`pred_row==position-1`、`token_id==input_ids[position]`、`input_ids` 长度一致且末位为 EOS；缺 token 文件、空列表、`all_finite` 为假、status 非 ok、重复/缺失/多余 pair 全部计入失败并非零退出。
+- `verify_p1_run.py` 重写调用该模块；`run_p1_analysis.py` **先验证后分析**，验证不过即非零拒绝（分析不再接受未验证或成功子集记录）。
+- **反向复现**：审核构造的篡改例（逐 token 和 -2 vs 记录 sum -1）旧脚本 exit 0；新脚本 **exit 2** 并打印 `FAIL: p000: token-sum -2.0 != record sum_logprob -1.0`（脚本级复现，命令与输出留存于测试记录，见 §证据）。
+
+## R3（授权与资产/清单绑定）— 已修复（含追加阻塞项）
+
+- 载入权重前强制前置校验（任一不符即非零停止，不只记录）：
+  1. **授权来源（追加阻塞项修复）**：校验 `origin` URL 为预期远端 `https://cnb.cool/lzacode/CADRetrieval` → `git fetch origin`（`GIT_TERMINAL_PROMPT=0`）→ 读 **`origin/master:experiments/ACTIVE_TASK.md`**（**不再读 detached HEAD 工作树**——提交不可能包含自身 approved_sha）。要求 `state=pilot_authorized`、`approved_sha == 当前 HEAD`、`approved_selection_sha256 == 清单 sha256`、`task_id` 匹配；授权来源（ref、origin/master SHA、blob sha256、fetch 返回码）写入 environment 文件备审。
+  2. **资产核验**：模型与数据运行副本逐文件 Python 版 `sha256sum -c SHA256SUMS`（授权通过后才做，避免无谓哈希 8 GB）。
+  3. 已删除 `--model-dir`/`--data-dir` 覆盖；清单自报 `n_gate_fail!=0` 或配对 >416 即拒绝。
+- **给 Codex 的授权格式约定**：授权提交在 master 的 `ACTIVE_TASK.md` 写入 `` `state`: `pilot_authorized` ``、`` `approved_sha`: `<已审核代码完整SHA>` ``、`` `approved_selection_sha256`: `c86fb56993af62f08079ff3f8f88af3f2d1ad33ac28cd2273ae0d7bb03028964` ``；runner 每次调用重新 fetch 校验。
+- **OBS 阻塞**：910C `/data/data_dev` 挂载仍有 D 状态进程（PID 2602998，2026-09-25 只读 `ps` 复核仍在）；按指示未在该挂载启动任何新校验进程，**910C OBS 补证副本仍记为未核验**。详见同目录 **`BLOCKERS.md`（B1）**；等待挂载恢复或 Codex 修订资产核验路径。
+
+## R4（失败证据与输出路径）— 已修复
+
+- 环境文件名 = 时间戳+uuid8（`environment_<id>.json` 不再可能覆盖）；`--out-dir` 必须先通过"在 Git checkout 外"检查，否则在写任何文件前非零退出。
+- 模型加载/数据读取等全部纳入全局异常处理：任何异常写 `run_failure_<id>.json`（含 traceback）并非零退出；前置校验失败写 `preflight_failure_<id>.json`；台账在 `finally` 中收尾，异常也按非零记账。
+
+## 补正后的测试与服务器 CPU 证据
+
+- 本地 Windows `python -m pytest experiments/tests/ -q` → **126 passed**（89 → 126；新增含：1→9→404 三次调用台账模拟恰好 414 唯一记录且累计 414≤416、篡改/混版/崩溃台账拒绝、R2 全部篡改路径、fabricated bare-remote 两段式授权往返、错误远端拒绝、SHA256SUMS 核验、预算钳制、checkout 外守卫）。
+- 脚本级负例（本地）：篡改分验证器 exit 2（原为 0）；`run_p1_matrix.py` 在脏树 exit 2；干净树 + 真实 `git fetch origin` 后因 `review_required` **exit 2 且未载入权重**。
+- 服务器 `yunnan-share2`（checkout `--detach 0a513a7`，全程 checkout 外输出，运行后 `git status --porcelain` 为空）：
+  1. `python -m pytest experiments/tests/ -q -p no:cacheprovider` → **126 passed**（CPU，3.5 s）。
+  2. 选择复跑到**新路径** `.../plans/idea01_p1_20260925/recheck_0a513a7/`（权威清单未触碰）：4,949/5,513、414/414 门过；复跑清单与权威清单**语义逐字段一致**（仅时间戳/路径/耗时等易变字段不同）。
+  3. `run_p1_matrix.py --pair-ids "0"` 负例：**在哈希资产之前**因 `review_required` 拒绝，**exit 2**，`preflight_failure` 证据写在 checkout 外，未载入权重。
+
+## 补正后的第二门拟定命令（取代 §5；仍须 Codex 授权，当前未授权）
+
+```bash
+cd /home/ma-user/work/CADRetrieval && git status --porcelain        # 必须为空
+GIT_TERMINAL_PROMPT=0 git fetch origin
+git checkout --detach <Codex 审核完整 SHA> && git rev-parse HEAD     # 与批准 SHA 一致
+# origin/master 的 ACTIVE_TASK 须已为 pilot_authorized 且 approved_sha/approved_selection_sha256 匹配（runner 会再 fetch 校验）
+RUN=/home/ma-user/work/CADRetrieval_runtime/runs/idea01_p1_20260925_r01
+SEL=/home/ma-user/work/CADRetrieval_runtime/plans/idea01_p1_20260925/p1_selection.json
+CFG=experiments/configs/idea01_p1_conditional_sensitivity_20260925.json
+python experiments/scripts/run_p1_matrix.py --config $CFG --selection $SEL --out-dir $RUN --pair-ids "0"
+python experiments/scripts/run_p1_matrix.py --config $CFG --selection $SEL --out-dir $RUN --pair-ids "0-9" --resume   # 新增 9 对，估时
+python experiments/scripts/run_p1_matrix.py --config $CFG --selection $SEL --out-dir $RUN --pair-ids "all" --resume   # 剩余 404 对；累计恰 414
+python experiments/scripts/verify_p1_run.py --run-dir $RUN --selection $SEL                                           # 必须先通过
+python experiments/scripts/run_p1_analysis.py --pairs $RUN/pairs.jsonl --selection $SEL --data-dir <数据副本> --out-dir $RUN/analysis
+```
+
+任何一步非零即停并保留证据；台账未收尾（崩溃）不自动续跑，报告 Codex。
+
