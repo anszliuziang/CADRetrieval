@@ -237,10 +237,13 @@ def _run(args, cfg, budgets, device, out_dir, invocation_id, sel_sha, selection_
         problems.append(f"pair plan has {len(pairs)} pairs, exceeds hard cap {MAX_PAIRS}")
 
     # R3: authorization gate (fetched origin/master ACTIVE_TASK must name this
-    # exact HEAD + manifest SHA); fetch/remote problems are also fatal
+    # exact HEAD + manifest SHA); fetch/remote problems are also fatal.
+    # Decisive and cheap: evaluated BEFORE hashing gigabytes of assets.
     problems += at_meta.get("problems", [])
     if at_text is not None:
         problems += check_authorization(at_text, git_sha(), sel_sha, cfg.get("task_id", ""))
+    if problems:
+        return fail_early(problems, "preflight_failure")
 
     # R3: model/data runtime copies must pass their SHA256SUMS before weights load
     for label, d in (("model", Path(cfg["model_dir"])), ("data", Path(cfg["data_dir"]))):

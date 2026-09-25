@@ -353,7 +353,7 @@ def active_task_field(text: str, key: str) -> str | None:
     val = m.group(1).strip()
     if val.startswith("`"):
         val = val[1:]
-    val = re.split(r"[`<；（]", val)[0].strip()
+    val = re.split(r"[`<；（；]", val)[0].strip()
     return val or None
 
 
