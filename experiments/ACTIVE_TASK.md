@@ -1,19 +1,19 @@
-# 当前实验任务
+# 当前实验任务：Text2CAD 检索基准 M0/M1 实现
 
-- `state`: `reviewed`（P1 三阶段评分、固定分析与 Codex 原始证据复审已完成；**当前没有任何新 NPU 评分授权**）
-- `task_id`: `idea01_p1_conditional_sensitivity_20260925`
-- `plan`: `experiments/plans/IDEA01_P1_CONDITIONAL_SENSITIVITY_2026-09-25.md`
-- `parent_plan`: `experiments/plans/IDEA01_PREFLIGHT_AND_PILOT_2026-09-24.md`
-- `prior_review`: `experiments/reviews/IDEA01_P0_CODEX_REVIEW_2026-09-25.md`；P0 原始执行 SHA `4e19259fd7f05cdddbb95ab11ea36a723a46d2aa`，补正 SHA `660e4228b338430bc1899f5e5bfe1069adcfd5e7`
-- `approved_sha`: `52ad27f2da5070e3f4a3ab6d66a11f79bd514b3c`（**历史执行代码 SHA，当前授权已关闭**；Codex 复核见 `experiments/reviews/IDEA01_P1_CODEX_CODE_REVIEW_2026-09-25.md`）
-- `approved_selection_sha256`: `c86fb56993af62f08079ff3f8f88af3f2d1ad33ac28cd2273ae0d7bb03028964`（服务器 checkout 外权威 CPU 选择清单；32×8、414 对）
-- `approved_asset_manifests`: 模型 `SHA256SUMS` 文件 SHA256 `98c1c44b9052218a79f48e2c5f7879b579031981048612c23304bfdc9fe2c785`；数据 `SHA256SUMS` 文件 SHA256 `f75a7a48c9c97fe6933f8b10dbe13e779da95fbeeab88bb1a612104a5f57fd34`；两份与共享 OBS 相同，评分前重验运行副本 11/11、6/6
-- `server`: `ssh yunnan-share2`，Git checkout `/home/ma-user/work/CADRetrieval`；**仅可只读审计既有 run，禁止新评分或重评分**
-- `gpu_budget`: **当前新增预算 0**；历史三个阶段实际累计 414 次前向、217.19 秒、0.0603 卡小时，原硬上限为 416 次、45 分钟、1 卡小时
-- `max_scored_pairs`: **既有 414 条唯一记录，当前不得新增**
-- `model`: `ricemonster/qwen2.5-3B-SFT@aaa2cd16993bc67067b4c198a910d99cf2b7affe`，历史评分精度 BF16
-- `data`: `ricemonster/IEEE-T-ASE@4091ce30ad85b774a9231484f9b40372dc0451d3`，仅 validation 与既有 P0 审计清单
-- `allowed_remote_writes`: 无新增；远端只读审计 checkout 外既有 `/home/ma-user/work/CADRetrieval_runtime/runs/idea01_p1_20260925_r01/`，服务器源码树保持干净。`/data/data_dev` 挂载卡住期间不得访问；原始产物已按替代路径取回并归档共享 OBS
-- `handoff`: Kimi 的原始回填在 `experiments/submissions/idea01_p1_conditional_sensitivity_20260925/RESULTS.md`；Codex 原始结果、统计及解释复审在 `experiments/reviews/IDEA01_P1_CODEX_RESULT_REVIEW_2026-09-25.md`。原始镜像在本地 Git 忽略的 `.claude/worktrees/idea01-p1-impl/experiments/runs/idea01_p1_20260925_r01/` 与共享 OBS `stage3_full_mirror/`；事后同分敏感性分析单独归档为 `codex_p1_tie_review/`
+- `state`: `implementation`（仅 CPU 数据/权重/协议审计与本地评分器实现；**新增 GPU/NPU 评分预算为 0**）
+- `task_id`: `idea01_text2cad_benchmark_20260928`
+- `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
+- `prior_task`: `idea01_p1_conditional_sensitivity_20260925` 已 `reviewed`，见 `experiments/reviews/IDEA01_P1_CODEX_RESULT_REVIEW_2026-09-25.md`；历史 P1 批准 SHA 已失效
+- `phase`: M0 数据/模型准入 + M1 **本地**原生评分器代码、CPU 小例和测试；M2/M3 暂未激活
+- `approved_sha`: 无；须 Kimi 提交实现和证据后由 Codex 审码并填写完整 SHA
+- `gpu_budget`: 0 卡小时；`max_scored_pairs`: 0；不得启动任何新的模型前向评分、NPU/CUDA 烟测、正式检索或长作业
+- `data`: `SadilKhan/Text2CAD` 官方 v1.0 pinned revision `422d4c93198c3cd98d5c2092c0ab214b3a76a68d`；本地忽略目录 `.cache/text2cad_official/` 中选择性下载必要文件；只读使用既有 `ricemonster/IEEE-T-ASE` pinned revision `4091ce30ad85b774a9231484f9b40372dc0451d3` 与 P0 UID 清单做交叉审计
+- `models`: 官方 Text2CAD v1.0 权重、CADmium-3B、已审 Text-to-CadQuery Qwen2.5-3B-SFT；HoLa/STEP-LLM 仅做静态可行性审计，不下载大权重
+- `allowed_network`: 官方仓库及固定 revision 的只读资产元信息、小型索引/源码；大权重与数据本体由 Codex 当前选择性准备并核验。不要下载图像/深度图全库或其它大模型
+- `server`: 暂无新远端代码运行；已有 `ssh yunnan-share2` / `ssh cvteam14` 仅可只读资源/OBS 核验，远端 checkout 不编辑
+- `required_output`: `experiments/submissions/idea01_text2cad_benchmark_20260928/IMPLEMENTATION.md`、数据 UID/覆盖/泄漏审计、固定 query/gallery/qrels 草案、三种表示的评分定义与代码/CPU 测试、模型训练集与许可证据、10 对吞吐测试设计及预算推导；写明 `review_required` 后停止
+- `stop_conditions`: 官方资产 hash/UID 不一致、不可确认训练集、不可靠目标表示或 prompt、截断、qrels 进入评分器、许可不明、远端 Git 变脏；记录阻塞，不能改 benchmark 口径绕过
 
-P1 的 414 对评分、固定分析及 Codex 复审已完成。历史 `approved_sha` 和选择清单仅供溯源，`reviewed` 状态使 runner 不得再评分。P1 的通过范围只限固定验证集上的条件敏感性与 exact-UID 配对 sanity；独立语义 qrels、几何等价及设计家族泄漏尚未闭合。**不得启动 P2/P3；下一轮必须有新的计划、代码审查、完整批准 SHA 与 `pilot_authorized`。**
+本轮特别核验：Codex 根据 P0 UID 清单只读计算到 Text-to-CadQuery 的 99,236 训练 UID 与官方 Text2CAD v1.0 test 交叉 **4,581**。Kimi 须独立复算；该 Qwen 权重不得在 8,046 项官方 test 上声称 held-out 检索成绩。它可以在预先确定的无交叉子集或其原生 held-out test 上参加另名协议，不能直接对照 IMMA 的 9.71%。
+
+所有项目源码/计划/配置只在本地编辑、提交并推送 Git；服务器只检出审核 SHA 运行。`CLAUDE.md` 的模型输入隔离、资产清单、OBS、结果回填和代码审查规则继续有效。当前用户已授权长作业自动监控，但只有 M0/M1 审核通过、另行写入具体 pilot 预算和完整 SHA 后才可启动。
