@@ -10,7 +10,7 @@
 
 ## 2. 评测协议，先于跑分冻结
 
-**A. Text2CAD-v1.0 官方 test 协议**。固定 `SadilKhan/Text2CAD@422d4c93198c3cd98d5c2092c0ab214b3a76a68d` 的 `text2cad_v1.0/train_test_val.json`：159,049 train、8,925 validation、8,046 test UID。以官方 v1.0 CSV 的 L0 `abstract` 作主查询，**只去掉文本首尾空白（`str.strip()`），不改大小写、不合并内部空白**；每个唯一 test UID 的 CAD 作图库候选，配对 UID 为登记正例。query 清单必须包含供评分器读取的实际文本与不指向正例的 query ID，配对 CAD UID 仅放 qrels；gallery 清单不得含配对文本或由配对文本导出的标记。评分器不得读取 UID 映射、原始 CSV 或 qrels。Codex 只读核查：8,046 个 test CAD 在 `cad_seq.zip` 与 v1.0 minimal JSON ZIP 均有源文件；CSV 只覆盖 7,946 个 test UID，其中 12 个 L0 为空。因此主协议暂定**完整 8,046 CAD 图库、7,934 个非空 L0 查询**，以正式清单独立复核为准。缺失查询不能伪造成检索失败；缺失可评分 CAD 则须保留在图库覆盖报告与不可评分账本中，不能静默缩小图库。L1–L3 仅作事前指定的文本具体度分层。
+**A. Text2CAD-v1.0 官方 test 协议**。固定 `SadilKhan/Text2CAD@422d4c93198c3cd98d5c2092c0ab214b3a76a68d` 的 `text2cad_v1.0/train_test_val.json`：159,049 train、8,925 validation、8,046 test UID。以官方 v1.0 CSV 的 L0 `abstract` 作主查询，**只去掉文本首尾空白（`str.strip()`），不改大小写、不合并内部空白**；每个唯一 test UID 的 CAD 作图库候选，配对 UID 为登记正例。query 清单必须包含供评分器读取的实际文本与不指向正例的 query ID，配对 CAD UID 仅放 qrels；gallery 清单不得含配对文本或由配对文本导出的标记。重复组大小等评价分层信息只放 audit，不交评分器。评分器不得读取 UID 映射、原始 CSV、audit 或 qrels。Codex 只读核查：8,046 个 test CAD 在 `cad_seq.zip` 与 v1.0 minimal JSON ZIP 均有源文件；CSV 只覆盖 7,946 个 test UID，其中 12 个 L0 为空。因此主协议暂定**完整 8,046 CAD 图库、7,934 个非空 L0 查询**，以正式清单独立复核为准。缺失查询不能伪造成检索失败；缺失可评分 CAD 则须保留在图库覆盖报告与不可评分账本中，不能静默缩小图库。L1–L3 仅作事前指定的文本具体度分层。
 
 **B. IMMA 已发表协议**。IMMA 从 DeepCAD 同源对象剔除不能转点云者，报告 8,023 个 test 样本，只用 Text2CAD L0；主表 R@1 9.71%、R@5 25.54%、R@10 36.05%。若拿不到作者最终 UID、图库和查询清单，或不能完全复现其过滤规则，A 的成绩只能标为 Text2CAD-v1.0 衍生检索成绩，**不与 IMMA 数字直接并表**。若将来重建 B，须额外存 8,046→8,023 的全部剔除 UID 与理由、点云生成设置及 test gallery 证据。论文：[IMMA](https://arxiv.org/html/2605.05572)。
 
