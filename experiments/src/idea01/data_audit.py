@@ -19,7 +19,14 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-csv.field_size_limit(sys.maxsize)
+_csv_field_limit = sys.maxsize
+while True:
+    try:
+        csv.field_size_limit(_csv_field_limit)
+        break
+    except OverflowError:
+        # Windows passes a 32-bit C long to csv even with 64-bit Python.
+        _csv_field_limit //= 10
 
 CSV_INTERMEDIATE_COL = "intermediate"
 CSV_UID_COL = "uid"
