@@ -10,13 +10,13 @@
 
 ## 2. 评测协议，先于跑分冻结
 
-**A. Text2CAD-v1.0 官方 test 协议**。固定 `SadilKhan/Text2CAD@422d4c93198c3cd98d5c2092c0ab214b3a76a68d` 的 `text2cad_v1.0/train_test_val.json`：159,049 train、8,925 validation、8,046 test UID。以官方 v1.0 CSV 的 L0 `abstract` 作主查询；每个唯一 test UID 的 CAD 作图库候选，配对 UID 为登记正例。不得在评分函数输入里放配对 caption、UID、路径或 qrels。Codex 只读核查：8,046 个 test CAD 在 `cad_seq.zip` 与 v1.0 minimal JSON ZIP 均有源文件；CSV 只覆盖 7,946 个 test UID，其中 12 个 L0 为空。因此主协议暂定**完整 8,046 CAD 图库、7,934 个非空 L0 查询**，以正式清单独立复核为准。缺失查询不能伪造成检索失败；缺失可评分 CAD 则须保留在图库覆盖报告与不可评分账本中，不能静默缩小图库。L1–L3 仅作事前指定的文本具体度分层。
+**A. Text2CAD-v1.0 官方 test 协议**。固定 `SadilKhan/Text2CAD@422d4c93198c3cd98d5c2092c0ab214b3a76a68d` 的 `text2cad_v1.0/train_test_val.json`：159,049 train、8,925 validation、8,046 test UID。以官方 v1.0 CSV 的 L0 `abstract` 作主查询，**只去掉文本首尾空白（`str.strip()`），不改大小写、不合并内部空白**；每个唯一 test UID 的 CAD 作图库候选，配对 UID 为登记正例。query 清单必须包含供评分器读取的实际文本与不指向正例的 query ID，配对 CAD UID 仅放 qrels；gallery 清单不得含配对文本或由配对文本导出的标记。评分器不得读取 UID 映射、原始 CSV 或 qrels。Codex 只读核查：8,046 个 test CAD 在 `cad_seq.zip` 与 v1.0 minimal JSON ZIP 均有源文件；CSV 只覆盖 7,946 个 test UID，其中 12 个 L0 为空。因此主协议暂定**完整 8,046 CAD 图库、7,934 个非空 L0 查询**，以正式清单独立复核为准。缺失查询不能伪造成检索失败；缺失可评分 CAD 则须保留在图库覆盖报告与不可评分账本中，不能静默缩小图库。L1–L3 仅作事前指定的文本具体度分层。
 
 **B. IMMA 已发表协议**。IMMA 从 DeepCAD 同源对象剔除不能转点云者，报告 8,023 个 test 样本，只用 Text2CAD L0；主表 R@1 9.71%、R@5 25.54%、R@10 36.05%。若拿不到作者最终 UID、图库和查询清单，或不能完全复现其过滤规则，A 的成绩只能标为 Text2CAD-v1.0 衍生检索成绩，**不与 IMMA 数字直接并表**。若将来重建 B，须额外存 8,046→8,023 的全部剔除 UID 与理由、点云生成设置及 test gallery 证据。论文：[IMMA](https://arxiv.org/html/2605.05572)。
 
 **版本歧义必须核查**：IMMA 论文只写 Text2CAD、L0，未明确 v1.0/v1.1。官方 v1.0 CSV 缺 100 个 test UID 且 12 条 L0 为空；已校验的官方 v1.1 CSV (`sha256=cded1b8048f432c192127a5d177da59dc926149ac02fb9ae31e1015ee6219136`) 覆盖 8,046 个 test UID 且仅 1 条 L0 为空。不能仅因 IMMA 报 8,023 个 test CAD 就推断它使用哪个文本版本。复现前须取得版本证据或分别报告两版。
 
-**登记 UID 的可识别上限**：v1.0 主协议的 7,934 个非空 L0 查询中仅有 3,644 个逐字不同的文本；639 个重复文本组共影响 4,929 条查询，最大组有 371 个 CAD。同一文本面对同一图库给出相同排序，故以单配对 UID 为唯一正例时，不考虑其他错误的理论 R@1 上限也仅为 `3644/7934=45.93%`；K=2/5/10/20 的相应上限由 `sum_text min(K, group_size)/7934` 给出。指标表必须同时列唯一文本数、重复率、按重复组大小分层和上限；不得将低 UID R@1 直接解释为模型不懂文本。
+**登记 UID 的可识别上限**：v1.0 主协议的 7,934 个非空 L0 查询在上述 `strip()` 后有 3,644 个逐字不同的文本；639 个重复文本组共影响 4,929 条查询，最大组有 371 个 CAD。若直接比较未去空白的原始 CSV 字符串，则是 4,010 种、693 个重复组、最大组 320；该口径会把仅首尾空白不同的描述视为不同查询，不用于主指标。同一规范化文本面对同一图库给出相同排序，故以单配对 UID 为唯一正例时，不考虑其他错误的理论 R@1 上限也仅为 `3644/7934=45.93%`；K=2/5/10/20 的相应上限由 `sum_text min(K, group_size)/7934` 给出。指标表必须同时列唯一文本数、重复率、按重复组大小分层和上限；不得将低 UID R@1 直接解释为模型不懂文本。
 
 **C. 跨模型干净共享子集**。先对每个权重的实际训练 UID 做交叉审计，再由预先声明的集合运算确定所有被比较模型均未训练的官方 test UID；训练交叉者绝不作为该模型的 held-out 正例。所有模型在同一固定 query/gallery/qrels 上重算才能并列。已从本地 P0 原始 UID 清单独立计算：Text-to-CadQuery Qwen2.5-3B-SFT 的 99,236 训练 UID 中有 **4,581** 个落在 A 的 8,046 test UID 内；其现有 val/test 与 A 的交集分别为 259/247。因此该模型**不得**在 A 全集上报告无泄漏成绩。还须审计它的 `CadQuery.zip` 对干净 UID 的覆盖。原生 Text-to-CadQuery test 5,514 项可作补充协议，但不能冒充 A/B。另一方面，`chandar-lab/CADmium-ds@ebde0c81e141b4ef7829be1e4b2ac7126e31d0c4` 的 118,299 train / 8,925 val / 8,046 test UID 与 v1.0 划分逐项同属对应 split，三组相互无交叉；CADmium-3B 暂具备 A 的 held-out UID 条件，仍要核对权重训练配置。
 

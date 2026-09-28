@@ -21,7 +21,7 @@
 
 - 官方 v1.0 split：159,049 train / 8,925 validation / 8,046 test UID，三组交集为零。`cad_seq.zip` 有全部 8,046 test UID 的向量文件；v1.0 minimal JSON ZIP 亦有全部 8,046 test UID 的 JSON 文件。
 - v1.0 CSV 共 174,000 行；test UID 仅命中 7,946 行/UID，缺 100 个 test UID，另有 12 个命中但 L0 `abstract` 为空。主协议暂为 8,046 CAD gallery + 7,934 条非空 L0 查询，配对 UID 为登记目标。
-- v1.0 非空 L0 的 7,934 条查询中，仅 3,644 种逐字不同文本；639 个重复文本组覆盖 4,929 条 query，最大组 371。固定单正 UID 评测的理想 R@1/2/5/10/20 上限依次为 **45.93% / 53.98% / 64.31% / 72.13% / 80.40%**。这仅是相同输入导致的数学上限，不是模型表现。
+- v1.0 非空 L0 的 7,934 条查询在仅用 `str.strip()` 去掉首尾空白后，有 3,644 种逐字不同文本；639 个重复文本组覆盖 4,929 条 query，最大组 371。固定单正 UID 评测的理想 R@1/2/5/10/20 上限依次为 **45.93% / 53.98% / 64.31% / 72.13% / 80.40%**。若完全不去首尾空白，则有 4,010 种原始字符串、693 个重复组、最大组 320、R@1 上限 50.54%；这一口径把纯空白差异当作文本差异，不用于主协议。这仅是相同输入导致的数学上限，不是模型表现。
 - 本地已在此前由 HF 官方 SHA 校验的 v1.1 CSV (`cded1b8048f432c192127a5d177da59dc926149ac02fb9ae31e1015ee6219136`) 覆盖 8,046/8,046 test UID，仅 1 条 L0 为空。[IMMA](https://arxiv.org/html/2605.05572)未明确说明使用 v1.0 还是 v1.1，不能从 8,023 个过滤后的 CAD 样本反推文本版本。
 - CADmium-ds 的 118,299 train / 8,925 validation / 8,046 test UID，与官方 v1.0 对应 split 逐项无交叉，三份 parquet 自身也无交叉。CADmium 可进入 v1.0 test held-out 候选，但仍须核对模型训练脚本和权重版本。parquet 中 `uid,annotation,json_desc` 可直接给每个官方 test CAD 提供 CADmium 的**原生目标 JSON**；评测 query 使用 Text2CAD L0，不使用 CADmium 配套 annotation。
 - 本地 P0 的 Text-to-CadQuery UID 清单与官方 v1.0 test 比对：其 train 99,236 UID 有 4,581 项交叉；val 5,513 与官方 test 交叉 259，test 5,514 与官方 test 交叉 247。故该 Qwen 权重不可在整个官方 test 上声称 held-out 检索。完整 CadQuery 代码覆盖和设计家族近重复仍待独立核验。
