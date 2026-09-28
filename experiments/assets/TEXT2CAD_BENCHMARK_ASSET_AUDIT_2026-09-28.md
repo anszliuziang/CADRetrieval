@@ -15,7 +15,7 @@
 | 同上 | `data/validation-00000-of-00001.parquet` | 5,936,270 | `1608b54362402b48d8a4f0dbf687c42de2363510ec3efe3e59d7ad066b3fd110` | 相同 |
 | 同上 | `data/test-00000-of-00001.parquet` | 5,420,575 | `c0f09e44d4d2540c1add36690a4c09c5929671299d0248aa5d3e1b822e4dddac` | 相同 |
 
-模型待固定：`chandar-lab/CADmium-3B@6c6a79d160595207804171be56a037883b369abd` 的 adapter，base 为 `Qwen/Qwen2.5-Coder-3B-Instruct@488639f1ff808d1d3d0ba301aef8c11461451ec5`；原 Text2CAD 使用 `google-bert/bert-large-uncased@6da4b6a26a1877e173fca3225479512db81a5e5b`。三者正在选择性下载，完成后补文件哈希。官方源码本地只读缓存：Text2CAD Git HEAD `669a81472ede2269837c22a4d00070eaac360c82`，CADmium Git HEAD `2b2a5e7346e17a239ffe6f4a932610bfdb9766c6`。
+模型待固定：`chandar-lab/CADmium-3B@6c6a79d160595207804171be56a037883b369abd` 的 adapter，base 为 `Qwen/Qwen2.5-Coder-3B-Instruct@488639f1ff808d1d3d0ba301aef8c11461451ec5`；原 Text2CAD 使用 `google-bert/bert-large-uncased@6da4b6a26a1877e173fca3225479512db81a5e5b`。CADmium adapter 文件 `adapter_model.safetensors` 479,002,040 字节，官方/本地/共享 OBS SHA256 均为 `531090f702d6b4b0680821b524c95f61cf5d208ee035b23caeabc2e8ec20634b`；其 `tokenizer.json` 官方/本地/共享 OBS SHA256 为 `9c5ae00e602b8860cbd784ba82a8aa14e8feecec692e7076590d014d7b7fdafa`。BERT 的 `model.safetensors` 1,344,951,957 字节，官方/本地/共享 OBS SHA256 均为 `28349a5c57338d0dca591bb95de533897c2399095c69d61e09604b46f444a4c4`。Qwen base 两块权重仍在选择性下载，官方 LFS SHA256 依次为 `5b684409377e037e5ed75d680a070126e841dab17e8cb9a818868deadf01ab39` 与 `8bc5227aae6174eaf0b589fd4fbeb0de046a1fc951a67f2d2538acad811e1068`；未完成本地及远端校验。官方源码本地只读缓存：Text2CAD Git HEAD `669a81472ede2269837c22a4d00070eaac360c82`，CADmium Git HEAD `2b2a5e7346e17a239ffe6f4a932610bfdb9766c6`。
 
 ## 固定划分与协议风险
 
@@ -35,4 +35,4 @@
 
 ## OBS 状态
 
-共享 OBS 目录按 `datasets/Text2CAD-v1.0/<revision>/`、`datasets/CADmium-ds/<revision>/`、`models/Text2CAD-v1.0/<revision>/`、`models/CADmium-3B/<revision>/`、`models/Qwen2.5-Coder-3B-Instruct/<revision>/`、`models/bert-large-uncased/<revision>/` 分类。2026-09-28 本地向 `cvteam14:/data/obs_data_liuza/CADRetrieval/` 选择性复制中。**只有逐文件远端 SHA256 与上述官方值一致后才写“OBS 就绪”；目录存在或 scp 返回 0 不单独算核验。**
+共享 OBS 目录按 `datasets/Text2CAD-v1.0/<revision>/`、`datasets/CADmium-ds/<revision>/`、`models/Text2CAD-v1.0/<revision>/`、`models/CADmium-3B/<revision>/`、`models/Qwen2.5-Coder-3B-Instruct/<revision>/`、`models/bert-large-uncased/<revision>/` 分类。2026-09-28 `cvteam14:/data/obs_data_liuza/CADRetrieval/` 上，Text2CAD v1.0 的 split/CSV/cad_seq/minimal_json 四个文件、CADmium-ds 三份 parquet、原 Text2CAD 权重、CADmium adapter 及 BERT 权重均已逐文件远端 SHA256 校验通过。Qwen base 尚未就绪。云脑的 `/data/data_dev` 与共享 OBS 不是同一挂载，本次只读路径检查卡住；此处资产不计就绪，不能从共享 OBS 就绪推断云脑可读。**只有逐文件远端 SHA256 与上述官方值一致后才写“OBS 就绪”；目录存在或 scp 返回 0 不单独算核验。**
