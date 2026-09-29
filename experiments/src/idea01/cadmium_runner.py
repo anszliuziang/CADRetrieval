@@ -905,6 +905,16 @@ def load_model(cfg: RunnerConfig) -> Any:
         model = get_peft_model(base, peft_cfg)
         raw_state = load_file(str(adapter_dir / "adapter_model.safetensors"), device="cpu")
         mapped_state = remap_cadmium_adapter_keys(raw_state)
+        nonzero_b = sum(
+            int(torch.count_nonzero(value).item() > 0)
+            for key, value in raw_state.items() if key.endswith(".lora_B.weight")
+        )
+        if nonzero_b == 0:
+            raise RunnerError(
+                "CADmium adapter has 0 nonzero LoRA-B tensors; its LoRA delta "
+                "is identically zero, so this published checkpoint cannot "
+                "serve as a fine-tuned CADmium scorer"
+            )
         expected = {
             key for key in model.state_dict()
             if ".lora_A.default.weight" in key or ".lora_B.default.weight" in key

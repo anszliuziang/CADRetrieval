@@ -1,5 +1,7 @@
 # Idea 01：两张 910C 的 Text2CAD 生成式检索自动执行路线
 
+**2026-09-30 资产勘误：** 下文把 CADmium-3B 列为首个主仪器的顺序已失效。官方四种尺寸 LoRA-B 全零，见 `experiments/assets/CADMIUM_LORA_CHECKPOINT_AUDIT_2026-09-30.md`；当前 `ACTIVE_TASK.md` 为 `idle`、NPU 预算 0。待选择并审查有效的下一仪器后复用下文分阶段吞吐/七天门槛，不照旧启动 CADmium G1–G4。
+
 状态：**执行路线；本身不是新的 NPU 授权**。上位科学协议为 [IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md](IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md)，本文件只细化执行顺序、资源门槛和自动交接。`experiments/ACTIVE_TASK.md` 仍是唯一运行授权入口；本方案与其冲突时停下核对，不自行放宽。2026-09-30 只允许使用 `yunnan-share2` 上两张 Ascend 910 作为计算卡。用户已决定**完整的全查询×全图库精确生成器评分必须完成**；两阶段重排和查询子集不能替代该交付。全量开始前必须实测验证：保守预计能在 **7 天双卡墙钟**内完成才启动；否则停下讨论。
 
 ## 1. 研究要交付什么

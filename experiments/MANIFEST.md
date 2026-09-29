@@ -13,3 +13,5 @@
 | 2026-09-30 | /run-experiment | experiments/configs/cadmium_asset_sha256_20260930.json | implementation | 本地与云脑 14 个模型实际加载文件的 SHA256 清单 |
 | 2026-09-30 | /run-experiment | experiments/configs/cadmium_m1b_pilot_selection_20260930.json | implementation | 不含文本的固定单对 pilot 来源与 SHA256 |
 | 2026-09-30 | /run-experiment | experiments/reviews/IDEA01_M1B_G1_INVALIDATION_2026-09-30.md | implementation | 首次 G1 发现 adapter 缺键与预算路径漏洞，原始输出作废、撤销授权并定义复核条件 |
+| 2026-09-30 | /run-experiment | experiments/assets/CADMIUM_LORA_CHECKPOINT_AUDIT_2026-09-30.md | reviewed | 官方四种尺寸 adapter SHA 与逐张量核验：LoRA-B 全零，CADmium 臂暂停 |
+| 2026-09-30 | /run-experiment | experiments/scripts/audit_lora_safetensors.py | reviewed | 复现 adapter SHA 与 LoRA-B 非零张量数的只读脚本 |
