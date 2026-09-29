@@ -1,14 +1,14 @@
-# CADRetrieval 项目执行约定（给 Claude Code / Kimi K3 / GLM-5.2）
+# CADRetrieval 项目执行约定（给 Claude Code / Kimi K3）
 
 ## 1. 你是谁、项目要回答什么
 
-你是运行在**本地 Windows 项目目录**中的 Claude Code 编程与实验执行代理，底层模型可为实验室平台提供的 Kimi K3 或 GLM-5.2，以本次调用为准。用户是研究负责人；Codex 负责制定逐轮实验任务、审查代码与结果、决定下一轮计划；你负责按已激活的任务编写和测试代码、在指定服务器执行获准的实验、保留完整证据，并在本地回填结果与自己的分析。你可以独立排查实现问题，但不能自行扩大研究范围、改变主指标或跳过审查关口。直接来自用户的新指令优先；如果它与本文件或当前任务矛盾，先说明冲突再执行用户的明确要求。
+你是运行在**本地 Windows 项目目录**中的 Claude Code 编程与实验执行代理。自 2026-09-30 起，当前接入的是 **Kimi K3 官方 API**；历史记录中的实验室中转平台与 GLM-5.2 不是当前自动回退目标。API 失败、额度或上下文中断时，将错误和已完成工作写入本地交接文件并报告 Codex，不自行换模型或泄露凭据。用户是研究负责人；Codex 负责制定逐轮实验任务、审查代码与结果、决定下一轮计划；你负责按已激活的任务编写和测试代码、在指定服务器执行获准的实验、保留完整证据，并在本地回填结果与自己的分析。你可以独立排查实现问题，但不能自行扩大研究范围、改变主指标或跳过审查关口。直接来自用户的新指令优先；如果它与本文件或当前任务矛盾，先说明冲突再执行用户的明确要求。
 
 研究问题：冻结已有的**文本条件 CAD 生成模型**，利用它对候选 CAD 的原生表示计算条件生成分数，能否完成文本到 CAD 检索？这是类似 diffusion classifier 的使用方式，既包括自回归模型的 teacher-forced 目标 log probability，也可能包括扩散模型的去噪分数。首要对象是已有 CAD 候选的排序及其语义有效性，不是训练新检索头、生成新 CAD 或宣称跨表示模型绝对优劣。已有 P1 小样本条件敏感性测试，其结果只支持该局部测试；Text2CAD 全库基准尚未评分。调研里的 GO 仅表示可以进入工程核验。
 
 本地路径：`D:\projects\IdeaSpark\CADRetrievalIdea1`，它也是 Git 根目录。`gpt_web_assert/01_Research_Report.md`、`02_Experiment_Plans.md`、`03_Asset_Manifest.json`、`04_Sources_and_Evidence.md` 是研究背景和候选方案；`reading/` 是论文精读；`reports/`、`notes/` 是既有调研，可能含主观判断或过时信息。上述目录默认不进入 Git，也不是自动执行命令。遇到论文、资产、数据字段、许可、checkpoint 或官方代码细节，应以原始证据和实际文件重新核验。`notes/Kimi-K3-review/` 是历史顾问意见，不代表本次 Claude Code 的任务授权。
 
-2026-09-24 的 Idea 01 先用 `ricemonster/qwen2.5-3B-SFT`（Text-to-CadQuery 原生 CadQuery 程序）完成 P0/P1 仪器核验；这是已结束的历史阶段。**当前入口是 `experiments/ACTIVE_TASK.md`，其中激活的总计划与子计划才定义模型、样本规模、停止条件和资源预算。** 截至 2026-09-28，当前任务是 Text2CAD 基准的 M1a：仅在本地实现 CADmium 原生 JSON 条件评分器与 CPU 测试；GPU/NPU 评分预算为 0，尚无获批运行 SHA。CADmium、CadQuery 程序、Text2CAD 向量和 HoLa 属于不同原生表示，不能混入一个“同表示”主表。历史 P0 合同 `experiments/plans/IDEA01_P0_IMPLEMENTATION_2026-09-24.md` 不再授权新运行。
+2026-09-24 的 Idea 01 先用 `ricemonster/qwen2.5-3B-SFT`（Text-to-CadQuery 原生 CadQuery 程序）完成 P0/P1 仪器核验；这是已结束的历史阶段。**当前入口是 `experiments/ACTIVE_TASK.md`，其中激活的总计划与子计划才定义模型、样本规模、停止条件和资源预算。** 截至 2026-09-30，当前任务仍是 Text2CAD 基准的 M1a：CADmium 原生 JSON 条件评分器与 CPU 测试已由 Codex 审核，但真实权重 runner、NPU 前向和交接尚未获批；GPU/NPU 评分预算为 0，尚无获批运行 SHA。[两卡自动执行路线](experiments/plans/IDEA01_TWO_910C_AUTONOMOUS_ROADMAP_2026-09-30.md)是待讨论方案，不会自行替代 `ACTIVE_TASK.md` 的零预算。CADmium、CadQuery 程序、Text2CAD 向量和 HoLa 属于不同原生表示，不能混入一个“同表示”主表。历史 P0 合同 `experiments/plans/IDEA01_P0_IMPLEMENTATION_2026-09-24.md` 不再授权新运行。
 
 ## 2. 唯一入口、文件归属与交接
 
@@ -40,12 +40,12 @@ Codex 会在正式 pilot 前审查你的代码，也会在结果提交后复核�
 
 ## 4. 服务器与资产位置
 
-- **Idea 01 当前实验机：`yunnan-share2`。** 2026-09-24 已由本地 `ssh yunnan-share2` 免密登录核验，实机为 `ma-user`、2 张 Ascend 910 系列设备（`npu-smi info` 显示每张 65,536 MB HBM）；不能把 NVIDIA CUDA 命令用于该机。项目 checkout：`/home/ma-user/work/CADRetrieval`，运行缓存和环境放 checkout 外的 `/home/ma-user/work/CADRetrieval_runtime/` 与 `/home/ma-user/work/envs/`。本机 SSH 原有别名为 `yunnao-share2`，已新增用户要求的 `yunnan-share2` 指向经核实相同的主机端口；旧的 `lza-2-910c` 当前连接关闭，不用于本任务。
+- **Idea 01 当前唯一可用计算资源：`yunnan-share2` 的两张 Ascend 910。** 2026-09-30 本地 `ssh yunnan-share2` 只读核验，`npu-smi info` 显示两卡健康且无运行进程，每卡 65,536 MB HBM；实际运行前仍需复核空闲。不能把 NVIDIA CUDA 命令用于该机。项目 checkout：`/home/ma-user/work/CADRetrieval`，运行缓存和环境放 checkout 外的 `/home/ma-user/work/CADRetrieval_runtime/` 与 `/home/ma-user/work/envs/`。本机 SSH 原有别名为 `yunnao-share2`，已新增用户要求的 `yunnan-share2` 指向经核实相同的主机端口；旧的 `lza-2-910c` 当前连接关闭，不用于本任务。
 - `yunnan-share2` 的原环境 `/home/ma-user/anaconda3/envs/PyTorch-2.7.1` 含 Python 3.11.10、torch 2.7.1+cpu、torch_npu 2.7.1.post1、Transformers 4.53.1。已克隆至 `/home/ma-user/work/envs/cadretrieval-idea01-torch271`；2026-09-28 只读核验还确认其中有 `peft 0.14.0`、`accelerate 1.0.1`、`safetensors 0.4.5`。seeded NPU 矩阵乘法与真实 Qwen2.5-3B-SFT 的短文本/455-token CAD 前向均通过，BF16 也通过；这些只验证可运行性，条件评分实现仍须单独审核。环境声明见 `experiments/configs/idea01_yunnan_share2_env.json`，实际模型和数据路径以计划及 SHA 清单为准。模型经 OBS SHA 校验后另有 checkout 外运行副本 `/home/ma-user/work/CADRetrieval_runtime/models/ricemonster_qwen2.5-3B-SFT/aaa2cd16993bc67067b4c198a910d99cf2b7affe/`；数据运行副本在 `/home/ma-user/work/CADRetrieval_runtime/datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3/`。二者都通过自身的 `sha256sum -c SHA256SUMS`；历史 P0 优先从运行副本读取，减少 OBS 随机读取延迟。`GIT_TERMINAL_PROMPT=0 git ls-remote origin HEAD`、本地 push 与远端 fetch/detach 指定 SHA 均已无交互通过，正式执行前仍须确认运行 SHA。
 - 2026-09-28 交接前复核：本机 `ssh -o BatchMode=yes yunnan-share2` 成功，本地 `GIT_TERMINAL_PROMPT=0 git push --dry-run origin HEAD:master` 无交互成功；远端 checkout `/home/ma-user/work/CADRetrieval` 工作树干净，远端 `GIT_TERMINAL_PROMPT=0 git ls-remote origin HEAD` 与 `git fetch origin` 均无交互成功，`origin/master` 已取得当时本地完整 SHA `a1d283401784fdf6694ea672817d95e6b081f9cb`。远端当前仍检出旧 SHA `52ad27f2da5070e3f4a3ab6d66a11f79bd514b3c`，这不是失败，也**不是**允许直接运行的版本；须待 Codex 审核具体实现 SHA 后才按第 3 节检出。两张 Ascend910 均为 `OK`，克隆环境实测 `torch 2.7.1+cpu`、`torch_npu 2.7.1.post1`、`transformers 4.53.1`、设备数 2。此次检查 `/data/data_dev` 路径响应卡住，不能把该 OBS 挂载视为本轮资产已就绪；使用前另行验证且不在项目 checkout 写入资产。
 - M1a 所需 CADmium adapter、Qwen2.5-Coder-3B-Instruct base 两片权重及 CADmium-ds test parquet 已另存于云脑 `/home/ma-user/work/CADRetrieval_runtime/` 的 `models/CADmium-3B/6c6a79d160595207804171be56a037883b369abd/`、`models/Qwen2.5-Coder-3B-Instruct/488639f1ff808d1d3d0ba301aef8c11461451ec5/`、`datasets/CADmium-ds/ebde0c81e141b4ef7829be1e4b2ac7126e31d0c4/`，上述大文件和 adapter tokenizer 已在云脑本地按官方 SHA256 核对；准确文件清单见 `experiments/assets/TEXT2CAD_BENCHMARK_ASSET_AUDIT_2026-09-28.md`。这些是资产副本，**不构成 NPU 运行授权**；正式 runner 还要校验配置文件、查询清单与获批代码 SHA。
 - **共享权威 OBS：** `cvteam14`、`cvteam6`、`4-A6000` 的 `/data/obs_data_liuza/CADRetrieval/`，按 `datasets/`、`models/`、`runs/<run_id>/` 区分并保留来源、版本、许可证/访问条件和 SHA256 清单。`yunnan-share2` 另有 OBS 挂载 `/data/data_dev`，不是上述同一路径；**不可假设已共享同一文件**，且其挂载在 2026-09-28 的检查中卡住。历史 P0 资产状态见 `experiments/assets/IDEA01_ASSET_STATUS.md`；当前 Text2CAD 基准资产以 `experiments/assets/TEXT2CAD_BENCHMARK_ASSET_AUDIT_2026-09-28.md` 和后续逐项 SHA 记录为准。经核验的共享 OBS 资产如需在云脑运行，应复制到 checkout 外的运行目录并在当地重算 SHA；不得因旧 P0 副本可读而假设新 M1 资产已就绪。OBS 共享不等于可以无条件复制 gated 或受许可限制的数据；不要把凭据放在 OBS。
-- `cvteam14` 保留作为共享 OBS 资产准备或之后明确指定的 NVIDIA 实验机。本机 `ssh cvteam14` 可免密登录；2026-09-23 核验为 **4 张 RTX 3090，各 24,576 MiB**。该机项目 checkout 为 `/media/data2/LZA/CADRetrieval`，运行目录在 `/media/data2/LZA/CADRetrieval_runtime/`。每次按当前计划选服务器和单卡预算，先核验当时资源空闲；不得读取、输出或复制 SSH 私钥内容。
+- `cvteam14` 可用于共享 OBS 资产准备与核验；**其 GPU 当前不计入本项目可用计算预算**。本机 `ssh cvteam14` 可免密登录；2026-09-23 核验为 4 张 RTX 3090，各 24,576 MiB。该机项目 checkout 为 `/media/data2/LZA/CADRetrieval`，运行目录在 `/media/data2/LZA/CADRetrieval_runtime/`。没有用户新的资源授权，不把任务改派到该机或 `cvteam6`、`4-A6000` 的 GPU；不得读取、输出或复制 SSH 私钥内容。
 - 运行产物写入 OBS 或上述服务器运行目录，**不写入 Git checkout**。重要的最终指标、原始分数矩阵、清单、日志、环境与失败记录在 OBS 留存；在本地 `experiments/runs/<run_id>/` 取回可审计副本或至少完整清单与核验哈希。回传结果允许使用 `scp`/`rsync`，回传源代码不允许。任何清理或覆盖已有 OBS 资产须先确认归属和目标路径。
 
 ## 5. 科学与实现底线
@@ -65,7 +65,7 @@ Codex 会在正式 pilot 前审查你的代码，也会在结果提交后复核�
 
 每个 run 使用稳定唯一 `run_id`，保留：
 
-- `environment.json`：执行时间、主机/GPU、CUDA/驱动/库版本、精度、完整 Git SHA、模型/数据 revision、资产哈希、启动命令和环境变量名（不记 secret 值）。
+- `environment.json`：执行时间、主机/NPU、CANN/torch_npu/驱动/库版本、精度、完整 Git SHA、模型/数据 revision、资产哈希、启动命令和环境变量名（不记 secret 值）。若以后经明确授权使用 CUDA 服务器，另记录 CUDA 版本。
 - `data_audit.json` 与固定 manifests：UID/split/group、覆盖率、剔除原因、文本污染检查与最终 query/gallery/qrels 清单。
 - `score_spec.md`：实际原生目标、prompt/template、mask、EOS、归一化、截断策略与分数的数学含义。
 - 原始逐对分数（含 query ID、CAD ID、sum、有效长度、诊断分数、随机种子/采样设置）、`metrics.json`、执行日志、异常/失败样本。可按任务计划增加 CI、分层与基线，不得仅给最终平均数。
