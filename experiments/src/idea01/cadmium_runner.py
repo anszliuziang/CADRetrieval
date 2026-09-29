@@ -55,8 +55,11 @@ WHAT THIS RUNNER DOES (per contract items 2-3)
   2. Load tokenizer from the adapter directory with ``local_files_only=True``
      and require ``cadmium_scorer.fingerprint_tokenizer(...).matches`` -- a
      fingerprint mismatch refuses to score.
-  3. Load base weights + LoRA via transformers/peft with
-     ``local_files_only=True``; ``eval()``, frozen grads, ``use_cache=False``.
+  3. Load base weights and construct the LoRA modules via transformers/peft.
+     CADmium's published adapter keys omit one ``model`` path component
+     relative to PEFT 0.14; map all 504 keys in memory and require an exact
+     match to the LoRA module keys before any forward. Then ``eval()``, frozen
+     grads, ``use_cache=False``.
   4. Score (query_text, candidate_json_desc) pairs by reusing the audited
      ``cadmium_scorer.build_cadmium_sequence`` for tokenization, boundary,
      terminator and 4096-context rejection (``len(full_ids) > 4096`` is
@@ -140,6 +143,8 @@ BASE_MODEL_ID = "Qwen/Qwen2.5-Coder-3B-Instruct"
 ADAPTER_MODEL_ID = "chandar-lab/CADmium-3B"
 EXPECTED_BASE_REVISION = "488639f1ff808d1d3d0ba301aef8c11461451ec5"
 EXPECTED_ADAPTER_REVISION = "6c6a79d160595207804171be56a037883b369abd"
+PRODUCTION_REPO_ROOT = Path("/home/ma-user/work/CADRetrieval")
+PRODUCTION_BUDGET_ROOT = Path("/home/ma-user/work/CADRetrieval_runtime/budgets")
 
 #: Pre-agreed numerical tolerance for batch=1 vs batch>1 and for the
 #: device-vs-CPU-core spot check (matches cadmium_scorer.score_batch_consistency).
@@ -842,14 +847,36 @@ def load_tokenizer(cfg: RunnerConfig) -> tuple[Any, TokenizerFingerprint]:
     return tokenizer, fingerprint
 
 
+def remap_cadmium_adapter_keys(state: dict[str, Any]) -> dict[str, Any]:
+    """Translate the official checkpoint's one-component-short module path.
+
+    This is an in-memory compatibility fix for the pinned 504-key adapter,
+    never a change to the SHA-verified source file. Refuse unfamiliar layouts
+    instead of silently scoring with randomly initialized LoRA modules.
+    """
+    prefix = "base_model.model.layers."
+    if len(state) != 504 or any(not key.startswith(prefix) for key in state):
+        raise RunnerError("CADmium adapter must have exactly 504 official LoRA keys")
+    if sum(key.endswith(".lora_A.weight") for key in state) != 252 or sum(
+        key.endswith(".lora_B.weight") for key in state
+    ) != 252:
+        raise RunnerError("CADmium adapter LoRA A/B key count is not 252/252")
+    mapped = {key.replace(prefix, "base_model.model.model.layers.", 1): value for key, value in state.items()}
+    if len(mapped) != len(state):
+        raise RunnerError("CADmium adapter key remapping is not one-to-one")
+    return mapped
+
+
 def load_model(cfg: RunnerConfig) -> Any:
-    """Load pinned base + CADmium LoRA locally, frozen, eval, no cache."""
+    """Load pinned base + strictly verified CADmium LoRA, frozen and eval."""
     torch = _import_stack(cfg.device)
     try:
         from transformers import AutoModelForCausalLM
-        from peft import PeftModel
+        from peft import LoraConfig, get_peft_model
+        from peft.utils.save_and_load import set_peft_model_state_dict
+        from safetensors.torch import load_file
     except ImportError as e:
-        raise RunnerError("transformers + peft (0.14.0 pinned) are required") from e
+        raise RunnerError("transformers + peft + safetensors are required") from e
 
     dtypes = {
         "bfloat16": torch.bfloat16,
@@ -869,14 +896,45 @@ def load_model(cfg: RunnerConfig) -> Any:
     except Exception as e:
         raise RunnerError(f"base model load failed from {cfg.base_model_path}: {e}") from e
     try:
-        model = PeftModel.from_pretrained(
-            base,
-            cfg.adapter_path,
-            local_files_only=True,
-            is_trainable=False,
-        )
+        adapter_dir = Path(cfg.adapter_path)
+        raw_cfg = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
+        for field_name in ("corda_config", "trainable_token_indices"):
+            if raw_cfg.get(field_name) is not None:
+                raise RunnerError(f"unsupported non-null CADmium adapter setting: {field_name}")
+        peft_cfg = LoraConfig.from_pretrained(cfg.adapter_path)
+        model = get_peft_model(base, peft_cfg)
+        raw_state = load_file(str(adapter_dir / "adapter_model.safetensors"), device="cpu")
+        mapped_state = remap_cadmium_adapter_keys(raw_state)
+        expected = {
+            key for key in model.state_dict()
+            if ".lora_A.default.weight" in key or ".lora_B.default.weight" in key
+        }
+        mapped_expected = {
+            key.replace(".lora_A.weight", ".lora_A.default.weight").replace(
+                ".lora_B.weight", ".lora_B.default.weight"
+            ) for key in mapped_state
+        }
+        if expected != mapped_expected:
+            missing = sorted(expected - mapped_expected)
+            extra = sorted(mapped_expected - expected)
+            raise RunnerError(
+                f"CADmium adapter key set differs from PEFT modules: "
+                f"expected={len(expected)}, mapped={len(mapped_expected)}, "
+                f"missing_sample={missing[:3]}, extra_sample={extra[:3]}"
+            )
+        load_result = set_peft_model_state_dict(model, mapped_state, adapter_name="default")
+        missing_lora = sorted(expected.intersection(load_result.missing_keys))
+        if missing_lora or load_result.unexpected_keys:
+            raise RunnerError(
+                f"CADmium adapter did not load strictly: "
+                f"missing_lora={missing_lora[:3]}, "
+                f"unexpected={list(load_result.unexpected_keys)[:3]}"
+            )
+        del raw_state, mapped_state
+    except RunnerError:
+        raise
     except Exception as e:
-        raise RunnerError(f"LoRA adapter load failed from {cfg.adapter_path}: {e}") from e
+        raise RunnerError(f"LoRA adapter strict load failed from {cfg.adapter_path}: {e}") from e
 
     device = torch.device(cfg.device)
     model.to(device)
@@ -1338,10 +1396,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out-jsonl", required=True)
     parser.add_argument("--summary-json", default=None)
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--budget-file", default=None,
-                        help="persisted cumulative budget ledger (default: "
-                             "<out-jsonl>.budget.json); bound to the approval's "
-                             "SHA / pair cap / wall-clock limit")
     parser.add_argument("--device", default="npu:0")
     parser.add_argument("--torch-dtype", default="bfloat16",
                         choices=["bfloat16", "float16", "float32"])
@@ -1380,6 +1434,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"FATAL: {e}", file=sys.stderr)
         return 2
 
+    repo_root = Path(args.repo_root).resolve()
+    if repo_root != PRODUCTION_REPO_ROOT:
+        print(f"FATAL: production checkout must be {PRODUCTION_REPO_ROOT}", file=sys.stderr)
+        return 2
+    # One canonical ledger per approval at a fixed absolute path. Changing
+    # output/run directory or passing a different checkout cannot reset cap.
+    canonical_budget = PRODUCTION_BUDGET_ROOT / f"{authorization.approved_sha}.json"
     cfg = RunnerConfig(
         base_model_path=args.base_model_path,
         adapter_path=args.adapter_path,
@@ -1389,13 +1450,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_revision_in_path=True,
         asset_manifest=args.asset_manifest,
         logits_chunk_rows=args.logits_chunk_rows,
-        budget_file=args.budget_file or (str(args.out_jsonl) + ".budget.json"),
+        budget_file=str(canonical_budget),
         keep_token_scores=args.keep_token_scores,
     )
 
     out_path = Path(args.out_jsonl)
     summary_path = Path(args.summary_json) if args.summary_json else None
-    repo_root = Path(args.repo_root).resolve()
     budget_path = Path(cfg.budget_file).resolve()
     for label, path in (("output", out_path), ("summary", summary_path), ("budget ledger", budget_path)):
         if path is not None and path.resolve().is_relative_to(repo_root):

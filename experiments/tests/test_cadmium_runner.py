@@ -57,6 +57,7 @@ from idea01.cadmium_runner import (  # noqa: E402
     main,
     parse_active_task_authorization,
     preflight_assets,
+    remap_cadmium_adapter_keys,
 )
 
 FULL_SHA = "a" * 40
@@ -626,7 +627,7 @@ class MainGateTest(unittest.TestCase):
         # loosen revision checks, hand in an arbitrary pair cap, or point the
         # authorization at a working-tree file.
         self._write_valid_pairs()
-        for extra in (["--max-pairs", "5"], ["--no-revision-path-check"], ["--active-task", "x"]):
+        for extra in (["--max-pairs", "5"], ["--no-revision-path-check"], ["--active-task", "x"], ["--budget-file", "new.json"]):
             with self.assertRaises(SystemExit):
                 main(self._args(*extra))
 
@@ -642,6 +643,25 @@ class AtomicOutputTest(unittest.TestCase):
                 _atomic_write_new(target, ['{"pair_index":999}'])
             self.assertEqual(target.read_bytes(), original)
             self.assertFalse(list(Path(tmp).glob(".*.tmp")))
+
+
+class CadmiumAdapterKeyTest(unittest.TestCase):
+    def test_official_504_key_layout_maps_one_to_one(self):
+        modules = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
+        source = {
+            f"base_model.model.layers.{layer}.self_attn.{module}.lora_{part}.weight": 1
+            for layer in range(36) for module in modules for part in ("A", "B")
+        }
+        mapped = remap_cadmium_adapter_keys(source)
+        self.assertEqual(len(mapped), 504)
+        self.assertEqual(len(set(mapped)), 504)
+        self.assertIn(
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight", mapped
+        )
+
+    def test_missing_key_is_fatal(self):
+        with self.assertRaisesRegex(RunnerError, "504"):
+            remap_cadmium_adapter_keys({"base_model.model.layers.0.lora_A.weight": 1})
 
 
 if __name__ == "__main__":
