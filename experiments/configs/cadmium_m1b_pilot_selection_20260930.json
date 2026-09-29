@@ -1,0 +1,9 @@
+{
+  "selection": "first row of frozen M0 query and first row of pinned CADmium-ds test parquet; no qrels read",
+  "query_id": "Q00000",
+  "cad_id": "0026/00267624",
+  "query_manifest_sha256": "a0d8504f5a5555e5312dd38a31321a6ea254087e6390e786559cfc0b6d307fcd",
+  "candidate_parquet_sha256": "c0f09e44d4d2540c1add36690a4c09c5929671299d0248aa5d3e1b822e4dddac",
+  "pair_jsonl_sha256": "501756a7b5ce0e2dc15c08ffabf37d0c8517b3fb4eef2740aff75e4dee812db7",
+  "full_input_tokens_cpu_audit": 1018
+}
