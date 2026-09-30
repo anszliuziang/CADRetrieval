@@ -4,7 +4,7 @@
 
 ## 固定对象与主张
 
-- 模型：原作者 `Text2CAD_1.0.pth`，SHA256 `235b137e72f97c740550e29698c342967d3be7c1d4cd0067a1b3380389034598`；冻结的 `google-bert/bert-large-uncased@6da4b6a26a1877e173fca3225479512db81a5e5b`，其权重 SHA256 `28349a5c57338d0dca591bb95de533897c2399095c69d61e09604b46f444a4c`。原作者源码固定本地只读镜像 Git SHA `669a81472ede2269837c22a4d00070eaac360c82`；许可 `CC BY-NC-SA 4.0`，如将必要源码改编后纳入 Git，保留来源、许可与改动说明。
+- 模型：原作者 `Text2CAD_1.0.pth`，SHA256 `235b137e72f97c740550e29698c342967d3be7c1d4cd0067a1b3380389034598`；冻结的 `google-bert/bert-large-uncased@6da4b6a26a1877e173fca3225479512db81a5e5b`，其权重 SHA256 `28349a5c57338d0dca591bb95de533897c2399095c69d61e09604b46f444a4c4`。原作者源码固定本地只读镜像 Git SHA `669a81472ede2269837c22a4d00070eaac360c82`；许可 `CC BY-NC-SA 4.0`，如将必要源码改编后纳入 Git，保留来源、许可与改动说明。
 - 候选：官方 v1.0 `cad_seq.zip` 中 UID 对应 `.../seq/<chunk>.pth` 的 `vec`/`mask_cad_dict`；ZIP SHA256 `9f3a8bb85f9ceb078c19bc43f750fe596d3323631f2e846a7f541e47af7e7eaa`。query/gallery/qrels 复用已审 M0：图库 8,046、非空查询 7,934、唯一 `strip()` 文本 3,644。评分进程仅见文本与候选向量，不得读取 UID 对应关系、CSV、audit 或 qrels。
 - 主张是冻结生成模型的**原始两路 logits 构成的条件排序分数**能否排序登记 UID。训练损失是 `CrossEntropyLoss(label_smoothing=0.1)`，不得直接当 NLL；两路 x/y 的原始 `log_softmax` 有效项相加，报告为“two-head factorized score”，不宣称 CAD 几何边缘似然或纯 MLE 模型。
 

@@ -15,3 +15,7 @@
 在远端干净 detached Git checkout `b227ece55c6aca74d9908deb12ed4f08c0c20c00` 执行只读脚本 `experiments/scripts/inspect_text2cad_checkpoint.py`，`exit 0`；**未构造模型、未做前向、未占用 NPU**。原始 JSON/stderr 留在本地忽略目录 `experiments/runs/m1c_structure_20260930/` 与云脑 runtime 同名 run。`torch.load(weights_only=True)` 看到 `model_state_dict` 共 172 个张量、170 个非零；键带 `module.` 前缀（官方保存时的 DataParallel），无 BERT 权重，故模型加载时需从 pinned BERT 基座补齐并严格审核其它键。官方 test CAD `0000/00000093` 的 `vec.cad_vec` 是 `[272,2]`，`key_padding_mask` 也是 `[272,2]`；x/y 有效位置分别 140/74。当前这些是结构事实，不证明加载/评分正确，真实前向预算仍为 0。
 
 官方源码本地只读镜像 Git SHA `669a81472ede2269837c22a4d00070eaac360c82`；其 `LICENSE` 为 CC BY-NC-SA 4.0。若改编必要实现进入项目 Git，保留出处、许可与差异说明。下一道门是逐头 mask/shift、checkpoint 严格加载、910 适配的代码审查。
+
+## 8,046 项图库零前向结构覆盖（Codex，2026-09-30）
+
+Codex 在本地用 `D:\miniconda\python.exe experiments/scripts/audit_text2cad_gallery_vectors.py --split-json .cache/text2cad_official/text2cad_v1.0/train_test_val.json --cad-zip .cache/text2cad_official/cad_seq.zip` 扫描官方 test 的每个 UID；脚本只读 ZIP、以 `torch.load(weights_only=True)` 读取候选向量，核对固定 `[272,2]`、逐元素 `mask == (vec == 0)`，再调用阶段 A 的 `validate_cad_vec` 审首尾 token、尾部 padding、flag/index 和词表边界。退出码 0，`n_test=8046`、`n_valid=8046`、`reasons={}`。真实未填充序列长度分位：最短 19、P10 23、P25 24、中位 34、P75 56、P90 87、P95 106、P99 142、最长 212；x/y 有效项中位分别 33/8。此项只证明当前结构合同覆盖整库，不替代真实权重加载和前向验证。速度外推必须用这些长度分布，不能把统一填充长度 272 当作每项真实长度。
