@@ -1,0 +1,1112 @@
+{
+ "n_tensors": 172,
+ "n_zero_tensors": 2,
+ "provenance": {
+  "checkpoint_sha256": "235b137e72f97c740550e29698c342967d3be7c1d4cd0067a1b3380389034598",
+  "generated_by": "experiments/scripts/dump_text2cad_expected_keys.py",
+  "generated_on": "2026-09-30",
+  "note": "zero_tensor_keys are the norm_3 biases of the two decoder layers without cross-attention (ca_level_start=2): norm_3 is created for every layer but only applied under use_ca, so those biases kept their LayerNorm init value 0 (weights kept init value 1).",
+  "official_source_git_sha": "669a81472ede2269837c22a4d00070eaac360c82",
+  "structure_only_no_forward": true
+ },
+ "tensors": {
+  "adaptive_layer.ffl_seq.linear_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048
+   ]
+  },
+  "adaptive_layer.ffl_seq.linear_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048,
+    1024
+   ]
+  },
+  "adaptive_layer.ffl_seq.linear_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    1024
+   ]
+  },
+  "adaptive_layer.ffl_seq.linear_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    1024,
+    2048
+   ]
+  },
+  "adaptive_layer.norm_seq.norm_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    1024
+   ]
+  },
+  "adaptive_layer.norm_seq.norm_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    1024
+   ]
+  },
+  "adaptive_layer.norm_seq.norm_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    1024
+   ]
+  },
+  "adaptive_layer.norm_seq.norm_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    1024
+   ]
+  },
+  "adaptive_layer.sa_seq.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    3072
+   ]
+  },
+  "adaptive_layer.sa_seq.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    3072,
+    1024
+   ]
+  },
+  "adaptive_layer.sa_seq.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    1024
+   ]
+  },
+  "adaptive_layer.sa_seq.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    1024,
+    1024
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.downsampler.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.downsampler.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    1024
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.ffl_seq.linear_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.ffl_seq.linear_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.ffl_seq.linear_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.ffl_seq.linear_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.norm_seq.norm_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.norm_seq.norm_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.norm_seq.norm_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.norm_seq.norm_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.norm_seq.norm_3.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.norm_seq.norm_3.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.sa_seq.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.sa_seq.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.sa_seq.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.0.sa_seq.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.downsampler.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.downsampler.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    1024
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.ffl_seq.linear_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.ffl_seq.linear_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.ffl_seq.linear_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.ffl_seq.linear_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.norm_seq.norm_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.norm_seq.norm_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.norm_seq.norm_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.norm_seq.norm_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.norm_seq.norm_3.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.norm_seq.norm_3.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.sa_seq.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.sa_seq.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.sa_seq.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.1.sa_seq.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.ca_ze_seq.mha.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.ca_ze_seq.mha.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.ca_ze_seq.mha.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.ca_ze_seq.mha.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.downsampler.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.downsampler.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    1024
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.ffl_seq.linear_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.ffl_seq.linear_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.ffl_seq.linear_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.ffl_seq.linear_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.norm_seq.norm_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.norm_seq.norm_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.norm_seq.norm_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.norm_seq.norm_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.norm_seq.norm_3.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.norm_seq.norm_3.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.sa_seq.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.sa_seq.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.sa_seq.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.2.sa_seq.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.ca_ze_seq.mha.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.ca_ze_seq.mha.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.ca_ze_seq.mha.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.ca_ze_seq.mha.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.downsampler.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.downsampler.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    1024
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.ffl_seq.linear_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.ffl_seq.linear_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.ffl_seq.linear_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.ffl_seq.linear_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.norm_seq.norm_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.norm_seq.norm_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.norm_seq.norm_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.norm_seq.norm_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.norm_seq.norm_3.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.norm_seq.norm_3.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.sa_seq.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.sa_seq.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.sa_seq.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.3.sa_seq.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.ca_ze_seq.mha.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.ca_ze_seq.mha.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.ca_ze_seq.mha.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.ca_ze_seq.mha.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.downsampler.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.downsampler.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    1024
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.ffl_seq.linear_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.ffl_seq.linear_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.ffl_seq.linear_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.ffl_seq.linear_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.norm_seq.norm_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.norm_seq.norm_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.norm_seq.norm_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.norm_seq.norm_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.norm_seq.norm_3.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.norm_seq.norm_3.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.sa_seq.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.sa_seq.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.sa_seq.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.4.sa_seq.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.ca_ze_seq.mha.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.ca_ze_seq.mha.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.ca_ze_seq.mha.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.ca_ze_seq.mha.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.downsampler.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.downsampler.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    1024
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.ffl_seq.linear_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.ffl_seq.linear_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.ffl_seq.linear_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.ffl_seq.linear_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.norm_seq.norm_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.norm_seq.norm_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.norm_seq.norm_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.norm_seq.norm_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.norm_seq.norm_3.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.norm_seq.norm_3.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.sa_seq.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.sa_seq.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.sa_seq.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.5.sa_seq.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.ca_ze_seq.mha.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.ca_ze_seq.mha.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.ca_ze_seq.mha.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.ca_ze_seq.mha.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.downsampler.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.downsampler.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    1024
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.ffl_seq.linear_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.ffl_seq.linear_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.ffl_seq.linear_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.ffl_seq.linear_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.norm_seq.norm_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.norm_seq.norm_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.norm_seq.norm_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.norm_seq.norm_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.norm_seq.norm_3.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.norm_seq.norm_3.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.sa_seq.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.sa_seq.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.sa_seq.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.6.sa_seq.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.ca_ze_seq.mha.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.ca_ze_seq.mha.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.ca_ze_seq.mha.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.ca_ze_seq.mha.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.downsampler.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.downsampler.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    1024
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.ffl_seq.linear_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.ffl_seq.linear_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    2048,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.ffl_seq.linear_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.ffl_seq.linear_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    2048
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.norm_seq.norm_1.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.norm_seq.norm_1.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.norm_seq.norm_2.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.norm_seq.norm_2.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.norm_seq.norm_3.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.norm_seq.norm_3.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.sa_seq.in_proj_bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    768
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.sa_seq.in_proj_weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    768,
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.sa_seq.out_proj.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    256
+   ]
+  },
+  "cad_decoder.cad_decoder_layers.7.sa_seq.out_proj.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    256,
+    256
+   ]
+  },
+  "cad_decoder.seq_embed.cx.embed.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    267,
+    256
+   ]
+  },
+  "cad_decoder.seq_embed.cy.embed.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    267,
+    256
+   ]
+  },
+  "cad_decoder.seq_embed.sf.embed.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    12,
+    256
+   ]
+  },
+  "cad_decoder.seq_embed.si.embed.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    11,
+    256
+   ]
+  },
+  "cad_decoder.seq_output_x.0.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    267
+   ]
+  },
+  "cad_decoder.seq_output_x.0.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    267,
+    256
+   ]
+  },
+  "cad_decoder.seq_output_y.0.bias": {
+   "dtype": "torch.float32",
+   "shape": [
+    267
+   ]
+  },
+  "cad_decoder.seq_output_y.0.weight": {
+   "dtype": "torch.float32",
+   "shape": [
+    267,
+    256
+   ]
+  }
+ },
+ "zero_tensor_keys": [
+  "cad_decoder.cad_decoder_layers.0.norm_seq.norm_3.bias",
+  "cad_decoder.cad_decoder_layers.1.norm_seq.norm_3.bias"
+ ]
+}
