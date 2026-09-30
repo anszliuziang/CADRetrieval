@@ -27,3 +27,9 @@ Codex 在本地用 `D:\miniconda\python.exe experiments/scripts/audit_text2cad_g
 在云脑干净 detached checkout `47de292ec0a4d42172327fa533de6950f6d1cd18`、现有 `cadretrieval-idea01-torch271` 环境运行 `experiments/scripts/inspect_text2cad_bert_load.py`，原始 JSON/stderr 留在 checkout 外 `CADRetrieval_runtime/runs/m1c_bert_audit_20260930/`；未调用模型 forward，未占用 NPU，远端 Git 仍干净。传入的本地 M0 `query.jsonl` 与远端复制件 SHA256 均为 `a0d8504f5a5555e5312dd38a31321a6ea254087e6390e786559cfc0b6d307fcd`。
 
 结果：`BertModel.from_pretrained(local_files_only=True)` 加载基础 BERT **391/391 张量**，`missing_keys=[]`、`mismatched_keys=[]`、`error_msgs=[]`，词嵌入与 pinned safetensors 精确相等；仅 `cls.*` 的 7 个语言模型头张量属于预期未使用键。7,934 查询恰有 3,644 种逐字不同文本；在官方 `BertTokenizer` 下 token 数最大 98、P99 91、P90 66，`>512` 为 0。Stage B runner 仍须保留逐输入长度门，防止将来 query 更换后发生静默截断。这是基础 BERT 单独加载的事实，尚未证明 Text2CAD 完整 checkpoint 键匹配或真实前向。
+
+## B1 审核提交上的完整模型零前向加载（Codex，2026-09-30）
+
+在远端干净 detached checkout `76dd70aad5fe1531d3d39df0feb75afb669c659d`，Codex 用本地已提交的 `experiments/scripts/audit_text2cad_model_load.py`、固定 checkpoint/BERT 与 `experiments/configs/text2cad_checkpoint_expected_keys_20260930.json`，通过 `/home/ma-user/work/envs/cadretrieval-idea01-torch271/bin/python` 做完整**零前向**加载审计，`exit 0`。原始文件在云脑 checkout 外的 `/home/ma-user/work/CADRetrieval_runtime/runs/m1c_model_load_20260930_b1/`：`stdout.json` SHA256 `c0afa6349f41315f55552c71ad332af795afdec4f841d434ed2973c1c52bee2a`，`stderr.log` SHA256 `1ee8090f4ed15e1399485ef9f16234342912cb3bdd13869c4f7039a2067a0f7c`。stderr 仅有 torch_npu 提示 Ascend toolkit 安装目录所有者与当前用户不同的警告，非加载错误。执行后 `git status --porcelain` 为空。
+
+本次一体化检查结果：BERT 源与模型各 391 张量、`missing/mismatched/error=[]`、仅 7 个 `cls.*` 未使用、词嵌入精确相等；Text2CAD 非 BERT checkpoint 172 张量全匹配、逐张量数值相等，预期全零键仅两个无交叉注意力层的 `norm_3.bias`；模型为 `eval()`，状态为 `structure_only_no_forward`。**没有任何真实模型 forward、吞吐或检索精度结果；NPU 预算仍为 0。**
