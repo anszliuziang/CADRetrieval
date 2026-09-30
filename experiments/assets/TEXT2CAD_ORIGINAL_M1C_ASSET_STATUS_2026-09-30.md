@@ -19,3 +19,9 @@
 ## 8,046 项图库零前向结构覆盖（Codex，2026-09-30）
 
 Codex 在本地用 `D:\miniconda\python.exe experiments/scripts/audit_text2cad_gallery_vectors.py --split-json .cache/text2cad_official/text2cad_v1.0/train_test_val.json --cad-zip .cache/text2cad_official/cad_seq.zip` 扫描官方 test 的每个 UID；脚本只读 ZIP、以 `torch.load(weights_only=True)` 读取候选向量，核对固定 `[272,2]`、逐元素 `mask == (vec == 0)`，再调用阶段 A 的 `validate_cad_vec` 审首尾 token、尾部 padding、flag/index 和词表边界。退出码 0，`n_test=8046`、`n_valid=8046`、`reasons={}`。真实未填充序列长度分位：最短 19、P10 23、P25 24、中位 34、P75 56、P90 87、P95 106、P99 142、最长 212；x/y 有效项中位分别 33/8。此项只证明当前结构合同覆盖整库，不替代真实权重加载和前向验证。速度外推必须用这些长度分布，不能把统一填充长度 272 当作每项真实长度。
+
+## pinned BERT 零前向加载与 query 截断检查（Codex，2026-09-30）
+
+在云脑干净 detached checkout `47de292ec0a4d42172327fa533de6950f6d1cd18`、现有 `cadretrieval-idea01-torch271` 环境运行 `experiments/scripts/inspect_text2cad_bert_load.py`，原始 JSON/stderr 留在 checkout 外 `CADRetrieval_runtime/runs/m1c_bert_audit_20260930/`；未调用模型 forward，未占用 NPU，远端 Git 仍干净。传入的本地 M0 `query.jsonl` 与远端复制件 SHA256 均为 `a0d8504f5a5555e5312dd38a31321a6ea254087e6390e786559cfc0b6d307fcd`。
+
+结果：`BertModel.from_pretrained(local_files_only=True)` 加载基础 BERT **391/391 张量**，`missing_keys=[]`、`mismatched_keys=[]`、`error_msgs=[]`，词嵌入与 pinned safetensors 精确相等；仅 `cls.*` 的 7 个语言模型头张量属于预期未使用键。7,934 查询恰有 3,644 种逐字不同文本；在官方 `BertTokenizer` 下 token 数最大 98、P99 91、P90 66，`>512` 为 0。Stage B runner 仍须保留逐输入长度门，防止将来 query 更换后发生静默截断。这是基础 BERT 单独加载的事实，尚未证明 Text2CAD 完整 checkpoint 键匹配或真实前向。

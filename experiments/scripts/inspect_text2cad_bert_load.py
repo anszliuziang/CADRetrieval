@@ -67,6 +67,16 @@ def main() -> None:
         result["token_length_quantiles"] = quantiles(lengths)
 
     print(json.dumps(result, sort_keys=True))
+    if (
+        result["source_bert_keys"] != result["model_parameter_tensors"]
+        or result["missing_keys"]
+        or result["mismatched_keys"]
+        or result["error_msgs"]
+        or any(not key.startswith("cls.") for key in result["unexpected_keys"])
+        or not result["word_embeddings_exact_equal"]
+        or result.get("n_over_512", 0)
+    ):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
