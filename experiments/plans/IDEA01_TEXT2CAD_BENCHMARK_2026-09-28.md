@@ -1,5 +1,7 @@
 # Idea 01：Text2CAD 数据上的冻结生成模型检索评测
 
+**2026-09-30 执行更新：** CADmium 四种已发布 adapter 的 LoRA-B 全零，该臂暂停（证据见 `experiments/assets/CADMIUM_LORA_CHECKPOINT_AUDIT_2026-09-30.md`）；用户选原版 Text2CAD 为下一仪器。其双头原始 logits 评分是明确命名的生成分数，不是纯 MLE/NLL。当前实施与预算只看 `ACTIVE_TASK.md`、`IDEA01_M1C_TEXT2CAD_SCORE_BENCH_2026-09-30.md`；本文件下文旧 CADmium 顺序和 M3 短名单退路不覆盖用户要求的完整精确矩阵与七天停止门。
+
 状态：执行合同。负责人 Codex；本地 Claude Code / Kimi 负责实现与运行，Codex 在每次扩大计算前审代码与原始结果。直接用户指令已授权开展评测；每阶段资源和有效 SHA 仍由 `experiments/ACTIVE_TASK.md` 指定。
 
 ## 1. 核心问题与可声称结果

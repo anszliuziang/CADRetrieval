@@ -15,3 +15,5 @@
 | 2026-09-30 | /run-experiment | experiments/reviews/IDEA01_M1B_G1_INVALIDATION_2026-09-30.md | implementation | 首次 G1 发现 adapter 缺键与预算路径漏洞，原始输出作废、撤销授权并定义复核条件 |
 | 2026-09-30 | /run-experiment | experiments/assets/CADMIUM_LORA_CHECKPOINT_AUDIT_2026-09-30.md | reviewed | 官方四种尺寸 adapter SHA 与逐张量核验：LoRA-B 全零，CADmium 臂暂停 |
 | 2026-09-30 | /run-experiment | experiments/scripts/audit_lora_safetensors.py | reviewed | 复现 adapter SHA 与 LoRA-B 非零张量数的只读脚本 |
+| 2026-09-30 | /experiment-plan | experiments/plans/IDEA01_M1C_TEXT2CAD_SCORE_BENCH_2026-09-30.md | implementation | 用户选择原版 Text2CAD 后的双头评分、910 移植及七天前验证合同 |
+| 2026-09-30 | /run-experiment | experiments/ACTIVE_TASK.md | implementation | 激活 Text2CAD M1c 本地实现；真实模型前向预算仍为零 |
