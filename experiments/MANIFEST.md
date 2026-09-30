@@ -17,3 +17,5 @@
 | 2026-09-30 | /run-experiment | experiments/scripts/audit_lora_safetensors.py | reviewed | 复现 adapter SHA 与 LoRA-B 非零张量数的只读脚本 |
 | 2026-09-30 | /experiment-plan | experiments/plans/IDEA01_M1C_TEXT2CAD_SCORE_BENCH_2026-09-30.md | implementation | 用户选择原版 Text2CAD 后的双头评分、910 移植及七天前验证合同 |
 | 2026-09-30 | /run-experiment | experiments/ACTIVE_TASK.md | implementation | 激活 Text2CAD M1c 本地实现；真实模型前向预算仍为零 |
+| 2026-09-30 | /run-experiment | experiments/configs/text2cad_original_asset_sha256_20260930.json | implementation | 原版 checkpoint、BERT 与 CAD 向量 ZIP 的本地及云脑 SHA 清单 |
+| 2026-09-30 | /run-experiment | experiments/scripts/inspect_text2cad_checkpoint.py | implementation | 不做模型前向的权重结构与单 CAD 向量检查脚本 |
