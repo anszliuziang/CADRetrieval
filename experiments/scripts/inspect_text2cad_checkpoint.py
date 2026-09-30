@@ -29,7 +29,9 @@ def main() -> None:
     if not isinstance(checkpoint, dict) or not isinstance(checkpoint.get("model_state_dict"), dict):
         raise RuntimeError("official checkpoint lacks model_state_dict")
     state = checkpoint["model_state_dict"]
-    nonbert = {key: value for key, value in state.items() if not key.startswith("base_text_embedder.")}
+    normalized = {key.removeprefix("module."): value for key, value in state.items()}
+    bert = {key: value for key, value in normalized.items() if key.startswith("base_text_embedder.")}
+    nonbert = {key: value for key, value in normalized.items() if not key.startswith("base_text_embedder.")}
     nonzero_nonbert = sum(int(torch.count_nonzero(value).item() > 0) for value in nonbert.values())
     with zipfile.ZipFile(ARCHIVE) as archive:
         sample = torch.load(io.BytesIO(archive.read(MEMBER)), map_location="cpu", weights_only=True)
@@ -41,6 +43,8 @@ def main() -> None:
         "status": "structure_only_no_forward",
         "checkpoint_top_keys": sorted(checkpoint.keys()),
         "model_state_tensors": len(state),
+        "module_prefixed_tensors": sum(key.startswith("module.") for key in state),
+        "bert_tensors": len(bert),
         "nonbert_tensors": len(nonbert),
         "nonzero_nonbert_tensors": nonzero_nonbert,
         "model_state_first_keys": sorted(state)[:8],

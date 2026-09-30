@@ -19,3 +19,4 @@
 | 2026-09-30 | /run-experiment | experiments/ACTIVE_TASK.md | implementation | 激活 Text2CAD M1c 本地实现；真实模型前向预算仍为零 |
 | 2026-09-30 | /run-experiment | experiments/configs/text2cad_original_asset_sha256_20260930.json | implementation | 原版 checkpoint、BERT 与 CAD 向量 ZIP 的本地及云脑 SHA 清单 |
 | 2026-09-30 | /run-experiment | experiments/scripts/inspect_text2cad_checkpoint.py | implementation | 不做模型前向的权重结构与单 CAD 向量检查脚本 |
+| 2026-09-30 | /run-experiment | experiments/assets/TEXT2CAD_ORIGINAL_M1C_ASSET_STATUS_2026-09-30.md | implementation | 原版 checkpoint、BERT、cad_seq 云脑副本 7 项 SHA 与零前向结构证据 |
