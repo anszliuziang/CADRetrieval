@@ -71,5 +71,5 @@ env PYTHONDONTWRITEBYTECODE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS
 ## 8. 提交信息
 
 - 本报告为本次唯一新增 Git 文件；精确 stage 仅此文件，不 push，不改 ACTIVE_TASK/CLAUDE/plans/reviews/assets/configs/src 及旧报告。
-- 首次提交 SHA：（见下方回填）；回填 commit（仅本文件）：（见下方回填）。
+- 首次提交 SHA：`a5ee50aaeb1b7a14ebaf892f1c8754cb89fb2771`（仅新增本报告，未 push）；本回填为第二个 doc-only commit（仅本文件，未 push）。
 - 状态建议：**results_submitted**（门失败事实提交，等待 Codex 复核与下一步决定；不进入 G2）。
