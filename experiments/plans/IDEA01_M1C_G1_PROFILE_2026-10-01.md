@@ -1,6 +1,6 @@
 # Text2CAD 固定64对扩展 G1 与 CPU 资产核验
 
-状态：**CPU资产预处理已授权，真实704对前向尚未授权。** R3代码已审，见 `reviews/IDEA01_M1C_G2_R3_CODEX_REVIEW_2026-10-01.md`；上位为 M1c 与 G2 protocol repair。最终前向授权须由 Codex 在 ACTIVE_TASK 另写完整 SHA 和预算。
+状态：**本轮前向已执行，在batch32门失败后停止，实际192/704对；Codex独立复算确认。** 见 `reviews/IDEA01_M1C_G1_PROFILE_CODEX_REVIEW_2026-10-01.md`；不重试或补档。R3代码审核见 `reviews/IDEA01_M1C_G2_R3_CODEX_REVIEW_2026-10-01.md`；上位为 M1c 与 G2 protocol repair。任何下一前向须由 Codex 在 ACTIVE_TASK 另写完整 SHA 和预算。
 
 ## 目的与固定范围
 

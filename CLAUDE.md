@@ -10,6 +10,8 @@
 
 2026-09-24 的 Idea 01 先用 `ricemonster/qwen2.5-3B-SFT`（Text-to-CadQuery 原生 CadQuery 程序）完成 P0/P1 仪器核验；这是已结束的历史阶段。**当前入口是 `experiments/ACTIVE_TASK.md`，其中激活的总计划与子计划才定义模型、样本规模、停止条件和资源预算。** 2026-09-30 的 CADmium G1 真实前向已作废：官方 1.5B/3B/7B/14B 四份 adapter 的 LoRA-B 张量全部为零，不能代表微调后的生成模型；证据见 `experiments/assets/CADMIUM_LORA_CHECKPOINT_AUDIT_2026-09-30.md`。用户现已选**原版 Text2CAD**作为下一仪器；M1c 子合同见 `experiments/plans/IDEA01_M1C_TEXT2CAD_SCORE_BENCH_2026-09-30.md`；逐门真实前向预算以 `ACTIVE_TASK.md` 为准。2026-10-01 的 G1 单对合同为 `experiments/plans/IDEA01_M1C_G1_SPOT_2026-10-01.md`；worker 使用 checkout 外 `runtime/pair_manifest_v4`，UID 映射单独保存在 `runtime/evaluation_inputs/m0_v3/`。[两卡自动执行路线](experiments/plans/IDEA01_TWO_910C_AUTONOMOUS_ROADMAP_2026-09-30.md)已获用户认可：先验证 batch size 与真实吞吐，再用两卡实测和至少 30% 余量估算全量精确评分；只有保守估计不超过 7 天才自动启动，否则停下来讨论。该路线本身不替代 `ACTIVE_TASK.md` 的逐阶段授权。CADmium、CadQuery 程序、Text2CAD 向量和 HoLa 属于不同原生表示，不能混入一个“同表示”主表。历史 P0 合同 `experiments/plans/IDEA01_P0_IMPLEMENTATION_2026-09-24.md` 不再授权新运行。
 
+2026-10-01 最新恢复点：Text2CAD固定64对G1在真实batch32的逐元素logit门失败，实际192/704对，已停止。batch16及两档最终score容差通过；trim/cache尚未测试。Codex独立复算见 `experiments/reviews/IDEA01_M1C_G1_PROFILE_CODEX_REVIEW_2026-10-01.md`。**当前不允许新前向；账面剩余512对不可重用。** 等待与用户讨论下一阶段，不因旧授权或小样本score通过自行开G2/全量。
+
 ## 2. 唯一入口、文件归属与交接
 
 每次开始工作依次阅读：本文件 → `experiments/ACTIVE_TASK.md` → 其中指向的总计划及 `active_subplan`（如有）→ 当前任务指定的参考资料。若 `ACTIVE_TASK.md` 为 `idle`、缺失、计划路径不存在，或没有明示允许的阶段与资源上限，只做只读核查并在本地报告阻塞；**不要下载大模型、占用 GPU 或自行挑一个实验开跑**。
