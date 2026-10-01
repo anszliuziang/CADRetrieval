@@ -166,6 +166,6 @@ PYTHONDONTWRITEBYTECODE=1 ... python experiments/scripts/run_text2cad_speed_benc
 ## 6. Git 交付
 
 - 暂存仅本任务文件：`experiments/src/idea01/text2cad_bench_protocol.py`（新）、`experiments/src/idea01/text2cad_speed_bench.py`、`experiments/src/idea01/text2cad_frozen_runner.py`、`experiments/scripts/run_text2cad_speed_bench.py`、`experiments/tests/test_text2cad_bench_protocol.py`（新）、`experiments/tests/test_text2cad_speed_bench.py`、本文件。无数据/权重/缓存/资产；未改 Codex 文件。
-- 完整提交 SHA：见下方提交后回填（提交但未 push，等 Codex 审核）。
+- 实现提交完整 SHA：`fca6e977834f2f022ae1740354fbfe14a7bbba8d`（本 SHA 回填紧随其后一个仅本文档的小提交；两个提交均未 push，等 Codex 审核后推送）。
 
 review_required
