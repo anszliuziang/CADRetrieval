@@ -33,6 +33,6 @@ pytest experiments/tests/test_text2cad_bench_protocol.py \
 ## 3. Git 交付
 
 - 暂存仅本轮：`experiments/src/idea01/text2cad_speed_bench.py`、`experiments/tests/test_text2cad_speed_bench.py`、本 R3 报告。未触碰 Codex 文件（含当前未跟踪的两份 review 与 G1 PROFILE plan）、configs/scripts/其它源文件；无数据/权重/缓存。
-- R3 修复提交完整 SHA：见回填（本地提交，不 push）。
+- R3 修复提交完整 SHA：`03db50f7e49f4713ce0b96ce0d48d4e57ad39f67`（本 SHA 回填紧随其后一个仅本文档的小提交；均未 push，等 Codex 审核）。
 
 review_required
