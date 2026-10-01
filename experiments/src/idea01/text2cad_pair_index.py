@@ -204,7 +204,7 @@ def write_jsonl(path, records: Iterable[dict[str, Any]]) -> None:
     buf: list[str] = []
     for record in records:
         buf.append(_canonical_json(record))
-    Path(path).write_text("\n".join(buf) + ("\n" if buf else ""), encoding="utf-8")
+    Path(path).write_text("\n".join(buf) + ("\n" if buf else ""), encoding="utf-8", newline="\n")
 
 
 # ---------------------------------------------------------------------------
@@ -803,7 +803,7 @@ def write_pair_manifest(
         write_jsonl(paths[CAD_LENGTH_FILE], cad_length_records)
     paths[EVALUATION_MAP_FILE].write_text(
         json.dumps(evaluation_map, ensure_ascii=False, sort_keys=True, indent=1) + "\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="\n",
     )
 
     manifest = dict(built["manifest"])
@@ -817,7 +817,7 @@ def write_pair_manifest(
     manifest_path = paths[PAIR_MANIFEST_FILE]
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=1) + "\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="\n",
     )
     # Re-record the manifest's own hash for the summary (not stored inside itself).
     summary = {

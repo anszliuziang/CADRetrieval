@@ -10,7 +10,7 @@
 
 ## 本轮修复与证据
 
-- 清单仅记录输入内容 SHA，跨主机路径不影响清单内容。重新生成的完整清单 SHA 为 `83d0e19c1ed8a57fc533f5777b590114e647340fc56c00bddec7b41154e18e8d`；三个 worker 文件 SHA 与原构建一致。固定 G1/G2 选择文件经实际 `--mode select` 重建，逐字节 SHA 与仓库配置一致：`cd5f185a105296598cf236c84f2a27c68951f782c9c8b755a5f315e87313053b`。
+- 清单仅记录输入内容 SHA，跨主机路径不影响内容。远端审计进一步发现 Windows 默认 CRLF 与 Linux LF 的字节差异，已在 writer 明定 LF，并以 `.gitattributes` 固定仓库 JSON 配置的 LF。真实完整本地 v4 重建与远端 v3 构建的全部 worker SHA 完全相同；当前完整清单 SHA 为 `62086beb064af7b738665825edbf1a3cb63ebfaceddc7e227c0aa45390902557`。G1/G2 选择配置重新生成，当前 SHA `dd07ec91782fa8156fa490f176d0fe0e3fa118488e687ce7bf14a04af29d834a`。旧 CRLF 指纹已作废。
 - `evaluation_map.json` 的 SHA 独立登记在 expected 配置的 evaluation 字段，评分 manifest 和 loader 不再打开它。测试删除映射文件后仍可完成 worker 加载；评分器拒绝将映射加入评分 artifacts。
 - forward 入口固定仓库内已审指纹、原版 checkpoint 与非 BERT 172 键清单；默认 FP32、全长、无文本缓存。矩阵入口拒绝未批准的 BF16、裁剪和缓存；候选任一预加载拒绝即在前向前停止。ZIP 在一次 preload 中只开启一次。
 - 每个单设备进程计 1 张卡。bench 与 matrix 在同一张卡使用同一 ledger identity，两张不同卡可以并发，同卡双运行被拒绝。card ledger 在模型迁移/加载前登记，失败时也 finalize。
@@ -30,6 +30,8 @@ D:\miniconda\python.exe -m pytest -q experiments/tests/test_text2cad_pair_index.
 
 最终重跑 **209 passed，7 subtests passed，112.24 秒，exit 0**。日志：本地 checkout 外 `D:\projects\IdeaSpark\CADRetrievalIdea1_runtime\b2_cpu_tests_20261001.log`。首次重跑的 209 项通过，另 1 项失败来自测试 fixture 未提供新增 device 参数，已修正 fixture；这不构成真实前向验证。
 
+上述全套后发现并修复 LF 问题；专项测试先在 Windows 复现 CRLF 失败，修复后通过。受影响的 pair-index 与 speed-bench 套件重跑 **58 passed，4 subtests passed，10.86 秒，exit 0**，日志 `b2_lf_tests_20261001.log`。独立复审确认全部 writer、Git LF 属性与新指纹同步，未见新增 G1 阻塞。失败的云脑零前向审计证据保存在 `runtime/runs/m1c_b2_zero_audit_20261001/`，其 SHA 门拒绝发生于任何真实前向之前；不得覆盖这些失败记录。
+
 本轮只读 SSH 核验成功：远端工作树为空，HEAD `76dd70aad5fe1531d3d39df0feb75afb669c659d`，两张 Ascend910 健康，无 NPU 进程。新代码尚须 fetch/detach，不可从旧 SHA 运行。启动前在 checkout 外创建 `runtime/budgets`、`tmp`、`hf`、`xdg` 目录。
 
 ## G1 命令（授权后才执行）
@@ -44,7 +46,7 @@ OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 \
   --checkpoint $RT/models/Text2CAD-v1.0/422d4c93198c3cd98d5c2092c0ab214b3a76a68d/Text2CAD_1.0.pth \
   --bert-dir $RT/models/bert-large-uncased/6da4b6a26a1877e173fca3225479512db81a5e5b \
   --cad-seq-zip $RT/datasets/Text2CAD-v1.0/422d4c93198c3cd98d5c2092c0ab214b3a76a68d/cad_seq.zip \
-  --pair-manifest-dir $RT/pair_manifest_v3 \
+  --pair-manifest-dir $RT/pair_manifest_v4 \
   --expected-keys-manifest experiments/configs/text2cad_checkpoint_expected_keys_20260930.json \
   --selection experiments/configs/text2cad_g1g2_pair_selection_20260930.json \
   --out-dir $RT/runs/idea01_text2cad_g1_spot_20261001 \

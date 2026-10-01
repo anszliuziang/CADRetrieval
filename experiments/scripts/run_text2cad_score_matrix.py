@@ -17,7 +17,7 @@ of 2026-09-30):
       --checkpoint $RT/models/Text2CAD-v1.0/422d4c93.../Text2CAD_1.0.pth \
       --bert-dir $RT/models/bert-large-uncased/6da4b6a2.../ \
       --cad-seq-zip $RT/datasets/Text2CAD-v1.0/422d4c93.../cad_seq.zip \
-      --pair-manifest-dir $RT/pair_manifest_v3 \
+      --pair-manifest-dir $RT/pair_manifest_v4 \
       --expected-keys-manifest experiments/configs/text2cad_checkpoint_expected_keys_20260930.json \
       --out-dir $RT/runs/<run_id>/shard0 --device npu:0 --batch-size 8 \
       --shard-id 0 --n-shards 2 --cards-used 1 --repo-root /home/ma-user/work/CADRetrieval

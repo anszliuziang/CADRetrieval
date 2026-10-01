@@ -292,6 +292,13 @@ class TextIndexTest(unittest.TestCase):
                 (out_a / name).read_bytes(), (out_b / name).read_bytes(), f"{name} not byte-identical"
             )
 
+    def test_artifacts_use_lf_bytes_on_every_host(self):
+        built = _build_mini(self.root)
+        out = self.root / "out_lf"
+        write_pair_manifest(out, built)
+        for path in out.iterdir():
+            self.assertNotIn(b"\r\n", path.read_bytes(), f"{path.name} must use canonical LF")
+
     def test_input_paths_do_not_change_manifest_bytes(self):
         original = _build_mini(self.root)
         relocated = self.root / "relocated"

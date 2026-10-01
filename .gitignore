@@ -1,6 +1,7 @@
 # Only the experiment package is sent to the GPU server.
 /*
 !/.gitignore
+!/.gitattributes
 !/CLAUDE.md
 !/experiments/
 

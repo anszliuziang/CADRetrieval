@@ -1,0 +1,2 @@
+# Fingerprinted configuration bytes must match Windows and Linux checkouts.
+/experiments/configs/*.json text eol=lf

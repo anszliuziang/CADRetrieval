@@ -1,8 +1,8 @@
 {
  "artifact_sha256": {
-  "cad_length_index.jsonl": "56185640c93a3edbf6a3f75a63c7e7cf21d08662276be88769dcea44ff4a2f1b",
-  "cad_store.jsonl": "e6fcec97111e706f509faa061ffc6171b08dea3c5c59c946e53717d22653fdc5",
-  "texts.jsonl": "5a3132756f08e3012a3023a8b2e0470d60e09bb252b5b2a544a3830d6f4758cf"
+  "cad_length_index.jsonl": "daac66a102e34fe45c9cb474922076b0d62345ab0c9796f917a0f8085c6ea0c3",
+  "cad_store.jsonl": "2f441110f013bb614b0bd2fdb7a3b49569a231bbf3f8eaa2c03ac1d725cb1380",
+  "texts.jsonl": "c59b4aef8137b1e71c1581291a4c1d2bcbafe36f22d81d01431a5cc02dad7a21"
  },
  "built_from": {
   "cad_seq_zip": {
@@ -25,10 +25,10 @@
   "n_unique_text": 3644
  },
  "evaluation_artifact_sha256": {
-  "evaluation_map.json": "3b00062b3c1cf842372ba934be8553ae3cbb2af8991a486536ba2ae9b397ffb7"
+  "evaluation_map.json": "a6f5b19a76a14aef4eab03879ae9f0f872b9e5a30e4bda5ba9ea8a45c0ed1875"
  },
  "notes": "Worker artifact fingerprints are verified by the scorer; evaluation_map.json is a separate evaluation-only artifact never opened by forward CLIs.",
- "pair_manifest_sha256": "83d0e19c1ed8a57fc533f5777b590114e647340fc56c00bddec7b41154e18e8d",
+ "pair_manifest_sha256": "62086beb064af7b738665825edbf1a3cb63ebfaceddc7e227c0aa45390902557",
  "purpose": "Reviewed fingerprints of the deterministic pair-manifest artifacts; the production CLIs verify the live artifacts byte-for-byte against these SHA256 values before any forward.",
  "schema_version": "text2cad-pair-manifest-expected-v1"
 }

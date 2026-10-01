@@ -7,10 +7,10 @@
   "strata_shortfalls": []
  },
  "provenance": {
-  "cad_length_index_sha256": "56185640c93a3edbf6a3f75a63c7e7cf21d08662276be88769dcea44ff4a2f1b",
+  "cad_length_index_sha256": "daac66a102e34fe45c9cb474922076b0d62345ab0c9796f917a0f8085c6ea0c3",
   "generated_by": "text2cad_speed_bench.generate_selection (CPU, zero forward)",
-  "pair_manifest_sha256": "83d0e19c1ed8a57fc533f5777b590114e647340fc56c00bddec7b41154e18e8d",
-  "texts_jsonl_sha256": "5a3132756f08e3012a3023a8b2e0470d60e09bb252b5b2a544a3830d6f4758cf"
+  "pair_manifest_sha256": "62086beb064af7b738665825edbf1a3cb63ebfaceddc7e227c0aa45390902557",
+  "texts_jsonl_sha256": "c59b4aef8137b1e71c1581291a4c1d2bcbafe36f22d81d01431a5cc02dad7a21"
  },
  "rules": {
   "cad_strata": "rank by (n_real_tokens, cad_index) into 10 deciles",

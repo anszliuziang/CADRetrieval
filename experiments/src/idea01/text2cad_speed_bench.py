@@ -1070,7 +1070,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 out_path = Path(args.out)
                 if out_path.exists():
                     raise RunnerError(f"refusing to overwrite {out_path}")
-                out_path.write_text(payload, encoding="utf-8")
+                out_path.write_text(payload, encoding="utf-8", newline="\n")
             else:
                 print(payload)
             return 0
@@ -1131,7 +1131,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 out_path = Path(args.out)
                 if out_path.exists():
                     raise RunnerError(f"refusing to overwrite {out_path}")
-                out_path.write_text(payload, encoding="utf-8")
+                out_path.write_text(payload, encoding="utf-8", newline="\n")
             else:
                 print(payload)
             return 0 if estimate["passes_seven_day_gate"] else 3
