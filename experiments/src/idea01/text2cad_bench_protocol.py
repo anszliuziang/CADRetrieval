@@ -444,18 +444,25 @@ def sample_batches_for_cell(cell: dict[str, Any]) -> list[list[tuple[int, int]]]
 
 
 def _diff_path(expected: Any, actual: Any, path: str) -> Optional[str]:
-    """First structural difference between two JSON-like trees (path or None)."""
+    """First structural difference between two JSON-like trees (path or None).
+
+    STRICT key sets (R2 fix 5): a key present in ``actual`` but not in
+    ``expected`` is drift exactly like a missing or changed one -- an injected
+    ``qrels``/``evaluation_map``/caption field can never ride into the worker
+    inside a selection file.
+    """
     if isinstance(expected, dict):
         if not isinstance(actual, dict):
             return path or "<root>"
         for key in sorted(set(expected) | set(actual)):
             sub = f"{path}.{key}" if path else str(key)
+            if key not in expected:
+                return sub  # injected extra key
             if key not in actual:
                 return sub
-            if key in expected:
-                found = _diff_path(expected[key], actual[key], sub)
-                if found is not None:
-                    return found
+            found = _diff_path(expected[key], actual[key], sub)
+            if found is not None:
+                return found
         return None
     if isinstance(expected, (list, tuple)):
         # JSON round-trips turn tuples into lists; both spellings are equal here.
@@ -492,6 +499,14 @@ def verify_g2_selection(
     expected = build_g2_selection(
         text_records, cad_length_records, text_token_lengths
     )
+    # strict top-level allowlist: exactly the derived sections plus the
+    # CLI-attached provenance; any injected input (qrels, evaluation_map,
+    # captions, ...) refuses the whole file
+    extra_top = sorted(set(selection) - set(expected) - {"provenance"})
+    if extra_top:
+        raise RunnerError(
+            f"g2 selection carries non-allowlisted top-level keys {extra_top}"
+        )
     for key in expected:
         if key not in selection:
             raise RunnerError(f"g2 selection is missing section {key!r}")
@@ -648,12 +663,16 @@ def plan_production_forwards(
     tier_plans: Sequence[dict[str, Any]], warmup_passes: int, reps: int
 ) -> int:
     """Exact forwards (warmups + timed reps) over the SAME enumeration the
-    driver executes -- the budget check and the charges cannot diverge."""
+    driver executes -- the budget check and the charges cannot diverge.
+
+    R2 fix 7: warmup is per CELL (``warmup_passes`` passes over the cell's
+    first two sample batches), not just over the first cell of the tier.
+    """
     total = 0
     for plan in tier_plans:
-        if not plan["cells"]:
-            continue
-        warmup_pairs = sum(len(b) for b in plan["cells"][0]["batches"][:2])
+        warmup_pairs = sum(
+            len(b) for cell in plan["cells"] for b in cell["batches"][:2]
+        )
         rep_pairs = sum(len(b) for cell in plan["cells"] for b in cell["batches"])
         total += warmup_passes * warmup_pairs + reps * rep_pairs
     return total
@@ -661,7 +680,27 @@ def plan_production_forwards(
 
 def tier_plans_sha256(tier_plans: Sequence[dict[str, Any]]) -> str:
     """Binding hash of the ACTUAL measurement profile (cells + batch sizes)."""
+    return sha256_text(json.dumps(_plan_summary(tier_plans), sort_keys=True))
+
+
+def combined_tier_plans_sha256(
+    plans_shard0: Sequence[dict[str, Any]], plans_shard1: Sequence[dict[str, Any]]
+) -> str:
+    """COMMON two-card binding over BOTH shards' plans, in FIXED shard order.
+
+    The two cards measure different texts/cells, so their local plan hashes
+    differ by construction; the barrier binding that must be identical on
+    both sides is this combined hash over ``[shard0 plans, shard1 plans]``.
+    """
     summary = [
+        {"shard_id": 0, "plan": json.loads(json.dumps(_plan_summary(plans_shard0)))},
+        {"shard_id": 1, "plan": json.loads(json.dumps(_plan_summary(plans_shard1)))},
+    ]
+    return sha256_text(json.dumps(summary, sort_keys=True))
+
+
+def _plan_summary(tier_plans: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
         {
             "batch_size": plan["batch_size"],
             "cells": [
@@ -676,7 +715,29 @@ def tier_plans_sha256(tier_plans: Sequence[dict[str, Any]]) -> str:
         }
         for plan in tier_plans
     ]
-    return sha256_text(json.dumps(summary, sort_keys=True))
+
+
+def dual_shard_plan_binding(
+    selection: dict[str, Any], tiers: Sequence[int]
+) -> dict[str, Any]:
+    """Build both shards' tier plans and the common/local binding hashes.
+
+    This is the SINGLE construction used by the throughput CLI (and mirrored
+    by tests): the common hash binds the barrier, each card's local hash is
+    recorded in its result and cross-checked against the peer's announced
+    value at every sync point, and the ETA rebuilds both from the committed
+    selection to verify the measurement profile.
+    """
+    plans0 = build_tier_plans(selection, tiers, 0)
+    plans1 = build_tier_plans(selection, tiers, 1)
+    return {
+        "plans_by_shard": {0: plans0, 1: plans1},
+        "common_plan_sha256": combined_tier_plans_sha256(plans0, plans1),
+        "local_plan_sha256_by_shard": {
+            0: tier_plans_sha256(plans0),
+            1: tier_plans_sha256(plans1),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -972,6 +1033,10 @@ def estimate_sharded_eta(
 
     invocations: set[str] = set()
     envs: dict[str, dict[str, Any]] = {}
+    sync_groups: set[str] = set()
+    common_plan_shas: set[str] = set()
+    local_plan_shas: dict[str, Any] = {}
+    batch_tiers_by_card: dict[str, list[int]] = {}
     for device, result in results_by_device.items():
         if result.get("schema_version") != G2_RESULT_SCHEMA_VERSION:
             raise RunnerError(
@@ -985,9 +1050,61 @@ def estimate_sharded_eta(
         if not isinstance(invocation, str) or not invocation:
             raise RunnerError(f"{device}: missing invocation_id")
         invocations.add(invocation)
-        envs[device] = result.get("environment") or {}
+        env = result.get("environment") or {}
+        envs[device] = env
+        # card identity: the result filed under a device must claim that device
+        if env.get("device") != device:
+            raise RunnerError(
+                f"{device}: environment claims device {env.get('device')!r}; card "
+                "identity mismatch"
+            )
+        # per-card reference configuration (BOTH cards are checked, always)
+        if (
+            env.get("torch_dtype") != "float32"
+            or env.get("trim_mode") != "none"
+            or env.get("text_cache") is not False
+        ):
+            raise RunnerError(
+                f"{device}: not the frozen reference configuration (requires "
+                "float32/full-length/uncached)"
+            )
+        # mandatory two-card sync evidence (R2): real concurrent measurement
+        sync = result.get("sync") or {}
+        if sync.get("enabled") is not True or not sync.get("group"):
+            raise RunnerError(
+                f"{device}: result lacks mandatory sync evidence (sync.enabled "
+                "must be true with a shared group)"
+            )
+        sync_groups.add(str(sync["group"]))
+        common_plan_shas.add(sync.get("common_plan_sha256"))
+        local_plan_shas[device] = sync.get("local_plan_sha256")
+        # requested tier set: explicit, duplicate-free, containing the priced tier
+        batch_tiers = result.get("batch_tiers")
+        if (
+            not isinstance(batch_tiers, list)
+            or not batch_tiers
+            or len(set(batch_tiers)) != len(batch_tiers)
+            or not all(isinstance(t, int) and not isinstance(t, bool) for t in batch_tiers)
+        ):
+            raise RunnerError(f"{device}: bad batch_tiers record {batch_tiers!r}")
+        if int(tier) not in batch_tiers:
+            raise RunnerError(f"{device}: priced tier {tier_key} was not measured")
+        tier_entries = result.get("tiers") or []
+        tier_sizes = [t.get("batch_size") for t in tier_entries]
+        if len(set(tier_sizes)) != len(tier_sizes) or set(tier_sizes) != set(batch_tiers):
+            raise RunnerError(
+                f"{device}: duplicate/missing/extra tier records vs batch_tiers"
+            )
+        batch_tiers_by_card[device] = sorted(int(t) for t in batch_tiers)
     if len(invocations) != 2:
         raise RunnerError("the two card results must come from distinct invocations")
+    if len(sync_groups) != 1:
+        raise RunnerError(
+            "the two card results must come from the SAME sync group "
+            f"(got {sorted(sync_groups)})"
+        )
+    if batch_tiers_by_card["npu:0"] != batch_tiers_by_card["npu:1"]:
+        raise RunnerError("the two cards did not measure the same tier set")
     env0, env1 = envs["npu:0"], envs["npu:1"]
     for key in ("checkpoint_sha256", "pair_manifest_sha256", "score_name", "spec_version"):
         if not env0.get(key) or env0.get(key) != env1.get(key):
@@ -1000,11 +1117,24 @@ def estimate_sharded_eta(
         or not set(git0) <= set("0123456789abcdef")
     ):
         raise RunnerError("card results must carry the same complete reviewed git_sha")
-    if env0.get("torch_dtype") != "float32" or env0.get("trim_mode") != "none" or env0.get("text_cache") is not False:
-        raise RunnerError("card results are not the frozen reference configuration")
     selection_shas = {r.get("selection_sha256") for r in results_by_device.values()}
     if len(selection_shas) != 1 or not isinstance(next(iter(selection_shas)), str) or len(next(iter(selection_shas))) != 64:
         raise RunnerError("card results disagree on / lack the selection SHA binding")
+
+    # Rebuild the reviewed measurement profile from the committed selection
+    # and verify BOTH cards' plan bindings against it (R2 fix 3/4).
+    rebuilt = dual_shard_plan_binding(selection, batch_tiers_by_card["npu:0"])
+    if common_plan_shas != {rebuilt["common_plan_sha256"]}:
+        raise RunnerError(
+            "the two results' common plan binding does not match the profile "
+            "rebuilt from the committed selection (or they disagree)"
+        )
+    for device, shard in SHARD_BY_DEVICE.items():
+        if local_plan_shas[device] != rebuilt["local_plan_sha256_by_shard"][shard]:
+            raise RunnerError(
+                f"{device}: local plan SHA does not match the rebuilt {shard} shard "
+                "profile"
+            )
 
     per_card: dict[str, Any] = {}
     rep_windows_by_card: dict[str, list[dict[str, Any]]] = {}
@@ -1018,26 +1148,53 @@ def estimate_sharded_eta(
         cold = result.get("cold_start_s")
         if isinstance(cold, bool) or not isinstance(cold, (int, float)) or not math.isfinite(cold) or cold < 0:
             raise RunnerError(f"{device}: bad cold_start_s {cold!r}")
+        # peak HBM must be a real reading taken on THIS card
+        peak = tier_record.get("peak_device_memory_bytes")
+        if isinstance(peak, bool) or not isinstance(peak, int) or peak <= 0:
+            raise RunnerError(
+                f"{device}: tier {tier_key} has no valid peak HBM reading "
+                f"({peak!r}); None/zero is not valid evidence"
+            )
+        if tier_record.get("hbm_device") != device:
+            raise RunnerError(
+                f"{device}: HBM reading was not taken on this card "
+                f"({tier_record.get('hbm_device')!r})"
+            )
+        expected_cells = {
+            key: cell
+            for key, cell in tier_entry["cells"].items()
+            if cell["shard_id"] == shard
+        }
         measured_cells = tier_record.get("cells") or {}
+        if set(measured_cells) != set(expected_cells):
+            raise RunnerError(
+                f"{device}: measured cell set differs from the selection "
+                f"(missing={sorted(set(expected_cells) - set(measured_cells))[:3]}, "
+                f"extra={sorted(set(measured_cells) - set(expected_cells))[:3]})"
+            )
         compute_seconds = 0.0
         cell_details: list[dict[str, Any]] = []
         rep_windows: list[dict[str, Any]] = []
-        for cell_key in sorted(tier_entry["cells"]):
-            cell = tier_entry["cells"][cell_key]
-            if cell["shard_id"] != shard:
-                continue
-            measured = measured_cells.get(cell_key)
-            if measured is None:
-                raise RunnerError(f"{device}: cell {cell_key} missing from the measurement")
+        for cell_key in sorted(expected_cells):
+            cell = expected_cells[cell_key]
+            measured = measured_cells[cell_key]
             expected_point = f"tt{cell['text_tier']}_{cell['layer']}"
             if measured.get("point") != expected_point:
                 raise RunnerError(
                     f"{device}: cell {cell_key} was measured under a different profile"
                 )
-            n_sample = len(cell["samples"]["texts"]) * len(cell["samples"]["windows"])
+            expected_batches = sample_batches_for_cell(cell)
+            n_sample = len(expected_batches)
             reps = measured.get("reps") or []
-            if not reps:
-                raise RunnerError(f"{device}: cell {cell_key} has no timed reps")
+            rep_indices = [r.get("rep") for r in reps]
+            if (
+                len(rep_indices) < 3
+                or sorted(rep_indices) != list(range(len(rep_indices)))
+            ):
+                raise RunnerError(
+                    f"{device}: cell {cell_key} reps must number at least 3 unique "
+                    f"contiguous indices from 0, got {sorted(rep_indices)}"
+                )
             per_batch_costs: list[float] = []
             for rep in reps:
                 if (
@@ -1048,6 +1205,24 @@ def estimate_sharded_eta(
                         f"{device}: cell {cell_key} rep profile does not match the "
                         "selection's actual batches"
                     )
+                # every batch of every rep carries the REAL pairs in order
+                recorded = rep.get("batches")
+                if not isinstance(recorded, list) or len(recorded) != n_sample:
+                    raise RunnerError(
+                        f"{device}: cell {cell_key} rep {rep.get('rep')} lacks "
+                        "per-batch records"
+                    )
+                for k, (rec_batch, exp_batch) in enumerate(zip(recorded, expected_batches)):
+                    expected_pairs = [[int(t), int(c)] for t, c in exp_batch]
+                    if (
+                        rec_batch.get("pairs") != expected_pairs
+                        or rec_batch.get("size") != len(exp_batch)
+                        or rec_batch.get("batch_ordinal") != k
+                    ):
+                        raise RunnerError(
+                            f"{device}: cell {cell_key} rep {rep.get('rep')} batch {k} "
+                            "pair order/size differs from the reviewed plan"
+                        )
                 e2e = rep.get("e2e_s")
                 if isinstance(e2e, bool) or not isinstance(e2e, (int, float)) or not math.isfinite(e2e) or e2e <= 0:
                     raise RunnerError(
@@ -1083,7 +1258,17 @@ def estimate_sharded_eta(
         }
         rep_windows_by_card[device] = rep_windows
 
-    # Concurrency evidence: every (cell, rep) window pair must overlap.
+    # Concurrency evidence: the two cards must present the IDENTICAL
+    # (cell, rep) point set -- duplicates inside one card, missing points or
+    # extra points on either side all refuse before any window math.
+    keys0 = [r["point"] for r in rep_windows_by_card["npu:0"]]
+    keys1 = [r["point"] for r in rep_windows_by_card["npu:1"]]
+    if len(set(keys0)) != len(keys0) or len(set(keys1)) != len(keys1):
+        raise RunnerError("duplicate sync points inside a card's measurement")
+    if set(keys0) != set(keys1):
+        raise RunnerError(
+            "the two cards' sync point sets differ (missing or extra cell/rep)"
+        )
     verify_concurrent_rep_windows(
         rep_windows_by_card["npu:0"], rep_windows_by_card["npu:1"]
     )

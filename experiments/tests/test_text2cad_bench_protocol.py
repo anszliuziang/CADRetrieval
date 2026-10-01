@@ -324,6 +324,32 @@ class G2SelectionVerifyTest(unittest.TestCase):
         with self.assertRaisesRegex(RunnerError, "profile64"):
             self.proto.verify_g2_selection(bad, self.texts, self.cads, self.tokens)
 
+    # -- R2 fix 5: strict key sets (top-level, nested, no injected inputs) ---
+
+    def test_r2_refuses_injected_top_level_inputs(self):
+        for key in ("qrels", "evaluation_map", "captions"):
+            bad = json.loads(json.dumps(self.sel))
+            bad[key] = {}
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(RunnerError, key):
+                    self.proto.verify_g2_selection(bad, self.texts, self.cads, self.tokens)
+
+    def test_r2_refuses_injected_nested_keys(self):
+        bad = json.loads(json.dumps(self.sel))
+        bad["tiers"]["32"]["cells"]["shard0_tt0_d0"]["evaluation_map"] = {"x": 1}
+        with self.assertRaisesRegex(RunnerError, "evaluation_map"):
+            self.proto.verify_g2_selection(bad, self.texts, self.cads, self.tokens)
+        bad = json.loads(json.dumps(self.sel))
+        bad["profile64"][0]["qrels"] = [1]
+        with self.assertRaisesRegex(RunnerError, "qrels"):
+            self.proto.verify_g2_selection(bad, self.texts, self.cads, self.tokens)
+
+    def test_r2_missing_nested_key_still_refused(self):
+        bad = json.loads(json.dumps(self.sel))
+        del bad["tiers"]["32"]["cells"]["shard0_tt0_d0"]["batch_size"]
+        with self.assertRaisesRegex(RunnerError, "batch_size"):
+            self.proto.verify_g2_selection(bad, self.texts, self.cads, self.tokens)
+
 
 class G2ProductionSizeTest(unittest.TestCase):
     """The real matrix shape: 3,644 texts x 8,046 CADs, exact pair accounting."""
@@ -668,16 +694,19 @@ class TierPlanTest(unittest.TestCase):
     def test_budget_plan_counts_warmups_and_reps_from_same_enumeration(self):
         plans = self.proto.build_tier_plans(self.sel, [1, 32], shard_id=0)
         planned = self.proto.plan_production_forwards(plans, warmup_passes=2, reps=3)
-        # independent hand count
+        # independent hand count: R2 fix 7 warms up EVERY cell (2 passes over
+        # its first two sample batches), then 3 timed reps over all batches
         total = 0
         for plan in plans:
-            first = plan["cells"][0]
-            warmup_pairs = sum(len(b) for b in first["batches"][:2])
+            warmup_pairs = sum(
+                len(b) for c in plan["cells"] for b in c["batches"][:2]
+            )
             rep_pairs = sum(len(b) for c in plan["cells"] for b in c["batches"])
             total += 2 * warmup_pairs + 3 * rep_pairs
         self.assertEqual(planned, total)
-        # tier32 detail: 1 sample batch of 32 for d0 (warmup covers it twice)
-        self.assertEqual(planned, 410)
+        # 5x37 fixture: tier1 = 20 cells x (2p x 2b x 1) + 3 x 40 = 200;
+        # tier32 = 2 x (32+5+32+5) + 3 x 74 = 370
+        self.assertEqual(planned, 570)
 
     def test_unknown_tier_or_shard_refused(self):
         with self.assertRaisesRegex(RunnerError, "tier"):
@@ -896,21 +925,44 @@ class ShardedETATest(unittest.TestCase):
         drop_last_rep: bool = False,
         schema: str | None = None,
         git_sha: str = "a" * 40,
+        sync_enabled: bool = True,
+        sync_group: str = "g2run",
+        common_plan_sha256: str | None = None,
+        local_plan_sha256: str | None = None,
+        peak_hbm: int | None = 1_000_000,
+        env_overrides: dict | None = None,
+        rep_indices: list[int] | None = None,
+        tamper_batch_order: bool = False,
+        extra_cell: bool = False,
+        batch_tiers: list[int] | None = None,
     ) -> dict:
-        """Fabricate a v2 throughput result consistent with the selection."""
+        """Fabricate an R2-format v2 throughput result consistent with the selection."""
         proto = self.proto
         shard = {"npu:0": 0, "npu:1": 1}[device]
+        tiers = batch_tiers if batch_tiers is not None else [32]
+        binding = proto.dual_shard_plan_binding(self.selection, tiers)
         tier_entry = self.selection["tiers"]["32"]
         cells: dict[str, Any] = {}
         for cell_key, cell in tier_entry["cells"].items():
             if cell["shard_id"] != shard or cell_key == drop_cell:
                 continue
-            n_sample = len(cell["samples"]["texts"]) * len(cell["samples"]["windows"])
-            n_reps = reps - (1 if drop_last_rep else 0)
+            sample_batches = proto.sample_batches_for_cell(cell)
+            n_sample = len(sample_batches)
+            indices = rep_indices if rep_indices is not None else list(range(reps))
+            if drop_last_rep:
+                indices = indices[:-1]
             rep_list = []
-            for r in range(n_reps):
+            for r in indices:
                 e2e = per_batch_s * n_sample
                 start = 1000.0 + window_shift + r * 100.0
+                batch_records = []
+                for k, batch in enumerate(sample_batches):
+                    pairs = [[t, c] for t, c in batch]
+                    if tamper_batch_order and k == 0 and len(pairs) >= 2:
+                        pairs = [pairs[1], pairs[0], *pairs[2:]]
+                    batch_records.append(
+                        {"batch_ordinal": k, "size": len(batch), "pairs": pairs}
+                    )
                 rep_list.append({
                     "rep": r,
                     "point": f"tt{cell['text_tier']}_{cell['layer']}",
@@ -918,7 +970,7 @@ class ShardedETATest(unittest.TestCase):
                     "n_batches": n_sample,
                     "n_pairs": n_sample * cell["batch_size"],
                     "e2e_s": e2e,
-                    "per_batch_e2e_s": per_batch_s,
+                    "batches": batch_records,
                 })
             cells[cell_key] = {
                 "point": f"tt{cell['text_tier']}_{cell['layer']}",
@@ -930,24 +982,48 @@ class ShardedETATest(unittest.TestCase):
                 "reps": rep_list,
                 "per_batch_e2e_s_max": per_batch_s,
             }
+        if extra_cell:
+            cells["shardX_foreign"] = {
+                "point": "tt9_d9", "shard_id": shard, "text_tier": 9, "layer": "d9",
+                "batch_size": 1, "is_tail": False, "reps": [], "per_batch_e2e_s_max": 1.0,
+            }
+        env = {
+            "device": device,
+            "git_sha": git_sha,
+            "checkpoint_sha256": "c" * 64,
+            "pair_manifest_sha256": "m" * 64,
+            "torch_dtype": "float32",
+            "trim_mode": "none",
+            "text_cache": False,
+            "score_name": "two_head_factorized_logprob_sum",
+            "spec_version": "text2cad-vector-score-v1",
+        }
+        env.update(env_overrides or {})
         return {
             "schema_version": schema or "text2cad-bench-result-v2",
             "mode": "throughput",
             "invocation_id": invocation or f"inv-{device}",
             "cold_start_s": cold,
             "selection_sha256": "s" * 64,
-            "environment": {
-                "device": device,
-                "git_sha": git_sha,
-                "checkpoint_sha256": "c" * 64,
-                "pair_manifest_sha256": "m" * 64,
-                "torch_dtype": "float32",
-                "trim_mode": "none",
-                "text_cache": False,
-                "score_name": "two_head_factorized_logprob_sum",
-                "spec_version": "text2cad-vector-score-v1",
+            "environment": env,
+            "batch_tiers": tiers,
+            "sync": {
+                "enabled": sync_enabled,
+                "group": sync_group,
+                "timeout_s": 180.0,
+                "common_plan_sha256": common_plan_sha256 or binding["common_plan_sha256"],
+                "local_plan_sha256": (
+                    local_plan_sha256 or binding["local_plan_sha256_by_shard"][shard]
+                ),
+                "shard_id": shard,
             },
-            "tiers": [{"batch_size": 32, "status": "ok", "cells": cells}],
+            "tiers": [{
+                "batch_size": 32,
+                "status": "ok",
+                "cells": cells,
+                "peak_device_memory_bytes": peak_hbm,
+                "hbm_device": device,
+            }],
         }
 
     def test_slower_card_is_the_wall_clock_not_pooled(self):
@@ -989,7 +1065,6 @@ class ShardedETATest(unittest.TestCase):
             cost = cost_for(cell_key)
             for rep in cell_record["reps"]:
                 rep["e2e_s"] = cost * rep["n_batches"]
-                rep["per_batch_e2e_s"] = cost
             cell_record["per_batch_e2e_s_max"] = cost
         est = self.proto.estimate_sharded_eta(
             self.selection, {"npu:0": r0, "npu:1": r1}, 32
@@ -1065,7 +1140,7 @@ class ShardedETATest(unittest.TestCase):
                 {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, window_shift=500.0)},
                 32,
             )
-        with self.assertRaisesRegex(RunnerError, "missing"):
+        with self.assertRaisesRegex(RunnerError, "rep"):
             self.proto.estimate_sharded_eta(
                 self.selection,
                 {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, drop_last_rep=True)},
@@ -1094,6 +1169,190 @@ class ShardedETATest(unittest.TestCase):
         r1 = self._result("npu:1", 0.8)
         with self.assertRaisesRegex(RunnerError, "29,319,624|full matrix"):
             self.proto.estimate_sharded_eta(sel, {"npu:0": r0, "npu:1": r1}, 32)
+
+    # -- R2 fix 3/4 + supplement: complete two-card validation ---------------
+
+    def test_r2_per_card_reference_config_and_identity(self):
+        r0 = self._result("npu:0", 0.8)
+        for overrides in (
+            {"torch_dtype": "bfloat16"},
+            {"trim_mode": "batch_max"},
+            {"text_cache": True},
+        ):
+            r1 = self._result("npu:1", 0.8, env_overrides=overrides)
+            with self.subTest(overrides=overrides):
+                with self.assertRaisesRegex(RunnerError, "reference"):
+                    self.proto.estimate_sharded_eta(
+                        self.selection, {"npu:0": r0, "npu:1": r1}, 32
+                    )
+        # card identity: each result filed under a device its env does not claim
+        with self.assertRaisesRegex(RunnerError, "identity"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": self._result("npu:1", 0.8), "npu:1": self._result("npu:0", 0.8)},
+                32,
+            )
+
+    def test_r2_plan_binding_checked(self):
+        r0 = self._result("npu:0", 0.8)
+        with self.assertRaisesRegex(RunnerError, "common plan"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, common_plan_sha256="0" * 64)},
+                32,
+            )
+        with self.assertRaisesRegex(RunnerError, "local plan"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, local_plan_sha256="0" * 64)},
+                32,
+            )
+
+    def test_r2_sync_evidence_mandatory(self):
+        r0 = self._result("npu:0", 0.8)
+        with self.assertRaisesRegex(RunnerError, "sync"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, sync_enabled=False)},
+                32,
+            )
+        with self.assertRaisesRegex(RunnerError, "group"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, sync_group="other")},
+                32,
+            )
+        missing = self._result("npu:1", 0.8)
+        del missing["sync"]
+        with self.assertRaisesRegex(RunnerError, "sync"):
+            self.proto.estimate_sharded_eta(
+                self.selection, {"npu:0": r0, "npu:1": missing}, 32
+            )
+
+    def test_r2_tier_and_cell_sets_exact(self):
+        r0 = self._result("npu:0", 0.8)
+        with self.assertRaisesRegex(RunnerError, "cell"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, extra_cell=True)},
+                32,
+            )
+        with self.assertRaisesRegex(RunnerError, "tier"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, batch_tiers=[16])},
+                32,
+            )
+        dup = self._result("npu:1", 0.8)
+        dup["tiers"] = dup["tiers"] + [json.loads(json.dumps(dup["tiers"][0]))]
+        with self.assertRaisesRegex(RunnerError, "tier"):
+            self.proto.estimate_sharded_eta(
+                self.selection, {"npu:0": r0, "npu:1": dup}, 32
+            )
+
+    def test_r2_reps_unique_contiguous_at_least_three(self):
+        r0 = self._result("npu:0", 0.8)
+        with self.assertRaisesRegex(RunnerError, "rep"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, rep_indices=[0, 1, 1])},
+                32,
+            )
+        with self.assertRaisesRegex(RunnerError, "rep"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, rep_indices=[0, 2, 3])},
+                32,
+            )
+        # BOTH cards missing the same rep is still incomplete evidence
+        with self.assertRaisesRegex(RunnerError, "rep"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {
+                    "npu:0": self._result("npu:0", 0.8, reps=2),
+                    "npu:1": self._result("npu:1", 0.8, reps=2),
+                },
+                32,
+            )
+
+    def test_r2_batch_pairs_order_and_peak_hbm_checked(self):
+        r0 = self._result("npu:0", 0.8)
+        with self.assertRaisesRegex(RunnerError, "pair order|profile"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, tamper_batch_order=True)},
+                32,
+            )
+        with self.assertRaisesRegex(RunnerError, "HBM|peak"):
+            self.proto.estimate_sharded_eta(
+                self.selection,
+                {"npu:0": r0, "npu:1": self._result("npu:1", 0.8, peak_hbm=None)},
+                32,
+            )
+
+
+# ---------------------------------------------------------------------------
+# R2 fix 1 + supplement: dual-shard common plan binding; mandatory sync
+# ---------------------------------------------------------------------------
+
+
+def _balanced_6x37_fixture():
+    """6 texts / 37 CADs where BOTH shards cover all three token terciles."""
+    char_lens = [10, 50, 20, 90, 30, 60]
+    token_lens = [5, 12, 20, 8, 15, 40]  # terciles: t0={0,3}, t1={1,4}, t2={2,5}
+    cad_reals = [(i * 13) % 190 + 19 for i in range(37)]
+    texts = []
+    for i, n_chars in enumerate(char_lens):
+        text = f"t{i} " + "x" * (n_chars - len(f"t{i} "))
+        texts.append({"text_index": i, "text": text, "text_sha256": sha256_text(text),
+                      "n_chars": len(text)})
+    cads = [{"cad_index": i, "n_real_tokens": n, "n_valid_x": n - 1, "n_valid_y": 2}
+            for i, n in enumerate(cad_reals)]
+    tokens = {i: token_lens[i] for i in range(6)}
+    return texts, cads, tokens
+
+
+class DualShardPlanBindingTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from idea01 import text2cad_bench_protocol as proto
+
+        self.proto = proto
+        texts, cads, tokens = _balanced_6x37_fixture()
+        self.selection = proto.build_g2_selection(texts, cads, tokens)
+
+    def test_balanced_fixture_covers_all_terciles_both_shards(self):
+        for shard in (0, 1):
+            tiers_seen = {
+                c["text_tier"]
+                for c in self.selection["tiers"]["32"]["cells"].values()
+                if c["shard_id"] == shard
+            }
+            self.assertEqual(tiers_seen, {0, 1, 2}, shard)
+
+    def test_common_binding_fixed_shard_order_local_shas_differ(self):
+        binding = self.proto.dual_shard_plan_binding(self.selection, [32])
+        common = binding["common_plan_sha256"]
+        local0 = binding["local_plan_sha256_by_shard"][0]
+        local1 = binding["local_plan_sha256_by_shard"][1]
+        self.assertNotEqual(common, local0)
+        self.assertNotEqual(common, local1)
+        self.assertNotEqual(local0, local1)  # the two shards really differ
+        # fixed shard order: rebuilding must not change the common hash
+        again = self.proto.dual_shard_plan_binding(self.selection, [32])
+        self.assertEqual(common, again["common_plan_sha256"])
+        # the common hash commits to BOTH shards: tampering either side moves it
+        import copy
+
+        for shard in (0, 1):
+            tampered = copy.deepcopy(binding["plans_by_shard"])
+            tampered[shard][0]["cells"][0]["batches"][0] = (
+                tampered[shard][0]["cells"][0]["batches"][0][:31]
+            )
+            self.assertNotEqual(
+                self.proto.combined_tier_plans_sha256(tampered[0], tampered[1]),
+                common,
+                shard,
+            )
 
 
 if __name__ == "__main__":

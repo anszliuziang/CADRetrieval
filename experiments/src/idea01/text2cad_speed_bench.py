@@ -102,6 +102,7 @@ from .text2cad_bench_protocol import (  # G2 repair: pure-CPU protocol module
     tier_plans_sha256,
     token_lengths_from_audit,
     verify_g2_selection,
+    dual_shard_plan_binding,
 )
 from .text2cad_frozen_runner import (
     PRODUCTION_REPO_ROOT,
@@ -590,6 +591,9 @@ def estimate_full_matrix_seconds(
 # ---------------------------------------------------------------------------
 
 
+FAILED_LOGITS_SCHEMA = "text2cad-failed-logits-v1"
+
+
 def score_pairs_detailed(
     model,
     store: ZipCandidateStore,
@@ -601,6 +605,8 @@ def score_pairs_detailed(
     trim_mode: str = "none",
     text_cache: bool = False,
     cache_stats_out: Optional[dict[str, Any]] = None,
+    evidence_dir=None,
+    evidence_label: str = "",
 ) -> tuple[list[torch.Tensor], list[dict[str, Any]]]:
     """Score ``(text_index, cad_index)`` pairs and KEEP the CPU FP32 logits.
 
@@ -610,6 +616,10 @@ def score_pairs_detailed(
     after scoring. When ``text_cache`` is set, the model's embedder is
     temporarily wrapped in the unique-text cache and restored afterwards;
     ``cache_stats_out`` (if given) receives the cache's hit/miss counters.
+    If a batch's forward/score raises (e.g. non-finite logits) and
+    ``evidence_dir`` is set, the failing batch's RAW logits, pair ids and
+    batch ordinal are persisted there BEFORE the error propagates (R2 fix 8)
+    -- a failure never leaves only a bare exception.
     """
     original_embedder = model.base_text_embedder
     cache: Optional[BertTextCache] = None
@@ -623,17 +633,38 @@ def score_pairs_detailed(
             chunk = pair_list[start : start + batch_size]
             batch_texts = [texts[t] for t, _ in chunk]
             batch_cads = [c for _, c in chunk]
-            vec_dict, mask_cad_dict, cad_seq_len = assemble_batch(
-                store, batch_cads, device, trim_mode=trim_mode
-            )
-            with torch.inference_mode():
-                pred, _target, _shifted = teacher_forced_logits(
-                    model, batch_texts, vec_dict, mask_cad_dict, cad_seq_len=cad_seq_len
+            logits_cpu: Optional[torch.Tensor] = None
+            batch_ordinal = start // batch_size
+            try:
+                vec_dict, mask_cad_dict, cad_seq_len = assemble_batch(
+                    store, batch_cads, device, trim_mode=trim_mode
                 )
-            logits_cpu = pred.to(torch.float32).cpu()
-            scores = two_head_factorized_score(
-                logits_cpu, vec_dict["cad_vec"].cpu(), mask_cad_dict["key_padding_mask"].cpu()
-            )
+                with torch.inference_mode():
+                    pred, _target, _shifted = teacher_forced_logits(
+                        model, batch_texts, vec_dict, mask_cad_dict, cad_seq_len=cad_seq_len
+                    )
+                logits_cpu = pred.to(torch.float32).cpu()
+                scores = two_head_factorized_score(
+                    logits_cpu, vec_dict["cad_vec"].cpu(), mask_cad_dict["key_padding_mask"].cpu()
+                )
+            except Exception as exc:
+                if evidence_dir is not None:
+                    payload = {
+                        "schema_version": FAILED_LOGITS_SCHEMA,
+                        "variant": evidence_label,
+                        "batch_ordinal": batch_ordinal,
+                        "pairs": [[int(t), int(c)] for t, c in chunk],
+                        "logits": logits_cpu,  # None if the forward itself died
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                    buffer = io.BytesIO()
+                    torch.save(payload, buffer)
+                    label = evidence_label or "run"
+                    _atomic_publish_bytes(
+                        Path(evidence_dir) / f"failed_logits_{label}_b{batch_ordinal}.pt",
+                        buffer.getvalue(),
+                    )
+                raise
             for row in range(logits_cpu.shape[0]):
                 all_logits.append(logits_cpu[row])
             all_scores.extend(scores)
@@ -745,20 +776,20 @@ def logits_stats(logits: torch.Tensor) -> dict[str, Any]:
 
 
 def peak_device_memory_bytes(device: str) -> Optional[int]:
+    """Peak HBM of the EXPLICIT device; an NPU read failure raises (never None).
+
+    ``None`` is returned only on non-NPU devices (CPU fake drivers/tests) --
+    on a real NPU a failed read is a hard error, so a missing value can never
+    masquerade as valid HBM evidence.
+    """
     if device.startswith("npu") and hasattr(torch, "npu"):
-        try:
-            return int(torch.npu.max_memory_allocated())
-        except Exception:  # pragma: no cover - device specific
-            return None
+        return int(torch.npu.max_memory_allocated(device))
     return None
 
 
 def reset_peak_device_memory(device: str) -> None:
     if device.startswith("npu") and hasattr(torch, "npu"):
-        try:
-            torch.npu.reset_peak_memory_stats()
-        except Exception:  # pragma: no cover - device specific
-            pass
+        torch.npu.reset_peak_memory_stats(device)
 
 
 def plan_throughput_forwards(
@@ -1031,10 +1062,16 @@ def _profile_variant_report(
         for key in ("score_x", "score_y", "score_total", "mean_x", "mean_y", "mean_total"):
             if not (math.isfinite(rs[key]) and math.isfinite(alts[key])):
                 all_finite = False
-        score_diff = abs(rs["score_total"] - alts["score_total"])
-        score_norm = score_diff / (G1_SCORE_ATOL + G1_SCORE_RTOL * abs(rs["score_total"]))
-        max_abs_score = max(max_abs_score, score_diff)
-        max_norm_score = max(max_norm_score, score_norm)
+        # R2: per-head AND total diffs; the summary maxima aggregate over all
+        # three components so a one-head drift can never cancel out
+        head_diffs = {}
+        head_norms = {}
+        for key_name in ("score_x", "score_y", "score_total"):
+            d = abs(rs[key_name] - alts[key_name])
+            head_diffs[key_name] = d
+            head_norms[key_name] = d / (G1_SCORE_ATOL + G1_SCORE_RTOL * abs(rs[key_name]))
+        max_abs_score = max(max_abs_score, *head_diffs.values())
+        max_norm_score = max(max_norm_score, *head_norms.values())
         gate_pair = gate["per_pair"][i] if i < len(gate["per_pair"]) else {}
         per_pair.append(
             {
@@ -1047,10 +1084,20 @@ def _profile_variant_report(
                 "score_x_alt": alts["score_x"],
                 "score_y_alt": alts["score_y"],
                 "score_total_alt": alts["score_total"],
+                "abs_score_diff_x": head_diffs["score_x"],
+                "abs_score_diff_y": head_diffs["score_y"],
+                "abs_score_diff_total": head_diffs["score_total"],
+                "normalized_score_diff_x": head_norms["score_x"],
+                "normalized_score_diff_y": head_norms["score_y"],
+                "normalized_score_diff_total": head_norms["score_total"],
+                "n_valid_x_ref": rs["n_valid_x"],
+                "n_valid_y_ref": rs["n_valid_y"],
                 "n_valid_total_ref": rs["n_valid_total"],
+                "n_valid_x_alt": alts["n_valid_x"],
+                "n_valid_y_alt": alts["n_valid_y"],
                 "n_valid_total_alt": alts["n_valid_total"],
-                "abs_score_diff": score_diff,
-                "normalized_score_diff": score_norm,
+                "valid_seq_len_ref": rs["valid_seq_len"],
+                "n_real_tokens_ref": rs["n_real_tokens"],
                 "max_abs_logit_diff": gate_pair.get("max_abs_logit_diff"),
                 "n_logit_violations": gate_pair.get("n_logit_violations"),
                 "passed": gate_pair.get("passed"),
@@ -1111,7 +1158,8 @@ def run_profile_consistency(
     charge(n_pairs)
     name, b, trim, cache = PROFILE_REFERENCE_VARIANT
     reference = score_pairs_detailed(
-        model, store, texts, pair_list, device, batch_size=b, trim_mode=trim, text_cache=cache
+        model, store, texts, pair_list, device, batch_size=b, trim_mode=trim,
+        text_cache=cache, evidence_dir=out_dir, evidence_label=name,
     )
     reference_file = _save_profile_logits(out_dir, name, pair_list, reference[0], store)
     variants: list[dict[str, Any]] = []
@@ -1123,6 +1171,7 @@ def run_profile_consistency(
         alternate = score_pairs_detailed(
             model, store, texts, pair_list, device,
             batch_size=b, trim_mode=trim, text_cache=cache, cache_stats_out=stats,
+            evidence_dir=out_dir, evidence_label=name,
         )
         logits_file = _save_profile_logits(out_dir, name, pair_list, alternate[0], store)
         report = _profile_variant_report(
@@ -1176,6 +1225,8 @@ def run_production_batch_tiers(
     out_dir=None,
     sync: Optional[SyncBarrier] = None,
     batch_facts_fn: Optional[Callable[[list[tuple[int, int]]], dict[str, Any]]] = None,
+    local_plan_sha256: Optional[str] = None,
+    expected_peer_local_plan_sha256: Optional[str] = None,
 ) -> dict[str, Any]:
     """Measure per-(tier, cell, rep) REAL production batches.
 
@@ -1189,7 +1240,11 @@ def run_production_batch_tiers(
     separately and counts as card time via the invocation clock), phase
     timings, write time, E2E and per-batch E2E. >=2 warmups and >=3 timed
     reps are contract floors. OOM signals the peer, records ``status="oom"``
-    and stops escalation; any other error signals the peer and aborts.
+    and stops escalation; any other error signals the peer and aborts. When
+    ``local_plan_sha256`` is set it is announced at every sync point and the
+    peer's announced local plan hash must equal
+    ``expected_peer_local_plan_sha256`` -- a card measuring the wrong shard's
+    profile is refused at the barrier.
     """
     if warmup_passes < 2:
         raise RunnerError(f"warmup_passes must be >= 2 (contract), got {warmup_passes}")
@@ -1225,32 +1280,42 @@ def run_production_batch_tiers(
         tier_record: dict[str, Any] = {"batch_size": tier, "status": "ok", "cells": {}}
         reset_peak_device_memory(device)
         try:
-            # Warmup (charged, untimed): two passes over the first two sample
-            # batches of the first cell -- the same enumeration the budget
-            # plan counts.
-            warmup_batches = plan["cells"][0]["batches"][:2]
-            for _ in range(warmup_passes):
-                for batch in warmup_batches:
-                    if charge_fn is not None:
-                        charge_fn(len(batch))
-                    score_batch_fn(batch)
             for cell in plan["cells"]:
-                cell_reps: list[dict[str, Any]] = []
                 batches = cell["batches"]
+                # Warmup (charged, untimed): EVERY cell gets its own
+                # warmup_passes over its first two sample batches (R2 fix 7)
+                # -- the same enumeration the budget plan counts.
+                for _ in range(warmup_passes):
+                    for batch in batches[:2]:
+                        if charge_fn is not None:
+                            charge_fn(len(batch))
+                        score_batch_fn(batch)
+                cell_reps: list[dict[str, Any]] = []
                 for rep in range(reps):
                     point = f"t{tier}_{cell['point']}_r{rep}"
                     sync_wait_s = 0.0
                     if sync is not None:
                         wait_start = time.perf_counter()
-                        sync.arrive(
+                        peer = sync.arrive(
                             point,
                             {
                                 "n_batches": len(batches),
                                 "n_pairs": sum(len(b) for b in batches),
                                 "batch_sizes": [len(b) for b in batches],
+                                "local_plan_sha256": local_plan_sha256,
                             },
                         )
                         sync_wait_s = time.perf_counter() - wait_start
+                        if (
+                            expected_peer_local_plan_sha256 is not None
+                            and peer.get("local_plan_sha256") != expected_peer_local_plan_sha256
+                        ):
+                            raise RunnerError(
+                                f"peer local plan SHA {peer.get('local_plan_sha256')!r} != "
+                                f"expected {expected_peer_local_plan_sha256!r} at {point}: "
+                                "the peer card is not measuring the expected other-shard "
+                                "profile"
+                            )
                     start_epoch = time.time()
                     rep_start = time.perf_counter()
                     preprocess_s = 0.0
@@ -1318,12 +1383,14 @@ def run_production_batch_tiers(
                     "per_batch_e2e_s_max": max(per_batch),
                 }
             tier_record["peak_device_memory_bytes"] = peak_device_memory_bytes(device)
+            tier_record["hbm_device"] = device
         except RuntimeError as exc:
             if OOM_PATTERN in str(exc).lower():
                 signal(f"t{tier}_run", "oom", exc)
                 tier_record["status"] = "oom"
                 tier_record["error"] = str(exc)[:200]
                 tier_record["peak_device_memory_bytes"] = peak_device_memory_bytes(device)
+                tier_record["hbm_device"] = device
                 tier_results.append(tier_record)
                 escalation_stop = "oom"
                 continue
@@ -1479,6 +1546,8 @@ def run_eta_g2(args) -> tuple[dict[str, Any], Path | None]:
     selection_path = repo_root / G2_SELECTION_CONFIG_REL
     selection = json.loads(selection_path.read_text(encoding="utf-8"))
     verify_g2_selection_against_manifest(selection, manifest_dir, pair_space)
+    # R2 fix 6: the actual token-audit file must back the selection
+    verify_g2_token_audit(selection, args.token_audit, manifest_dir)
     selection_sha = sha256_file(selection_path)
 
     results_by_device: dict[str, dict[str, Any]] = {}
@@ -1538,6 +1607,18 @@ FORWARD_MODES = ("spot", "batch-consistency", "trim-check", "cache-check", "thro
 BENCH_RESULT_SCHEMA_VERSION_G2 = G2_RESULT_SCHEMA_VERSION
 
 
+#: Exact provenance key set of a committed G2 selection (R2 fix 5 -- an
+#: injected evaluation_map/qrels key anywhere in the file refuses it).
+G2_PROVENANCE_KEYS = frozenset({
+    "texts_jsonl_sha256",
+    "cad_length_index_sha256",
+    "pair_manifest_sha256",
+    "token_audit_sha256",
+    "bert_file_sha256",
+    "generated_by",
+})
+
+
 def verify_g2_selection_against_manifest(
     selection: dict[str, Any],
     manifest_dir,
@@ -1557,7 +1638,12 @@ def verify_g2_selection_against_manifest(
             "legacy selection schema)"
         )
     manifest_dir = Path(manifest_dir)
-    provenance = selection.get("provenance") or {}
+    provenance = selection.get("provenance")
+    if not isinstance(provenance, dict) or set(provenance) != set(G2_PROVENANCE_KEYS):
+        raise RunnerError(
+            f"g2 selection provenance keys must be exactly {sorted(G2_PROVENANCE_KEYS)}, "
+            f"got {sorted(provenance) if isinstance(provenance, dict) else provenance!r}"
+        )
     live = {
         "texts_jsonl_sha256": sha256_file(manifest_dir / TEXTS_FILE),
         "cad_length_index_sha256": sha256_file(manifest_dir / CAD_LENGTH_FILE),
@@ -1586,6 +1672,50 @@ def verify_g2_selection_against_manifest(
         selection, text_records, length_records,
         {i: int(v) for i, v in enumerate(embedded)},
     )
+
+
+def verify_g2_token_audit(
+    selection: dict[str, Any],
+    token_audit_path,
+    manifest_dir,
+) -> None:
+    """Bind the ACTUAL token-audit file to the selection at runtime (R2 fix 6).
+
+    The committed selection pins the audit by SHA; this check (run by every
+    G2 entry that touches forwards or the ETA) requires the real file to
+    exist, to hash to the pinned value, to carry the audited schema and the
+    texts/BERT provenance, and for its per-text token lengths to equal the
+    selection's embedded table -- a bare 64-hex string or a self-consistent
+    embedded table alone is not accepted.
+    """
+    if not token_audit_path:
+        raise RunnerError(
+            "G2 entries require --token-audit: the reviewed derived token-length "
+            "asset the selection was generated from"
+        )
+    path = Path(token_audit_path)
+    if not path.is_file():
+        raise RunnerError(f"token audit file {path} does not exist")
+    provenance = selection.get("provenance") or {}
+    expected_sha = provenance.get("token_audit_sha256")
+    if sha256_file(path) != expected_sha:
+        raise RunnerError(
+            f"token audit file SHA does not match the selection binding {expected_sha!r}"
+        )
+    audit = json.loads(path.read_text(encoding="utf-8"))
+    manifest_dir = Path(manifest_dir)
+    embedded_table = selection.get("text_token_lengths") or []
+    token_lengths = token_lengths_from_audit(
+        audit,
+        expected_texts_sha256=sha256_file(manifest_dir / TEXTS_FILE),
+        expected_bert_file_sha256=dict(PINNED_BERT_FILE_SHA256),
+        n_texts=len(embedded_table),
+    )
+    embedded = {i: int(v) for i, v in enumerate(embedded_table)}
+    if token_lengths != embedded:
+        raise RunnerError(
+            "token audit contents differ from the selection's embedded table"
+        )
 
 
 def _pairs_of(entries: Sequence[dict[str, Any]]) -> list[tuple[int, int]]:
@@ -1633,6 +1763,8 @@ def _gated_setup(args, *, g2: bool = False) -> dict[str, Any]:
     selection = json.loads(selection_path.read_text(encoding="utf-8"))
     if g2:
         verify_g2_selection_against_manifest(selection, args.pair_manifest_dir, pair_space)
+        # R2 fix 6: the actual token-audit file must back the selection
+        verify_g2_token_audit(selection, args.token_audit, args.pair_manifest_dir)
     else:
         verify_selection_against_manifest(selection, args.pair_manifest_dir, pair_space)
 
@@ -1707,11 +1839,18 @@ def _write_result(
     payload: dict[str, Any],
     *,
     schema_version: str = BENCH_RESULT_SCHEMA_VERSION,
+    exit_code: int = 0,
+    note: str = "ok",
 ) -> Path:
-    """Finalize the ledger invocation and atomically publish the result."""
+    """Finalize the ledger invocation with the TRUE outcome and publish the result.
+
+    A gate that failed (CLI exit 3) must record that failure in the ledger --
+    the invocation never closes as ``exit_code=0`` when the run did not pass
+    (R2 fix 8).
+    """
     ledger: SharedBudgetLedger = setup["ledger"]
     invocation_id = setup["invocation_id"]
-    ledger.finalize_invocation(invocation_id, exit_code=0, note="ok")
+    ledger.finalize_invocation(invocation_id, exit_code=exit_code, note=note)
     result = {
         "schema_version": schema_version,
         "mode": mode,
@@ -1914,6 +2053,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             raise RunnerError("forward modes require --selection (committed reviewed config)")
         if args.mode == "throughput":
             tiers = parse_batch_tiers(args.batch_tiers, args.allow_large_batch)
+            # R2: the real two-card measurement cannot bypass the sync -- both
+            # args are mandatory (checked BEFORE any asset/manifest load).
+            if not (args.sync_dir and args.sync_group):
+                raise RunnerError(
+                    "throughput requires BOTH --sync-dir and --sync-group: the "
+                    "two card processes must synchronize at every sync point; "
+                    "an unsynchronized run is not valid two-card evidence"
+                )
         started_epoch = time.time()
         setup: Optional[dict[str, Any]] = None
         try:
@@ -1985,6 +2132,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 out_path = _write_result(
                     setup, "batch-consistency", started_epoch,
                     {"pairs": selection["ten_pair"], "comparisons": comparisons, "passed": passed},
+                    exit_code=0 if passed else 3, note="ok" if passed else "gate_failed",
                 )
                 print(json.dumps({"status": "ok" if passed else "gate_failed",
                                   "result": str(out_path)}))
@@ -2011,6 +2159,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 out_path = _write_result(
                     setup, args.mode, started_epoch,
                     {"pairs": selection["ten_pair"], "gate": args.mode, "report": report},
+                    exit_code=0 if report["passed"] else 3,
+                    note="ok" if report["passed"] else "gate_failed",
                 )
                 print(json.dumps({"status": "ok" if report["passed"] else "gate_failed",
                                   "result": str(out_path)}))
@@ -2035,12 +2185,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     model, store, texts, pairs, device,
                     charge_fn=charge, out_dir=out_dir,
                 )
+                passed = measurement["passed"]
                 out_path = _write_result(
                     setup, "profile-consistency", started_epoch,
                     {"profile64": selection["profile64"], **measurement},
                     schema_version=BENCH_RESULT_SCHEMA_VERSION_G2,
+                    exit_code=0 if passed else 3, note="ok" if passed else "gate_failed",
                 )
-                passed = measurement["passed"]
                 print(json.dumps({"status": "ok" if passed else "gate_failed",
                                   "result": str(out_path)}))
                 return 0 if passed else 3
@@ -2050,35 +2201,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 # adjacent-CAD batches, BERT-token strata), pre-built tier
                 # plans the driver consumes verbatim, per-rep sync points
                 # between the two cards, and a budget plan from the SAME
-                # enumeration the driver executes.
+                # enumeration the driver executes. The barrier binding uses
+                # the COMMON dual-shard plan hash (fixed shard order); each
+                # card's local plan hash is announced and cross-checked.
                 shard_id = BENCH_LEDGER_SHARD_BY_DEVICE[args.device]
-                plans = build_tier_plans(selection, tiers, shard_id)
+                plan_binding = dual_shard_plan_binding(selection, tiers)
+                plans = plan_binding["plans_by_shard"][shard_id]
+                local_plan_sha = plan_binding["local_plan_sha256_by_shard"][shard_id]
+                peer_local_plan_sha = plan_binding["local_plan_sha256_by_shard"][1 - shard_id]
+                common_plan_sha = plan_binding["common_plan_sha256"]
                 planned = plan_production_forwards(plans, args.warmup_passes, args.reps)
                 if planned > ledger.remaining_pairs():
                     raise RunnerError(
                         f"planned {planned} throughput forwards exceed remaining budget "
                         f"{ledger.remaining_pairs()}"
                     )
-                plan_sha = tier_plans_sha256(plans)
-                sync: Optional[SyncBarrier] = None
-                if args.sync_dir or args.sync_group:
-                    if not (args.sync_dir and args.sync_group):
-                        raise RunnerError("--sync-dir and --sync-group must be given together")
-                    sync_dir = Path(args.sync_dir).resolve()
-                    ensure_outside_checkout(sync_dir, repo_root, "sync dir")
-                    sync_dir.mkdir(parents=True, exist_ok=True)
-                    sync = SyncBarrier(
-                        sync_dir,
-                        args.sync_group,
-                        args.device,
-                        {
-                            "git_sha": setup["authorization"].approved_sha,
-                            "checkpoint_sha256": PINNED_CHECKPOINT_SHA256,
-                            "pair_manifest_sha256": setup["fingerprints"].get(PAIR_MANIFEST_FILE),
-                            "selection_sha256": sha256_file(repo_root / setup["selection_rel"]),
-                            "plan_sha256": plan_sha,
-                        },
-                    )
+                sync_dir = Path(args.sync_dir).resolve()
+                ensure_outside_checkout(sync_dir, repo_root, "sync dir")
+                sync_dir.mkdir(parents=True, exist_ok=True)
+                sync = SyncBarrier(
+                    sync_dir,
+                    args.sync_group,
+                    args.device,
+                    {
+                        "git_sha": setup["authorization"].approved_sha,
+                        "checkpoint_sha256": PINNED_CHECKPOINT_SHA256,
+                        "pair_manifest_sha256": setup["fingerprints"].get(PAIR_MANIFEST_FILE),
+                        "selection_sha256": sha256_file(repo_root / setup["selection_rel"]),
+                        "common_plan_sha256": common_plan_sha,
+                    },
+                )
                 model_forward_device = device
                 token_lens = [int(v) for v in selection["text_token_lengths"]]
 
@@ -2119,13 +2271,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     out_dir=out_dir,
                     sync=sync,
                     batch_facts_fn=batch_facts_fn,
+                    local_plan_sha256=local_plan_sha,
+                    expected_peer_local_plan_sha256=peer_local_plan_sha,
                 )
                 out_path = _write_result(
                     setup, "throughput", started_epoch,
-                    {**measurement, "sync": {
-                        "enabled": sync is not None,
-                        "group": args.sync_group if sync else None,
-                        "timeout_s": sync.timeout_s if sync else None,
+                    {**measurement,
+                     "batch_tiers": list(tiers),
+                     "sync": {
+                        "enabled": True,
+                        "group": args.sync_group,
+                        "timeout_s": sync.timeout_s,
+                        "common_plan_sha256": common_plan_sha,
+                        "local_plan_sha256": local_plan_sha,
+                        "shard_id": shard_id,
                     }},
                     schema_version=BENCH_RESULT_SCHEMA_VERSION_G2,
                 )
