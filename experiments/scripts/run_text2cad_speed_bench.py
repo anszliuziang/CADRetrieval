@@ -1,10 +1,16 @@
-"""Server entry: Text2CAD G1/G2 benchmark + optimization gates (M1c B2).
+"""Server entry: Text2CAD G1/G2 benchmark + optimization gates (M1c B2/G2 repair).
 
 Thin wrapper around ``idea01.text2cad_speed_bench.main``. Pure-CPU modes
-(``select``, ``eta``) run anywhere; forward-consuming modes (``spot``,
-``batch-consistency``, ``trim-check``, ``cache-check``, ``throughput``) share
-the matrix scorer's fail-closed authorization + shared budget ledger and run
-only on the approved server checkout.
+(``select``, ``eta``, ``eta-g2``, ``audit-text-lengths``, ``select-g2``) run
+anywhere; forward-consuming modes (``spot``, ``batch-consistency``,
+``trim-check``, ``cache-check``, ``throughput``, ``profile-consistency``)
+share the matrix scorer's fail-closed authorization + shared budget ledger
+and run only on the approved server checkout. The G2-repair modes pin the
+COMMITTED G2 selection config
+(``experiments/configs/text2cad_g2_pair_selection_20261001.json``), which
+does not exist yet -- they fail closed until it is generated from the audited
+real BERT token lengths, reviewed and committed, and a full SHA is
+authorized. NOTHING in this round authorizes a real forward.
 
 Production template (after Codex approval; NOT authorized as of 2026-09-30):
 

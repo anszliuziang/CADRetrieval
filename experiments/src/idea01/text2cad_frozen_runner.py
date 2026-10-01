@@ -670,17 +670,26 @@ class BertTextCache:
     def __init__(self, embedder) -> None:
         self._embedder = embedder
         self._cache: dict[str, tuple[torch.Tensor, int]] = {}
+        self._hits = 0
+        self._misses = 0
 
     def __len__(self) -> int:
         return len(self._cache)
 
+    def stats(self) -> dict[str, int]:
+        """Cache counters for gate reports (additive; no scoring-math role)."""
+        return {"entries": len(self._cache), "hits": self._hits, "misses": self._misses}
+
     def get(self, text: str) -> tuple[torch.Tensor, int]:
         hit = self._cache.get(text)
         if hit is None:
+            self._misses += 1
             embedding, kpm = self._embedder.get_embedding([text])
             n_real = int((~kpm[0]).sum())
             hit = (embedding[0, :n_real].clone(), n_real)
             self._cache[text] = hit
+        else:
+            self._hits += 1
         return hit
 
     def embed_batch(self, texts: Sequence[str]) -> tuple[torch.Tensor, torch.Tensor]:

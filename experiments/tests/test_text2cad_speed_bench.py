@@ -32,6 +32,7 @@ import json
 import math
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -54,7 +55,7 @@ from idea01.text2cad_pair_index import (  # noqa: E402
     sha256_file,
     sha256_text,
 )
-from idea01.text2cad_port.loader import PINNED_CHECKPOINT_SHA256, build_text2cad  # noqa: E402
+from idea01.text2cad_port.loader import PINNED_BERT_FILE_SHA256, PINNED_CHECKPOINT_SHA256, build_text2cad  # noqa: E402
 from idea01.text2cad_port.model import generate_attention_mask  # noqa: E402
 from idea01.text2cad_port.text_embed import TextEmbedder  # noqa: E402
 from idea01.text2cad_speed_bench import (  # noqa: E402
@@ -105,6 +106,31 @@ class ForwardGateBoundaryTest(unittest.TestCase):
                     with self.assertRaises(RunnerError):
                         _gated_setup(args)
                     load.assert_not_called()
+
+    def test_g2_and_legacy_selection_paths_not_interchangeable(self):
+        from idea01.text2cad_speed_bench import G2_SELECTION_CONFIG_REL, SELECTION_CONFIG_REL
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mocked_manifest = {"counts": {"n_unique_text": 5, "n_gallery": 37}}
+            for g2, selection_rel, expected_name in (
+                (True, SELECTION_CONFIG_REL, "text2cad_g2_pair_selection_20261001.json"),
+                (False, G2_SELECTION_CONFIG_REL, "text2cad_g1g2_pair_selection_20260930.json"),
+            ):
+                args = SimpleNamespace(
+                    repo_root=str(root), expected_pair_hashes=None, cards_used=1,
+                    torch_dtype="float32", device="npu:0",
+                    pair_manifest_dir=str(root), selection=str(root / selection_rel),
+                )
+                with self.subTest(g2=g2), mock.patch.multiple(
+                    "idea01.text2cad_speed_bench",
+                    _load_expected_pair_hashes=mock.Mock(return_value={}),
+                    load_pair_manifest=mock.Mock(return_value=mocked_manifest),
+                    load_texts=mock.Mock(return_value=[]),
+                    load_cad_store=mock.Mock(return_value=[]),
+                ):
+                    with self.assertRaisesRegex(RunnerError, expected_name):
+                        _gated_setup(args, g2=g2)
 
 # Reuse the runner-test fixtures style (kept local for self-containedness).
 from test_text2cad_frozen_runner import (  # noqa: E402
@@ -347,7 +373,13 @@ class CellCountsAndETATest(unittest.TestCase):
             parse_batch_tiers("16,32", False)
         with self.assertRaisesRegex(RunnerError, "not approved"):
             parse_batch_tiers("64", True)
-        self.assertEqual(parse_batch_tiers("1,2,4,8", True), [1, 2, 4, 8, 16, 32])
+        with self.assertRaisesRegex(RunnerError, "not approved"):
+            parse_batch_tiers("3", True)
+        # G2 repair: --allow-large-batch only PERMITS explicitly requested
+        # 16/32; it never auto-appends unrequested tiers
+        self.assertEqual(parse_batch_tiers("1,2,4,8", True), [1, 2, 4, 8])
+        self.assertEqual(parse_batch_tiers("16", True), [16])
+        self.assertEqual(parse_batch_tiers("8,32", True), [8, 32])
 
     def test_eta_refuses_duplicate_card_and_mismatched_bindings(self):
         def result(device, invocation):
@@ -672,6 +704,467 @@ class LogitsStatsTest(unittest.TestCase):
         self.assertEqual(stats["abs_max"], 0.0)
         logits[0, 0, 0] = float("nan")
         self.assertFalse(logits_stats(logits)["all_finite"])
+
+
+class LogitsStatsTest(unittest.TestCase):
+    def test_stats_and_nonfinite(self):
+        logits = torch.zeros(4, 2, 267)
+        stats = logits_stats(logits)
+        self.assertTrue(stats["all_finite"])
+        self.assertEqual(stats["abs_max"], 0.0)
+        logits[0, 0, 0] = float("nan")
+        self.assertFalse(logits_stats(logits)["all_finite"])
+
+
+class EtaG2CliTest(unittest.TestCase):
+    """eta-g2 through the real CLI over a production-shape synthetic repo."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from idea01.text2cad_bench_protocol import (
+            build_g2_selection, estimate_sharded_eta,
+        )
+        from idea01.text2cad_speed_bench import (
+            EXPECTED_PAIR_HASHES_REL, G2_SELECTION_CONFIG_REL,
+        )
+
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls._tmp.cleanup)
+        root = Path(cls._tmp.name)
+        cls.repo = root / "repo"
+        configs = cls.repo / "experiments" / "configs"
+        configs.mkdir(parents=True)
+        cls.manifest_dir = root / "pair_manifest"
+        cls.manifest_dir.mkdir()
+        cls.out_dir = root / "out"
+        cls.out_dir.mkdir()
+
+        # production-shape synthetic records (no real assets involved)
+        texts = []
+        for i in range(3644):
+            n_chars = (i * 37) % 180 + 10
+            text = f"t{i} " + "x" * (n_chars - len(f"t{i} "))
+            texts.append({"text_index": i, "text": text,
+                          "text_sha256": sha256_text(text), "n_chars": len(text)})
+        cads = [{"cad_index": i, "n_real_tokens": (i * 13) % 190 + 19,
+                 "n_valid_x": (i * 13) % 190 + 18, "n_valid_y": 2 + (i % 5)}
+                for i in range(8046)]
+        (cls.manifest_dir / TEXTS_FILE).write_text(
+            "".join(json.dumps(r, sort_keys=True) + "\n" for r in texts), encoding="utf-8")
+        (cls.manifest_dir / CAD_LENGTH_FILE).write_text(
+            "".join(json.dumps(r, sort_keys=True) + "\n" for r in cads), encoding="utf-8")
+        texts_sha = sha256_file(cls.manifest_dir / TEXTS_FILE)
+        cad_sha = sha256_file(cls.manifest_dir / CAD_LENGTH_FILE)
+        manifest = {
+            "schema_version": "text2cad-pair-manifest-v1",
+            "counts": {"n_unique_text": 3644, "n_gallery": 8046, "n_pairs": 29319624},
+            "artifacts": {
+                TEXTS_FILE: {"file": TEXTS_FILE, "sha256": texts_sha},
+                CAD_LENGTH_FILE: {"file": CAD_LENGTH_FILE, "sha256": cad_sha},
+            },
+        }
+        (cls.manifest_dir / PAIR_MANIFEST_FILE).write_text(
+            json.dumps(manifest, sort_keys=True), encoding="utf-8")
+        manifest_sha = sha256_file(cls.manifest_dir / PAIR_MANIFEST_FILE)
+        (configs / Path(EXPECTED_PAIR_HASHES_REL).name).write_text(json.dumps({
+            "artifact_sha256": {TEXTS_FILE: texts_sha, CAD_LENGTH_FILE: cad_sha},
+            "pair_manifest_sha256": manifest_sha,
+        }), encoding="utf-8")
+
+        tokens = {i: (i * 11) % 90 + 5 for i in range(3644)}
+        selection = build_g2_selection(texts, cads, tokens)
+        selection["provenance"] = {
+            "texts_jsonl_sha256": texts_sha,
+            "cad_length_index_sha256": cad_sha,
+            "pair_manifest_sha256": manifest_sha,
+            "token_audit_sha256": "f" * 64,
+            "bert_file_sha256": dict(sorted(PINNED_BERT_FILE_SHA256.items())),
+            "generated_by": "test fixture",
+        }
+        cls.selection_path = configs / Path(G2_SELECTION_CONFIG_REL).name
+        cls.selection_path.write_text(
+            json.dumps(selection, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+        cls.selection = selection
+        cls.git_sha = "d" * 40
+
+        for device, per_batch in (("npu:0", 0.8), ("npu:1", 1.6)):
+            result = cls._fabricate_result(cls, selection, device, per_batch)
+            (cls.out_dir / f"card_{device.replace(':', '')}.json").write_text(
+                json.dumps(result, sort_keys=True), encoding="utf-8")
+
+    def _fabricate_result(cls, selection, device, per_batch_s):
+        shard = {"npu:0": 0, "npu:1": 1}[device]
+        cells = {}
+        for cell_key, cell in selection["tiers"]["32"]["cells"].items():
+            if cell["shard_id"] != shard:
+                continue
+            n_sample = len(cell["samples"]["texts"]) * len(cell["samples"]["windows"])
+            reps = []
+            for r in range(3):
+                start = 1000.0 + r * 100.0
+                reps.append({
+                    "rep": r,
+                    "point": f"tt{cell['text_tier']}_{cell['layer']}",
+                    "window": {"start_epoch": start, "end_epoch": start + per_batch_s * n_sample},
+                    "n_batches": n_sample,
+                    "n_pairs": n_sample * cell["batch_size"],
+                    "e2e_s": per_batch_s * n_sample,
+                })
+            cells[cell_key] = {
+                "point": f"tt{cell['text_tier']}_{cell['layer']}",
+                "batch_size": cell["batch_size"],
+                "reps": reps,
+                "per_batch_e2e_s_max": per_batch_s,
+            }
+        return {
+            "schema_version": "text2cad-bench-result-v2",
+            "mode": "throughput",
+            "invocation_id": f"inv-{device}",
+            "cold_start_s": 10.0,
+            "selection_sha256": sha256_file(cls.selection_path),
+            "environment": {
+                "device": device,
+                "git_sha": cls.git_sha,
+                "checkpoint_sha256": PINNED_CHECKPOINT_SHA256,
+                "pair_manifest_sha256": sha256_file(cls.manifest_dir / PAIR_MANIFEST_FILE),
+                "torch_dtype": "float32",
+                "trim_mode": "none",
+                "text_cache": False,
+                "score_name": "two_head_factorized_logprob_sum",
+                "spec_version": "text2cad-vector-score-v1",
+            },
+            "authorization": {"approved_sha": cls.git_sha},
+            "budget": {"approved_sha": cls.git_sha},
+            "tiers": [{"batch_size": 32, "status": "ok", "cells": cells}],
+        }
+
+    def _argv(self, *extra):
+        return [
+            "--mode", "eta-g2",
+            "--pair-manifest-dir", str(self.manifest_dir),
+            "--production-batch-size", "32",
+            "--card-result", str(self.out_dir / "card_npu0.json"),
+            "--card-result", str(self.out_dir / "card_npu1.json"),
+            "--repo-root", str(self.repo),
+            *extra,
+        ]
+
+    def test_happy_path_writes_estimate_and_fails_gate_honestly(self):
+        from idea01.text2cad_speed_bench import main
+
+        out = self.out_dir / "eta_g2.json"
+        rc = main(self._argv("--out", str(out)))
+        self.assertEqual(rc, 3)  # 20 pairs/s slow card honestly fails the gate
+        estimate = json.loads(out.read_text(encoding="utf-8"))
+        self.assertFalse(estimate["passes_seven_day_gate"])
+        self.assertEqual(estimate["slower_card"], "npu:1")
+        self.assertEqual(estimate["full_matrix_pairs"], 29319624)
+        n_batches = 1822 * 252
+        self.assertAlmostEqual(
+            estimate["per_card"]["npu:1"]["compute_seconds"], n_batches * 1.6
+        )
+        # a second invocation must not overwrite the first estimate
+        rc2 = main(self._argv("--out", str(out)))
+        self.assertEqual(rc2, 2)
+
+    def test_refusals(self):
+        from idea01.text2cad_speed_bench import main
+
+        # foreign manifest (provenance mismatch)
+        foreign = self.out_dir / "foreign_manifest"
+        foreign.mkdir()
+        (foreign / PAIR_MANIFEST_FILE).write_text("{}", encoding="utf-8")
+        argv = self._argv()
+        argv[argv.index("--pair-manifest-dir") + 1] = str(foreign)
+        self.assertEqual(main(argv), 2)
+        # one card only
+        self.assertEqual(main(self._argv()[:6]), 2)
+        # v1-schema card result refused
+        bad = json.loads((self.out_dir / "card_npu1.json").read_text(encoding="utf-8"))
+        bad["schema_version"] = "text2cad-bench-result-v1"
+        (self.out_dir / "card_npu1_v1.json").write_text(json.dumps(bad), encoding="utf-8")
+        argv = self._argv()
+        argv[argv.index(str(self.out_dir / "card_npu1.json"))] = str(self.out_dir / "card_npu1_v1.json")
+        self.assertEqual(main(argv), 2)
+
+
+# ---------------------------------------------------------------------------
+# G2 repair: real production-batch throughput driver
+# ---------------------------------------------------------------------------
+
+
+def _g2_fixture():
+    """5 texts x 37 CADs; token lengths crafted to differ from char lengths."""
+    from idea01.text2cad_bench_protocol import build_g2_selection
+
+    char_lens = [10, 50, 20, 90, 30]
+    token_lens = [5, 12, 8, 40, 20]
+    cad_reals = [(i * 13) % 190 + 19 for i in range(37)]
+    texts = []
+    for i, n_chars in enumerate(char_lens):
+        text = f"t{i} " + "x" * (n_chars - len(f"t{i} "))
+        texts.append({"text_index": i, "text": text, "text_sha256": sha256_text(text),
+                      "n_chars": len(text)})
+    cads = [{"cad_index": i, "n_real_tokens": n, "n_valid_x": n - 1, "n_valid_y": 2}
+            for i, n in enumerate(cad_reals)]
+    tokens = {i: token_lens[i] for i in range(5)}
+    selection = build_g2_selection(texts, cads, tokens)
+    return selection, token_lens, cad_reals
+
+
+class ProductionBatchDriverTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from idea01.text2cad_bench_protocol import build_tier_plans
+        from idea01.text2cad_speed_bench import run_production_batch_tiers
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.selection, self.token_lens, self.cad_reals = _g2_fixture()
+        self.plans = build_tier_plans(self.selection, [1, 32], shard_id=0)
+        self.run_driver = run_production_batch_tiers
+
+    def _facts(self, batch):
+        return {
+            "max_cad_len": max(self.cad_reals[c] for _, c in batch),
+            "text_tokens": [self.token_lens[t] for t, _ in batch],
+            "text_pad_width": max(self.token_lens[t] for t, _ in batch),
+        }
+
+    def _score_fn(self, seen_batches):
+        def fn(batch):
+            seen_batches.append(len(batch))
+            scores = [{"score_total": -1.0, "n_valid_total": 10} for _ in batch]
+            return scores, {"preprocess_s": 0.001, "forward_score_s": 0.01}
+
+        return fn
+
+    def test_legacy_symptom_fake32_then_new_driver_refuses_it(self):
+        """Symptom (Codex review): the legacy driver ran a 20-pair cell at
+        nominal tier 32. The legacy function is kept only to document the
+        symptom; the new driver REFUSES undersized full-layer batches."""
+        cells = {"cell": [(0, i) for i in range(20)]}
+        seen: list[int] = []
+
+        def fn(batch):
+            seen.append(len(batch))
+            return ([{"score_total": -1.0, "n_valid_total": 5} for _ in batch],
+                    {"preprocess_s": 0.0, "forward_score_s": 0.01})
+
+        run_throughput_tiers(fn, cells, batch_tiers=[32], warmup_passes=2, reps=1)
+        self.assertTrue(seen)
+        self.assertEqual(max(seen), 20)  # the old symptom: nominal 32, real 20
+
+        from idea01.text2cad_bench_protocol import build_tier_plans
+
+        plans = build_tier_plans(self.selection, [32], shard_id=0)
+        plans[0]["cells"][0]["batches"][0] = plans[0]["cells"][0]["batches"][0][:20]
+        with self.assertRaisesRegex(RunnerError, "batch size"):
+            self.run_driver(
+                self._score_fn([]), plans, warmup_passes=2, reps=3,
+                batch_facts_fn=self._facts,
+            )
+
+    def test_real_batches_records_and_budget_same_source(self):
+        from idea01.text2cad_bench_protocol import plan_production_forwards
+
+        charges: list[int] = []
+        seen: list[int] = []
+        planned = plan_production_forwards(self.plans, warmup_passes=2, reps=3)
+        result = self.run_driver(
+            self._score_fn(seen), self.plans, warmup_passes=2, reps=3,
+            charge_fn=charges.append, out_dir=self.root, batch_facts_fn=self._facts,
+        )
+        self.assertEqual(sum(charges), planned)
+        self.assertEqual(planned, 410)  # hand-computed from the 5x37 fixture
+        # every charged batch was a REAL batch of its tier (or the honest tail):
+        # tier 1 -> 1, tier 32 -> 32 full + 5 tail, nothing else
+        self.assertEqual(sorted(set(charges)), [1, 5, 32])
+        # per-rep records: real sizes, windows, batch facts
+        tier32 = next(t for t in result["tiers"] if t["batch_size"] == 32)
+        d0 = tier32["cells"]["shard0_tt0_d0"]
+        self.assertEqual(len(d0["reps"]), 3)
+        for rep in d0["reps"]:
+            self.assertEqual(rep["n_batches"], 1)
+            self.assertEqual(rep["n_pairs"], 32)
+            self.assertGreaterEqual(rep["window"]["end_epoch"], rep["window"]["start_epoch"])
+            self.assertEqual(rep["sync_wait_s"], 0.0)
+            batch = rep["batches"][0]
+            self.assertEqual(batch["size"], 32)
+            self.assertEqual(batch["max_cad_len"], max(self.cad_reals[:32]))
+            self.assertEqual(batch["text_pad_width"], batch["text_tokens"][0])
+            self.assertEqual(len(batch["pairs"]), 32)
+        self.assertEqual(d0["per_batch_e2e_s_max"], max(r["e2e_s"] for r in d0["reps"]))
+        # record files published per tier/cell/rep
+        n_files = len(list(self.root.glob("bench_records_*.jsonl")))
+        n_cells = sum(len(p["cells"]) for p in self.plans)
+        self.assertEqual(n_files, 3 * n_cells)  # reps(3) x cells, both tiers
+        self.assertIn("plan_sha256", result)
+
+    def test_reps_and_warmup_floors(self):
+        with self.assertRaisesRegex(RunnerError, "reps"):
+            self.run_driver(self._score_fn([]), self.plans, warmup_passes=2, reps=2)
+        with self.assertRaisesRegex(RunnerError, "warmup"):
+            self.run_driver(self._score_fn([]), self.plans, warmup_passes=1, reps=3)
+
+    def test_sync_wait_separated_from_measured_window_and_failure_signalled(self):
+        from idea01.text2cad_bench_protocol import SyncBarrier, build_tier_plans
+
+        plans = build_tier_plans(self.selection, [32], shard_id=0)
+
+        class FakeSync:
+            def __init__(self):
+                self.points: list[str] = []
+                self.failures: list[tuple] = []
+
+            def arrive(self, point, payload):
+                self.points.append(point)
+                time.sleep(0.01)
+                return {"peer": True}
+
+            def signal_failure(self, point, kind, detail):
+                self.failures.append((point, kind, detail))
+
+        sync = FakeSync()
+        result = self.run_driver(
+            self._score_fn([]), plans, warmup_passes=2, reps=3,
+            out_dir=self.root, batch_facts_fn=self._facts, sync=sync,
+        )
+        tier = result["tiers"][0]
+        n_cells = len(plans[0]["cells"])
+        self.assertEqual(len(sync.points), n_cells * 3)
+        for cell in tier["cells"].values():
+            for rep in cell["reps"]:
+                self.assertGreater(rep["sync_wait_s"], 0.0)
+                # measured window excludes the barrier wait by construction
+                self.assertGreater(rep["e2e_s"], 0.0)
+
+        def oom_fn(batch):
+            raise RuntimeError("NPU out of memory: fake")
+
+        sync2 = FakeSync()
+        result2 = self.run_driver(
+            oom_fn, plans, warmup_passes=2, reps=3,
+            batch_facts_fn=self._facts, sync=sync2,
+        )
+        self.assertEqual(result2["tiers"][0]["status"], "oom")
+        self.assertTrue(sync2.failures)
+        self.assertEqual(sync2.failures[0][1], "oom")
+
+
+# ---------------------------------------------------------------------------
+# G2 repair: profile-consistency (704-pair extended G1 equivalence entry)
+# ---------------------------------------------------------------------------
+
+
+class ProfileConsistencyTest(unittest.TestCase):
+    """The 64-pair reference vs 10 alternate variants on a tiny ported model."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.selection, _tokens, _reals = _g2_fixture()
+        self.pairs = [(e["text_index"], e["cad_index"]) for e in self.selection["profile64"]]
+        self.assertEqual(len(self.pairs), 64)
+        # store with 37 short candidates; 5 texts matching the fixture indices
+        specs = [(f"cad_seq/0000/{i:08d}/seq/{i:08d}.pth", 19 + (i % 3) * 17)
+                 for i in range(37)]
+        _make_zip(self.root / "cad_seq.zip", specs)
+        self.store = ZipCandidateStore(
+            self.root / "cad_seq.zip", [m for m, _ in specs],
+            expected_sha256=sha256_file(self.root / "cad_seq.zip"),
+        )
+        self.store.preload()
+        self.texts = [
+            "alpha beta gamma",
+            "a longer descriptive query about the mechanical part " + "with more words " * 3,
+            "short",
+            "medium length query text here",
+            "fallback query text",
+        ]
+        self.model = _tiny_model()
+
+    def _run(self, charges):
+        from idea01.text2cad_speed_bench import run_profile_consistency
+
+        return run_profile_consistency(
+            self.model, self.store, self.texts, self.pairs, torch.device("cpu"),
+            charge_fn=charges.append, out_dir=self.root,
+        )
+
+    def test_704_scored_pairs_across_reference_and_ten_variants(self):
+        charges: list[int] = []
+        result = self._run(charges)
+        self.assertTrue(result["passed"], json.dumps(result.get("failure"), indent=1)[:2000])
+        # 64 pairs x (1 reference + 10 variants) = 704, pre-charged per variant
+        self.assertEqual(charges, [64] * 11)
+        self.assertEqual(result["total_scored_pairs"], 704)
+        self.assertEqual(result["n_pairs"], 64)
+        expected_variants = [
+            "batch16", "batch32", "trim32", "cache32",
+            "trim_cache_b1", "trim_cache_b2", "trim_cache_b4",
+            "trim_cache_b8", "trim_cache_b16", "trim_cache_b32",
+        ]
+        self.assertEqual([v["variant"] for v in result["variants"]], expected_variants)
+        by_name = {v["variant"]: v for v in result["variants"]}
+        self.assertEqual(by_name["batch16"]["real_batch_sizes"], [16, 16, 16, 16])
+        self.assertEqual(by_name["batch32"]["real_batch_sizes"], [32, 32])
+        self.assertEqual(by_name["trim_cache_b1"]["real_batch_sizes"], [1] * 64)
+        self.assertEqual(by_name["trim32"]["trim_mode"], "batch_max")
+        self.assertFalse(by_name["trim32"]["text_cache"])
+        self.assertTrue(by_name["cache32"]["text_cache"])
+        self.assertEqual(by_name["cache32"]["cache_stats"]["entries"], 5)
+        self.assertEqual(
+            by_name["cache32"]["cache_stats"]["hits"]
+            + by_name["cache32"]["cache_stats"]["misses"],
+            64,
+        )
+        for variant in result["variants"]:
+            self.assertEqual(len(variant["per_pair"]), 64)
+            self.assertTrue(variant["all_finite"])
+            self.assertTrue(math.isfinite(variant["max_abs_score_diff"]))
+            self.assertTrue(math.isfinite(variant["max_normalized_score_diff"]))
+            self.assertTrue(math.isfinite(variant["max_normalized_logit_diff"]))
+            entry = variant["per_pair"][0]
+            for key in ("score_x_ref", "score_y_ref", "score_total_ref",
+                        "score_total_alt", "n_valid_total_ref"):
+                self.assertIn(key, entry)
+        # valid-row logits saved for EVERY variant + reference, weights_only-loadable
+        for name in ["reference_b1", *expected_variants]:
+            path = self.root / f"profile_logits_{name}.pt"
+            self.assertTrue(path.is_file(), name)
+            payload = torch.load(path, map_location="cpu", weights_only=True)
+            self.assertEqual(payload["variant"], name)
+            self.assertEqual(len(payload["pairs"]), 64)
+            self.assertEqual(len(payload["logits_valid_rows"]), 64)
+            for tensor, (t, c) in zip(payload["logits_valid_rows"], payload["pairs"]):
+                n_real = int(self.store.get(c)["n_real_tokens"])
+                self.assertEqual(tuple(tensor.shape), (n_real - 1, 2, 267))
+
+    def test_gate_failure_stops_at_first_variant_with_evidence(self):
+        from unittest import mock
+
+        import idea01.text2cad_speed_bench as bench
+
+        def failed_compare(*args, **kwargs):
+            return {"passed": False, "tolerances": {}, "per_pair": []}
+
+        charges: list[int] = []
+        with mock.patch.object(bench, "compare_gate_results", failed_compare):
+            result = self._run(charges)
+        self.assertFalse(result["passed"])
+        # reference + exactly one variant were scored before the stop
+        self.assertEqual(charges, [64, 64])
+        self.assertEqual(len(result["variants"]), 1)
+        self.assertTrue((self.root / "profile_logits_reference_b1.pt").is_file())
+        self.assertTrue((self.root / "profile_logits_batch16.pt").is_file())
+        self.assertFalse((self.root / "profile_logits_batch32.pt").exists())
+
+    def test_planned_forwards(self):
+        from idea01.text2cad_speed_bench import plan_profile_consistency_forwards
+
+        self.assertEqual(plan_profile_consistency_forwards(64), 704)
 
 
 if __name__ == "__main__":
