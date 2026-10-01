@@ -1278,8 +1278,10 @@ def run_production_batch_tiers(
             tier_results.append({"batch_size": tier, "status": f"skipped_after_{escalation_stop}"})
             continue
         tier_record: dict[str, Any] = {"batch_size": tier, "status": "ok", "cells": {}}
-        reset_peak_device_memory(device)
         try:
+            # Inside the try: an NPU stats failure must reach the peer-signal
+            # path below, not leave the other card waiting out the timeout (R3).
+            reset_peak_device_memory(device)
             for cell in plan["cells"]:
                 batches = cell["batches"]
                 # Warmup (charged, untimed): EVERY cell gets its own
@@ -1512,6 +1514,69 @@ def run_select_g2(args) -> Path:
     return _write_config_lf(out_path, payload, "g2 selection")
 
 
+def verify_eta_card_budget_evidence(results_by_device: dict[str, dict[str, Any]]) -> None:
+    """Cross-check each card result's OWN budget invocation record (R3 fix 2).
+
+    For every result: exactly one ``budget.invocations`` entry matches its
+    ``invocation_id``; the invocation carries a non-empty host (identical on
+    both cards), the shared ``budget_file`` (identical on both), the shard id
+    of its device, ``cards_used == 1``, ``finalized is True`` and an integer
+    ``exit_code == 0`` (a boolean is not an int). A missing/duplicate match,
+    wrong host/ledger/shard, an unfinished or a failed invocation all refuse
+    -- the ETA never prices incomplete or failed runtime evidence. Reuses the
+    fields the ledger already writes; no new identity fields or ledger format.
+    """
+    hosts: set[str] = set()
+    ledger_files: set[str] = set()
+    for device, result in results_by_device.items():
+        budget = result.get("budget") or {}
+        invocation_id = result.get("invocation_id")
+        records = [
+            inv for inv in (budget.get("invocations") or [])
+            if isinstance(inv, dict) and inv.get("invocation_id") == invocation_id
+        ]
+        if len(records) != 1:
+            raise RunnerError(
+                f"{device}: expected exactly one budget invocation record for "
+                f"{invocation_id!r}, got {len(records)}"
+            )
+        inv = records[0]
+        host = inv.get("host")
+        if not isinstance(host, str) or not host:
+            raise RunnerError(f"{device}: budget invocation has no valid host")
+        hosts.add(host)
+        budget_file = budget.get("budget_file")
+        if not isinstance(budget_file, str) or not budget_file:
+            raise RunnerError(f"{device}: budget record lacks budget_file")
+        ledger_files.add(budget_file)
+        expected_shard = SHARD_BY_DEVICE[device]
+        if inv.get("shard_id") != expected_shard:
+            raise RunnerError(
+                f"{device}: budget invocation shard_id {inv.get('shard_id')!r} != "
+                f"{expected_shard} for this card"
+            )
+        if inv.get("cards_used") != 1:
+            raise RunnerError(
+                f"{device}: budget invocation cards_used {inv.get('cards_used')!r} != 1"
+            )
+        if inv.get("finalized") is not True:
+            raise RunnerError(f"{device}: budget invocation is not finalized")
+        exit_code = inv.get("exit_code")
+        if isinstance(exit_code, bool) or not isinstance(exit_code, int) or exit_code != 0:
+            raise RunnerError(
+                f"{device}: budget invocation exit_code {exit_code!r} is not a "
+                "successful integer 0"
+            )
+    if len(hosts) != 1:
+        raise RunnerError(
+            f"card results come from different hosts {sorted(hosts)}"
+        )
+    if len(ledger_files) != 1:
+        raise RunnerError(
+            f"card results were charged to different budget ledgers {sorted(ledger_files)}"
+        )
+
+
 def run_eta_g2(args) -> tuple[dict[str, Any], Path | None]:
     """``eta-g2``: sharded slower-card full-matrix ETA from two card results.
 
@@ -1576,6 +1641,11 @@ def run_eta_g2(args) -> tuple[dict[str, Any], Path | None]:
                 f"{device}: result code SHA differs from its authorization or budget"
             )
         results_by_device[device] = result
+
+    # R3 fix 2: runtime evidence -- each result's budget invocation record
+    # must prove a finished, successful, correctly-sharded single-card run on
+    # the same host and shared ledger BEFORE any estimate is computed.
+    verify_eta_card_budget_evidence(results_by_device)
 
     estimate = estimate_sharded_eta(
         selection, results_by_device, int(tier), overhead_seconds=args.overhead_seconds

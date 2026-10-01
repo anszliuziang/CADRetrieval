@@ -857,7 +857,18 @@ class EtaG2CliTest(unittest.TestCase):
                 "spec_version": "text2cad-vector-score-v1",
             },
             "authorization": {"approved_sha": cls.git_sha},
-            "budget": {"approved_sha": cls.git_sha},
+            "budget": {
+                "approved_sha": cls.git_sha,
+                "budget_file": f"/runtime/budgets/text2cad_m1c_{cls.git_sha}.json",
+                "invocations": [{
+                    "invocation_id": f"inv-{device}",
+                    "host": "yunnan-share2",
+                    "shard_id": shard,
+                    "cards_used": 1,
+                    "finalized": True,
+                    "exit_code": 0,
+                }],
+            },
             "batch_tiers": [32],
             "sync": {
                 "enabled": True,
@@ -930,6 +941,43 @@ class EtaG2CliTest(unittest.TestCase):
         argv = self._argv()
         argv[argv.index(str(self.out_dir / "card_npu1.json"))] = str(self.out_dir / "card_npu1_v1.json")
         self.assertEqual(main(argv), 2)
+
+    def test_budget_evidence_refusals(self):
+        """R3 fix 2: the real CLI cross-checks each result's budget invocation
+        record before the estimate (tampered FILES, full gate chain runs)."""
+        from idea01.text2cad_speed_bench import main
+
+        base = json.loads((self.out_dir / "card_npu1.json").read_text(encoding="utf-8"))
+        good_inv = base["budget"]["invocations"][0]
+
+        def mutated(name, mutate):
+            doc = json.loads(json.dumps(base))
+            mutate(doc)
+            path = self.out_dir / name
+            path.write_text(json.dumps(doc), encoding="utf-8")
+            argv = self._argv()
+            argv[argv.index(str(self.out_dir / "card_npu1.json"))] = str(path)
+            return main(argv)
+
+        cases = {
+            "missing_record": lambda d: d["budget"].update(invocations=[]),
+            "duplicate_record": lambda d: d["budget"].update(
+                invocations=[dict(good_inv), dict(good_inv)]),
+            "different_host": lambda d: d["budget"]["invocations"][0].update(host="other-host"),
+            "empty_host": lambda d: d["budget"]["invocations"][0].update(host=""),
+            "different_ledger": lambda d: d["budget"].update(budget_file="/other/ledger.json"),
+            "wrong_shard": lambda d: d["budget"]["invocations"][0].update(shard_id=0),
+            "cards_used_2": lambda d: d["budget"]["invocations"][0].update(cards_used=2),
+            "not_finalized": lambda d: d["budget"]["invocations"][0].update(finalized=False),
+            "failed_exit": lambda d: d["budget"]["invocations"][0].update(exit_code=2),
+            "bool_exit": lambda d: d["budget"]["invocations"][0].update(exit_code=True),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(mutated(f"card_npu1_{name}.json", mutate), 2, name)
+        # and the untampered pair still passes all the way to the estimate
+        out = self.out_dir / "eta_g2_r3.json"
+        self.assertEqual(main(self._argv("--out", str(out))), 3)
 
 
 # ---------------------------------------------------------------------------
@@ -1595,6 +1643,49 @@ class TwoShardSyncDriverTest(unittest.TestCase):
         _binding, _results, errors = self._run_pair(tamper_peer_sha=True)
         self.assertTrue(errors)
         self.assertTrue(any("peer local plan" in str(e) for e in errors.values()))
+
+
+class ResetHbmFailureTest(unittest.TestCase):
+    """R3 fix 1: an NPU stats failure at tier start hits the peer-signal path,
+    not a bare escape (the other card must not wait out the 180s timeout)."""
+
+    def test_reset_failure_signals_peer_and_reraises(self):
+        from idea01.text2cad_bench_protocol import build_tier_plans
+        from idea01.text2cad_speed_bench import run_production_batch_tiers
+
+        selection, _token_lens, _cad_reals = _g2_fixture()
+        plans = build_tier_plans(selection, [1], shard_id=0)
+
+        class BadNpu:
+            @staticmethod
+            def reset_peak_memory_stats(device=None):
+                raise RuntimeError("npu reset broken")
+
+            @staticmethod
+            def max_memory_allocated(device=None):
+                return 1
+
+        class FakeSync:
+            def __init__(self):
+                self.failures: list[tuple] = []
+
+            def arrive(self, point, payload):
+                return {}
+
+            def signal_failure(self, point, kind, detail):
+                self.failures.append((point, kind, detail))
+
+        sync = FakeSync()
+        with mock.patch.object(torch, "npu", BadNpu, create=True):
+            with self.assertRaisesRegex(RuntimeError, "npu reset broken"):
+                run_production_batch_tiers(
+                    lambda b: ([{"score_total": -1.0, "n_valid_total": 5} for _ in b],
+                               {"preprocess_s": 0.0, "forward_score_s": 0.0}),
+                    plans, warmup_passes=2, reps=3, device="npu:0", sync=sync,
+                )
+        self.assertTrue(sync.failures)
+        self.assertEqual(sync.failures[0][1], "error")
+        self.assertIn("npu reset broken", sync.failures[0][2])
 
 
 class ThroughputSyncArgsTest(unittest.TestCase):
