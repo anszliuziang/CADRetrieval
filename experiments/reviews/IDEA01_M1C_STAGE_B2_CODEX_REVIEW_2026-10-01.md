@@ -34,6 +34,8 @@ D:\miniconda\python.exe -m pytest -q experiments/tests/test_text2cad_pair_index.
 
 本轮只读 SSH 核验成功：远端工作树为空，HEAD `76dd70aad5fe1531d3d39df0feb75afb669c659d`，两张 Ascend910 健康，无 NPU 进程。新代码尚须 fetch/detach，不可从旧 SHA 运行。启动前在 checkout 外创建 `runtime/budgets`、`tmp`、`hf`、`xdg` 目录。
 
+后续已在干净 detached `24570dd892202be4b5e31a4bdc12cb23dc258d57` 完成实际远端 LF 重建和零前向 dry-run，exit 0，172 张量严格/精确相等、8046 候选全覆盖、3644 文本无截断；报告 SHA `92bd8f1663d9f0a16f681ea5fa05d65d04add9b9825ca9e2a2918eacfc3f369a`。评分目录的 UID 映射已移走，所有必需 runtime 目录已建立。详见资产状态文档的 2026-10-01 段。因此 Codex 在单独授权提交中放行此完整 SHA 的 **G1 spot 1 对、0.5 卡小时**；G2 两项阻塞和其它阶段仍未放行。
+
 ## G1 命令（授权后才执行）
 
 服务器 checkout `/home/ma-user/work/CADRetrieval`；`RT=/home/ma-user/work/CADRetrieval_runtime`，Python 为 `/home/ma-user/work/envs/cadretrieval-idea01-torch271/bin/python`。远端先确认 worktree 干净，再 fetch/detach 获批完整 SHA。输出目录必须新建且不能覆盖已有结果。

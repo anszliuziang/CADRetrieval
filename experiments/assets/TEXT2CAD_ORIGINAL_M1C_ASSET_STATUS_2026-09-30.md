@@ -37,3 +37,9 @@ Codex 在本地用 `D:\miniconda\python.exe experiments/scripts/audit_text2cad_g
 ## M0 冻结 query/gallery 清单的云脑运行副本（Codex，2026-09-30）
 
 将本地 `.cache/m0_real_run_v3/` 的 `query.jsonl`、`gallery.jsonl` 两个轻量数据清单复制到云脑 checkout 外 `/home/ma-user/work/CADRetrieval_runtime/pair_inputs/m0_v3/`，没有复制 qrels 到评分运行目录，也没有修改远端源码树。云脑重算 SHA256 分别为 `a0d8504f5a5555e5312dd38a31321a6ea254087e6390e786559cfc0b6d307fcd`、`09782bd6d316e7b0863c70f1df9cd6504e7dc41ce3bb9a433821b1c22ab85e30`，与本地和固定指纹一致。复制后远端 Git 仍干净，detached HEAD 为 `76dd70aad5fe1531d3d39df0feb75afb669c659d`。这只准备输入资产，未执行模型前向。
+
+## B2 跨平台清单与完整零前向审计（Codex，2026-10-01）
+
+干净 detached SHA `24570dd892202be4b5e31a4bdc12cb23dc258d57` 上重建 `runtime/pair_manifest_v4`，与本地 LF 重建逐字节一致，manifest SHA `62086beb064af7b738665825edbf1a3cb63ebfaceddc7e227c0aa45390902557`，选择配置 SHA `dd07ec91782fa8156fa490f176d0fe0e3fa118488e687ce7bf14a04af29d834a`。UID 映射移到独立 `runtime/evaluation_inputs/m0_v3/evaluation_map_lf.json`，SHA `a6f5b19a76a14aef4eab03879ae9f0f872b9e5a30e4bda5ba9ea8a45c0ed1875`；评分目录不含映射或 qrels。
+
+同 SHA 的 `run_text2cad_score_matrix.py --mode dry-run --scan-candidates --device cpu` exit 0、`forward_executed=false`：非 BERT 172/172 严格加载且逐张量相等；CAD 8046/8046 加载、0 拒绝；唯一文本3644、BERT 最大98 token、0 超512。原始证据在本地 `experiments/runs/m1c_b2_zero_audit_20261001_lf/` 与远端同名 runtime/runs，`dry_run/dry_run.json` SHA `92bd8f1663d9f0a16f681ea5fa05d65d04add9b9825ca9e2a2918eacfc3f369a`。远端工作树仍干净，runtime/budgets/tmp/hf/xdg 已创建。此前 CRLF 指纹造成的拒绝原始日志保留在 `runtime/runs/m1c_b2_zero_audit_20261001/`，未覆盖；没有真实模型前向。
