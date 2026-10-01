@@ -147,6 +147,6 @@ env $ENVS $PY $REPO/experiments/scripts/run_text2cad_speed_bench.py \
 
 ## 5. Git 交付
 - 暂存仅本轮：`experiments/src/idea01/text2cad_bench_protocol.py`、`experiments/src/idea01/text2cad_speed_bench.py`、`experiments/tests/test_text2cad_bench_protocol.py`、`experiments/tests/test_text2cad_speed_bench.py`、本 R2 报告。未改 frozen_runner/scripts/configs/Codex 文档；无数据/权重/缓存。
-- 提交 SHA 见回填（本地提交，不 push）。
+- R2 修复提交完整 SHA：`55e30d156c6c4c793d1ba5aea146dd19b8c7b9da`（本 SHA 回填紧随其后一个仅本文档的小提交；均未 push，等 Codex 审核）。
 
 review_required
