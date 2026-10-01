@@ -33,3 +33,7 @@ Codex 在本地用 `D:\miniconda\python.exe experiments/scripts/audit_text2cad_g
 在远端干净 detached checkout `76dd70aad5fe1531d3d39df0feb75afb669c659d`，Codex 用本地已提交的 `experiments/scripts/audit_text2cad_model_load.py`、固定 checkpoint/BERT 与 `experiments/configs/text2cad_checkpoint_expected_keys_20260930.json`，通过 `/home/ma-user/work/envs/cadretrieval-idea01-torch271/bin/python` 做完整**零前向**加载审计，`exit 0`。原始文件在云脑 checkout 外的 `/home/ma-user/work/CADRetrieval_runtime/runs/m1c_model_load_20260930_b1/`：`stdout.json` SHA256 `c0afa6349f41315f55552c71ad332af795afdec4f841d434ed2973c1c52bee2a`，`stderr.log` SHA256 `1ee8090f4ed15e1399485ef9f16234342912cb3bdd13869c4f7039a2067a0f7c`。stderr 仅有 torch_npu 提示 Ascend toolkit 安装目录所有者与当前用户不同的警告，非加载错误。执行后 `git status --porcelain` 为空。
 
 本次一体化检查结果：BERT 源与模型各 391 张量、`missing/mismatched/error=[]`、仅 7 个 `cls.*` 未使用、词嵌入精确相等；Text2CAD 非 BERT checkpoint 172 张量全匹配、逐张量数值相等，预期全零键仅两个无交叉注意力层的 `norm_3.bias`；模型为 `eval()`，状态为 `structure_only_no_forward`。**没有任何真实模型 forward、吞吐或检索精度结果；NPU 预算仍为 0。**
+
+## M0 冻结 query/gallery 清单的云脑运行副本（Codex，2026-09-30）
+
+将本地 `.cache/m0_real_run_v3/` 的 `query.jsonl`、`gallery.jsonl` 两个轻量数据清单复制到云脑 checkout 外 `/home/ma-user/work/CADRetrieval_runtime/pair_inputs/m0_v3/`，没有复制 qrels 到评分运行目录，也没有修改远端源码树。云脑重算 SHA256 分别为 `a0d8504f5a5555e5312dd38a31321a6ea254087e6390e786559cfc0b6d307fcd`、`09782bd6d316e7b0863c70f1df9cd6504e7dc41ce3bb9a433821b1c22ab85e30`，与本地和固定指纹一致。复制后远端 Git 仍干净，detached HEAD 为 `76dd70aad5fe1531d3d39df0feb75afb669c659d`。这只准备输入资产，未执行模型前向。

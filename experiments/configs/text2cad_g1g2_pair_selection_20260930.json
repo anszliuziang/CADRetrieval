@@ -1,0 +1,4405 @@
+{
+ "counts": {
+  "n_cads": 8046,
+  "n_pairs": 29319624,
+  "n_texts": 3644,
+  "n_throughput_pairs": 600,
+  "strata_shortfalls": []
+ },
+ "provenance": {
+  "cad_length_index_sha256": "56185640c93a3edbf6a3f75a63c7e7cf21d08662276be88769dcea44ff4a2f1b",
+  "generated_by": "text2cad_speed_bench.generate_selection (CPU, zero forward)",
+  "pair_manifest_sha256": "83d0e19c1ed8a57fc533f5777b590114e647340fc56c00bddec7b41154e18e8d",
+  "texts_jsonl_sha256": "5a3132756f08e3012a3023a8b2e0470d60e09bb252b5b2a544a3830d6f4758cf"
+ },
+ "rules": {
+  "cad_strata": "rank by (n_real_tokens, cad_index) into 10 deciles",
+  "spot": "median-rank text x median-rank CAD",
+  "ten_pair_quantiles": [
+   [
+    10,
+    10
+   ],
+   [
+    10,
+    50
+   ],
+   [
+    10,
+    90
+   ],
+   [
+    50,
+    10
+   ],
+   [
+    50,
+    50
+   ],
+   [
+    50,
+    90
+   ],
+   [
+    90,
+    10
+   ],
+   [
+    90,
+    50
+   ],
+   [
+    90,
+    90
+   ],
+   [
+    100,
+    90
+   ]
+  ],
+  "text_strata": "rank by (n_chars, text_index) into 3 terciles",
+  "throughput_cell": "4 texts x 5 cads, evenly spaced, cross product"
+ },
+ "schema_version": "text2cad-g1g2-selection-v1",
+ "spot": {
+  "cad_index": 1531,
+  "n_chars": 153,
+  "n_real_tokens": 34,
+  "pair_index": 2181997,
+  "text_index": 271
+ },
+ "ten_pair": [
+  {
+   "cad_index": 3311,
+   "n_chars": 71,
+   "n_real_tokens": 23,
+   "pair_index": 17849339,
+   "text_index": 2218
+  },
+  {
+   "cad_index": 1531,
+   "n_chars": 71,
+   "n_real_tokens": 34,
+   "pair_index": 17847559,
+   "text_index": 2218
+  },
+  {
+   "cad_index": 2537,
+   "n_chars": 71,
+   "n_real_tokens": 87,
+   "pair_index": 17848565,
+   "text_index": 2218
+  },
+  {
+   "cad_index": 3311,
+   "n_chars": 153,
+   "n_real_tokens": 23,
+   "pair_index": 2183777,
+   "text_index": 271
+  },
+  {
+   "cad_index": 1531,
+   "n_chars": 153,
+   "n_real_tokens": 34,
+   "pair_index": 2181997,
+   "text_index": 271
+  },
+  {
+   "cad_index": 2537,
+   "n_chars": 153,
+   "n_real_tokens": 87,
+   "pair_index": 2183003,
+   "text_index": 271
+  },
+  {
+   "cad_index": 3311,
+   "n_chars": 303,
+   "n_real_tokens": 23,
+   "pair_index": 24270047,
+   "text_index": 3016
+  },
+  {
+   "cad_index": 1531,
+   "n_chars": 303,
+   "n_real_tokens": 34,
+   "pair_index": 24268267,
+   "text_index": 3016
+  },
+  {
+   "cad_index": 2537,
+   "n_chars": 303,
+   "n_real_tokens": 87,
+   "pair_index": 24269273,
+   "text_index": 3016
+  },
+  {
+   "cad_index": 2537,
+   "n_chars": 469,
+   "n_real_tokens": 87,
+   "pair_index": 6383015,
+   "text_index": 793
+  }
+ ],
+ "throughput_strata": {
+  "text_t0_cad_d0": [
+   {
+    "cad_index": 8,
+    "n_chars": 81,
+    "n_real_tokens": 23,
+    "pair_index": 8,
+    "text_index": 0
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 81,
+    "n_real_tokens": 19,
+    "pair_index": 1322,
+    "text_index": 0
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 81,
+    "n_real_tokens": 19,
+    "pair_index": 3081,
+    "text_index": 0
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 81,
+    "n_real_tokens": 19,
+    "pair_index": 5443,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 81,
+    "n_real_tokens": 19,
+    "pair_index": 8045,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8,
+    "n_chars": 76,
+    "n_real_tokens": 23,
+    "pair_index": 10081646,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 76,
+    "n_real_tokens": 19,
+    "pair_index": 10082960,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 76,
+    "n_real_tokens": 19,
+    "pair_index": 10084719,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 76,
+    "n_real_tokens": 19,
+    "pair_index": 10087081,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 76,
+    "n_real_tokens": 19,
+    "pair_index": 10089683,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8,
+    "n_chars": 59,
+    "n_real_tokens": 23,
+    "pair_index": 19857536,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 59,
+    "n_real_tokens": 19,
+    "pair_index": 19858850,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 59,
+    "n_real_tokens": 19,
+    "pair_index": 19860609,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 59,
+    "n_real_tokens": 19,
+    "pair_index": 19862971,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 59,
+    "n_real_tokens": 19,
+    "pair_index": 19865573,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8,
+    "n_chars": 92,
+    "n_real_tokens": 23,
+    "pair_index": 29287448,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 92,
+    "n_real_tokens": 19,
+    "pair_index": 29288762,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 92,
+    "n_real_tokens": 19,
+    "pair_index": 29290521,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 92,
+    "n_real_tokens": 19,
+    "pair_index": 29292883,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 92,
+    "n_real_tokens": 19,
+    "pair_index": 29295485,
+    "text_index": 3640
+   }
+  ],
+  "text_t0_cad_d1": [
+   {
+    "cad_index": 2,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 2,
+    "text_index": 0
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 856,
+    "text_index": 0
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 1837,
+    "text_index": 0
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 81,
+    "n_real_tokens": 23,
+    "pair_index": 4761,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 81,
+    "n_real_tokens": 23,
+    "pair_index": 8020,
+    "text_index": 0
+   },
+   {
+    "cad_index": 2,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10081640,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10082494,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10083475,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 76,
+    "n_real_tokens": 23,
+    "pair_index": 10086399,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 76,
+    "n_real_tokens": 23,
+    "pair_index": 10089658,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 2,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19857530,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19858384,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19859365,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 59,
+    "n_real_tokens": 23,
+    "pair_index": 19862289,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 59,
+    "n_real_tokens": 23,
+    "pair_index": 19865548,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 2,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29287442,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29288296,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29289277,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 92,
+    "n_real_tokens": 23,
+    "pair_index": 29292201,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 92,
+    "n_real_tokens": 23,
+    "pair_index": 29295460,
+    "text_index": 3640
+   }
+  ],
+  "text_t0_cad_d2": [
+   {
+    "cad_index": 2372,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 2372,
+    "text_index": 0
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 3333,
+    "text_index": 0
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 4222,
+    "text_index": 0
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 4974,
+    "text_index": 0
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 5853,
+    "text_index": 0
+   },
+   {
+    "cad_index": 2372,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10084010,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10084971,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10085860,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10086612,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10087491,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 2372,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19859900,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19860861,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19861750,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19862502,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19863381,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 2372,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29289812,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29290773,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29291662,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29292414,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29293293,
+    "text_index": 3640
+   }
+  ],
+  "text_t0_cad_d3": [
+   {
+    "cad_index": 6,
+    "n_chars": 81,
+    "n_real_tokens": 28,
+    "pair_index": 6,
+    "text_index": 0
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 81,
+    "n_real_tokens": 26,
+    "pair_index": 5626,
+    "text_index": 0
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 6593,
+    "text_index": 0
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 7364,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 81,
+    "n_real_tokens": 24,
+    "pair_index": 8044,
+    "text_index": 0
+   },
+   {
+    "cad_index": 6,
+    "n_chars": 76,
+    "n_real_tokens": 28,
+    "pair_index": 10081644,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 76,
+    "n_real_tokens": 26,
+    "pair_index": 10087264,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10088231,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10089002,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 76,
+    "n_real_tokens": 24,
+    "pair_index": 10089682,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 6,
+    "n_chars": 59,
+    "n_real_tokens": 28,
+    "pair_index": 19857534,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 59,
+    "n_real_tokens": 26,
+    "pair_index": 19863154,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19864121,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19864892,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 59,
+    "n_real_tokens": 24,
+    "pair_index": 19865572,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 6,
+    "n_chars": 92,
+    "n_real_tokens": 28,
+    "pair_index": 29287446,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 92,
+    "n_real_tokens": 26,
+    "pair_index": 29293066,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29294033,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29294804,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 92,
+    "n_real_tokens": 24,
+    "pair_index": 29295484,
+    "text_index": 3640
+   }
+  ],
+  "text_t0_cad_d4": [
+   {
+    "cad_index": 7,
+    "n_chars": 81,
+    "n_real_tokens": 32,
+    "pair_index": 7,
+    "text_index": 0
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 81,
+    "n_real_tokens": 32,
+    "pair_index": 2431,
+    "text_index": 0
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 81,
+    "n_real_tokens": 28,
+    "pair_index": 4084,
+    "text_index": 0
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 81,
+    "n_real_tokens": 32,
+    "pair_index": 5883,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 81,
+    "n_real_tokens": 33,
+    "pair_index": 8030,
+    "text_index": 0
+   },
+   {
+    "cad_index": 7,
+    "n_chars": 76,
+    "n_real_tokens": 32,
+    "pair_index": 10081645,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 76,
+    "n_real_tokens": 32,
+    "pair_index": 10084069,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 76,
+    "n_real_tokens": 28,
+    "pair_index": 10085722,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 76,
+    "n_real_tokens": 32,
+    "pair_index": 10087521,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 76,
+    "n_real_tokens": 33,
+    "pair_index": 10089668,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 7,
+    "n_chars": 59,
+    "n_real_tokens": 32,
+    "pair_index": 19857535,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 59,
+    "n_real_tokens": 32,
+    "pair_index": 19859959,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 59,
+    "n_real_tokens": 28,
+    "pair_index": 19861612,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 59,
+    "n_real_tokens": 32,
+    "pair_index": 19863411,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 59,
+    "n_real_tokens": 33,
+    "pair_index": 19865558,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 7,
+    "n_chars": 92,
+    "n_real_tokens": 32,
+    "pair_index": 29287447,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 92,
+    "n_real_tokens": 32,
+    "pair_index": 29289871,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 92,
+    "n_real_tokens": 28,
+    "pair_index": 29291524,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 92,
+    "n_real_tokens": 32,
+    "pair_index": 29293323,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 92,
+    "n_real_tokens": 33,
+    "pair_index": 29295470,
+    "text_index": 3640
+   }
+  ],
+  "text_t0_cad_d5": [
+   {
+    "cad_index": 16,
+    "n_chars": 81,
+    "n_real_tokens": 41,
+    "pair_index": 16,
+    "text_index": 0
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 81,
+    "n_real_tokens": 36,
+    "pair_index": 2022,
+    "text_index": 0
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 81,
+    "n_real_tokens": 38,
+    "pair_index": 4157,
+    "text_index": 0
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 81,
+    "n_real_tokens": 35,
+    "pair_index": 6093,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 81,
+    "n_real_tokens": 36,
+    "pair_index": 8040,
+    "text_index": 0
+   },
+   {
+    "cad_index": 16,
+    "n_chars": 76,
+    "n_real_tokens": 41,
+    "pair_index": 10081654,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 76,
+    "n_real_tokens": 36,
+    "pair_index": 10083660,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 76,
+    "n_real_tokens": 38,
+    "pair_index": 10085795,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 76,
+    "n_real_tokens": 35,
+    "pair_index": 10087731,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 76,
+    "n_real_tokens": 36,
+    "pair_index": 10089678,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 16,
+    "n_chars": 59,
+    "n_real_tokens": 41,
+    "pair_index": 19857544,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 59,
+    "n_real_tokens": 36,
+    "pair_index": 19859550,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 59,
+    "n_real_tokens": 38,
+    "pair_index": 19861685,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 59,
+    "n_real_tokens": 35,
+    "pair_index": 19863621,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 59,
+    "n_real_tokens": 36,
+    "pair_index": 19865568,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 16,
+    "n_chars": 92,
+    "n_real_tokens": 41,
+    "pair_index": 29287456,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 92,
+    "n_real_tokens": 36,
+    "pair_index": 29289462,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 92,
+    "n_real_tokens": 38,
+    "pair_index": 29291597,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 92,
+    "n_real_tokens": 35,
+    "pair_index": 29293533,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 92,
+    "n_real_tokens": 36,
+    "pair_index": 29295480,
+    "text_index": 3640
+   }
+  ],
+  "text_t0_cad_d6": [
+   {
+    "cad_index": 4,
+    "n_chars": 81,
+    "n_real_tokens": 44,
+    "pair_index": 4,
+    "text_index": 0
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 81,
+    "n_real_tokens": 47,
+    "pair_index": 1777,
+    "text_index": 0
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 81,
+    "n_real_tokens": 44,
+    "pair_index": 3675,
+    "text_index": 0
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 81,
+    "n_real_tokens": 47,
+    "pair_index": 5783,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 81,
+    "n_real_tokens": 43,
+    "pair_index": 8028,
+    "text_index": 0
+   },
+   {
+    "cad_index": 4,
+    "n_chars": 76,
+    "n_real_tokens": 44,
+    "pair_index": 10081642,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 76,
+    "n_real_tokens": 47,
+    "pair_index": 10083415,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 76,
+    "n_real_tokens": 44,
+    "pair_index": 10085313,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 76,
+    "n_real_tokens": 47,
+    "pair_index": 10087421,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 76,
+    "n_real_tokens": 43,
+    "pair_index": 10089666,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 4,
+    "n_chars": 59,
+    "n_real_tokens": 44,
+    "pair_index": 19857532,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 59,
+    "n_real_tokens": 47,
+    "pair_index": 19859305,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 59,
+    "n_real_tokens": 44,
+    "pair_index": 19861203,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 59,
+    "n_real_tokens": 47,
+    "pair_index": 19863311,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 59,
+    "n_real_tokens": 43,
+    "pair_index": 19865556,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 4,
+    "n_chars": 92,
+    "n_real_tokens": 44,
+    "pair_index": 29287444,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 92,
+    "n_real_tokens": 47,
+    "pair_index": 29289217,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 92,
+    "n_real_tokens": 44,
+    "pair_index": 29291115,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 92,
+    "n_real_tokens": 47,
+    "pair_index": 29293223,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 92,
+    "n_real_tokens": 43,
+    "pair_index": 29295468,
+    "text_index": 3640
+   }
+  ],
+  "text_t0_cad_d7": [
+   {
+    "cad_index": 5,
+    "n_chars": 81,
+    "n_real_tokens": 62,
+    "pair_index": 5,
+    "text_index": 0
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 81,
+    "n_real_tokens": 58,
+    "pair_index": 1923,
+    "text_index": 0
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 81,
+    "n_real_tokens": 56,
+    "pair_index": 3809,
+    "text_index": 0
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 81,
+    "n_real_tokens": 60,
+    "pair_index": 5923,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 81,
+    "n_real_tokens": 60,
+    "pair_index": 8014,
+    "text_index": 0
+   },
+   {
+    "cad_index": 5,
+    "n_chars": 76,
+    "n_real_tokens": 62,
+    "pair_index": 10081643,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 76,
+    "n_real_tokens": 58,
+    "pair_index": 10083561,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 76,
+    "n_real_tokens": 56,
+    "pair_index": 10085447,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 76,
+    "n_real_tokens": 60,
+    "pair_index": 10087561,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 76,
+    "n_real_tokens": 60,
+    "pair_index": 10089652,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 5,
+    "n_chars": 59,
+    "n_real_tokens": 62,
+    "pair_index": 19857533,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 59,
+    "n_real_tokens": 58,
+    "pair_index": 19859451,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 59,
+    "n_real_tokens": 56,
+    "pair_index": 19861337,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 59,
+    "n_real_tokens": 60,
+    "pair_index": 19863451,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 59,
+    "n_real_tokens": 60,
+    "pair_index": 19865542,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 5,
+    "n_chars": 92,
+    "n_real_tokens": 62,
+    "pair_index": 29287445,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 92,
+    "n_real_tokens": 58,
+    "pair_index": 29289363,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 92,
+    "n_real_tokens": 56,
+    "pair_index": 29291249,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 92,
+    "n_real_tokens": 60,
+    "pair_index": 29293363,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 92,
+    "n_real_tokens": 60,
+    "pair_index": 29295454,
+    "text_index": 3640
+   }
+  ],
+  "text_t0_cad_d8": [
+   {
+    "cad_index": 1,
+    "n_chars": 81,
+    "n_real_tokens": 68,
+    "pair_index": 1,
+    "text_index": 0
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 81,
+    "n_real_tokens": 83,
+    "pair_index": 1854,
+    "text_index": 0
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 81,
+    "n_real_tokens": 72,
+    "pair_index": 4001,
+    "text_index": 0
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 81,
+    "n_real_tokens": 84,
+    "pair_index": 5835,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 81,
+    "n_real_tokens": 78,
+    "pair_index": 8043,
+    "text_index": 0
+   },
+   {
+    "cad_index": 1,
+    "n_chars": 76,
+    "n_real_tokens": 68,
+    "pair_index": 10081639,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 76,
+    "n_real_tokens": 83,
+    "pair_index": 10083492,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 76,
+    "n_real_tokens": 72,
+    "pair_index": 10085639,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 76,
+    "n_real_tokens": 84,
+    "pair_index": 10087473,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 76,
+    "n_real_tokens": 78,
+    "pair_index": 10089681,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 1,
+    "n_chars": 59,
+    "n_real_tokens": 68,
+    "pair_index": 19857529,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 59,
+    "n_real_tokens": 83,
+    "pair_index": 19859382,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 59,
+    "n_real_tokens": 72,
+    "pair_index": 19861529,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 59,
+    "n_real_tokens": 84,
+    "pair_index": 19863363,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 59,
+    "n_real_tokens": 78,
+    "pair_index": 19865571,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 1,
+    "n_chars": 92,
+    "n_real_tokens": 68,
+    "pair_index": 29287441,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 92,
+    "n_real_tokens": 83,
+    "pair_index": 29289294,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 92,
+    "n_real_tokens": 72,
+    "pair_index": 29291441,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 92,
+    "n_real_tokens": 84,
+    "pair_index": 29293275,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 92,
+    "n_real_tokens": 78,
+    "pair_index": 29295483,
+    "text_index": 3640
+   }
+  ],
+  "text_t0_cad_d9": [
+   {
+    "cad_index": 0,
+    "n_chars": 81,
+    "n_real_tokens": 140,
+    "pair_index": 0,
+    "text_index": 0
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 81,
+    "n_real_tokens": 101,
+    "pair_index": 2298,
+    "text_index": 0
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 81,
+    "n_real_tokens": 88,
+    "pair_index": 4175,
+    "text_index": 0
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 81,
+    "n_real_tokens": 136,
+    "pair_index": 6156,
+    "text_index": 0
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 81,
+    "n_real_tokens": 104,
+    "pair_index": 8036,
+    "text_index": 0
+   },
+   {
+    "cad_index": 0,
+    "n_chars": 76,
+    "n_real_tokens": 140,
+    "pair_index": 10081638,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 76,
+    "n_real_tokens": 101,
+    "pair_index": 10083936,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 76,
+    "n_real_tokens": 88,
+    "pair_index": 10085813,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 76,
+    "n_real_tokens": 136,
+    "pair_index": 10087794,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 76,
+    "n_real_tokens": 104,
+    "pair_index": 10089674,
+    "text_index": 1253
+   },
+   {
+    "cad_index": 0,
+    "n_chars": 59,
+    "n_real_tokens": 140,
+    "pair_index": 19857528,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 59,
+    "n_real_tokens": 101,
+    "pair_index": 19859826,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 59,
+    "n_real_tokens": 88,
+    "pair_index": 19861703,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 59,
+    "n_real_tokens": 136,
+    "pair_index": 19863684,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 59,
+    "n_real_tokens": 104,
+    "pair_index": 19865564,
+    "text_index": 2468
+   },
+   {
+    "cad_index": 0,
+    "n_chars": 92,
+    "n_real_tokens": 140,
+    "pair_index": 29287440,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 92,
+    "n_real_tokens": 101,
+    "pair_index": 29289738,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 92,
+    "n_real_tokens": 88,
+    "pair_index": 29291615,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 92,
+    "n_real_tokens": 136,
+    "pair_index": 29293596,
+    "text_index": 3640
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 92,
+    "n_real_tokens": 104,
+    "pair_index": 29295476,
+    "text_index": 3640
+   }
+  ],
+  "text_t1_cad_d0": [
+   {
+    "cad_index": 8,
+    "n_chars": 124,
+    "n_real_tokens": 23,
+    "pair_index": 32192,
+    "text_index": 4
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 124,
+    "n_real_tokens": 19,
+    "pair_index": 33506,
+    "text_index": 4
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 124,
+    "n_real_tokens": 19,
+    "pair_index": 35265,
+    "text_index": 4
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 124,
+    "n_real_tokens": 19,
+    "pair_index": 37627,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 124,
+    "n_real_tokens": 19,
+    "pair_index": 40229,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8,
+    "n_chars": 123,
+    "n_real_tokens": 23,
+    "pair_index": 9695438,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 123,
+    "n_real_tokens": 19,
+    "pair_index": 9696752,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 123,
+    "n_real_tokens": 19,
+    "pair_index": 9698511,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 123,
+    "n_real_tokens": 19,
+    "pair_index": 9700873,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 123,
+    "n_real_tokens": 19,
+    "pair_index": 9703475,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8,
+    "n_chars": 148,
+    "n_real_tokens": 23,
+    "pair_index": 19052936,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 148,
+    "n_real_tokens": 19,
+    "pair_index": 19054250,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 148,
+    "n_real_tokens": 19,
+    "pair_index": 19056009,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 148,
+    "n_real_tokens": 19,
+    "pair_index": 19058371,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 148,
+    "n_real_tokens": 19,
+    "pair_index": 19060973,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8,
+    "n_chars": 168,
+    "n_real_tokens": 23,
+    "pair_index": 29303540,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 168,
+    "n_real_tokens": 19,
+    "pair_index": 29304854,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 168,
+    "n_real_tokens": 19,
+    "pair_index": 29306613,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 168,
+    "n_real_tokens": 19,
+    "pair_index": 29308975,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 168,
+    "n_real_tokens": 19,
+    "pair_index": 29311577,
+    "text_index": 3642
+   }
+  ],
+  "text_t1_cad_d1": [
+   {
+    "cad_index": 2,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 32186,
+    "text_index": 4
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 33040,
+    "text_index": 4
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 34021,
+    "text_index": 4
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 124,
+    "n_real_tokens": 23,
+    "pair_index": 36945,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 124,
+    "n_real_tokens": 23,
+    "pair_index": 40204,
+    "text_index": 4
+   },
+   {
+    "cad_index": 2,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9695432,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9696286,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9697267,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 123,
+    "n_real_tokens": 23,
+    "pair_index": 9700191,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 123,
+    "n_real_tokens": 23,
+    "pair_index": 9703450,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 2,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19052930,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19053784,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19054765,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 148,
+    "n_real_tokens": 23,
+    "pair_index": 19057689,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 148,
+    "n_real_tokens": 23,
+    "pair_index": 19060948,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 2,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29303534,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29304388,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29305369,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 168,
+    "n_real_tokens": 23,
+    "pair_index": 29308293,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 168,
+    "n_real_tokens": 23,
+    "pair_index": 29311552,
+    "text_index": 3642
+   }
+  ],
+  "text_t1_cad_d2": [
+   {
+    "cad_index": 2372,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 34556,
+    "text_index": 4
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 35517,
+    "text_index": 4
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 36406,
+    "text_index": 4
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 37158,
+    "text_index": 4
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 38037,
+    "text_index": 4
+   },
+   {
+    "cad_index": 2372,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9697802,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9698763,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9699652,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9700404,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9701283,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 2372,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19055300,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19056261,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19057150,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19057902,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19058781,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 2372,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29305904,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29306865,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29307754,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29308506,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29309385,
+    "text_index": 3642
+   }
+  ],
+  "text_t1_cad_d3": [
+   {
+    "cad_index": 6,
+    "n_chars": 124,
+    "n_real_tokens": 28,
+    "pair_index": 32190,
+    "text_index": 4
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 124,
+    "n_real_tokens": 26,
+    "pair_index": 37810,
+    "text_index": 4
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 38777,
+    "text_index": 4
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 39548,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 124,
+    "n_real_tokens": 24,
+    "pair_index": 40228,
+    "text_index": 4
+   },
+   {
+    "cad_index": 6,
+    "n_chars": 123,
+    "n_real_tokens": 28,
+    "pair_index": 9695436,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 123,
+    "n_real_tokens": 26,
+    "pair_index": 9701056,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9702023,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9702794,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 123,
+    "n_real_tokens": 24,
+    "pair_index": 9703474,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 6,
+    "n_chars": 148,
+    "n_real_tokens": 28,
+    "pair_index": 19052934,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 148,
+    "n_real_tokens": 26,
+    "pair_index": 19058554,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19059521,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19060292,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 148,
+    "n_real_tokens": 24,
+    "pair_index": 19060972,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 6,
+    "n_chars": 168,
+    "n_real_tokens": 28,
+    "pair_index": 29303538,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 168,
+    "n_real_tokens": 26,
+    "pair_index": 29309158,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29310125,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29310896,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 168,
+    "n_real_tokens": 24,
+    "pair_index": 29311576,
+    "text_index": 3642
+   }
+  ],
+  "text_t1_cad_d4": [
+   {
+    "cad_index": 7,
+    "n_chars": 124,
+    "n_real_tokens": 32,
+    "pair_index": 32191,
+    "text_index": 4
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 124,
+    "n_real_tokens": 32,
+    "pair_index": 34615,
+    "text_index": 4
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 124,
+    "n_real_tokens": 28,
+    "pair_index": 36268,
+    "text_index": 4
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 124,
+    "n_real_tokens": 32,
+    "pair_index": 38067,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 124,
+    "n_real_tokens": 33,
+    "pair_index": 40214,
+    "text_index": 4
+   },
+   {
+    "cad_index": 7,
+    "n_chars": 123,
+    "n_real_tokens": 32,
+    "pair_index": 9695437,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 123,
+    "n_real_tokens": 32,
+    "pair_index": 9697861,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 123,
+    "n_real_tokens": 28,
+    "pair_index": 9699514,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 123,
+    "n_real_tokens": 32,
+    "pair_index": 9701313,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 123,
+    "n_real_tokens": 33,
+    "pair_index": 9703460,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 7,
+    "n_chars": 148,
+    "n_real_tokens": 32,
+    "pair_index": 19052935,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 148,
+    "n_real_tokens": 32,
+    "pair_index": 19055359,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 148,
+    "n_real_tokens": 28,
+    "pair_index": 19057012,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 148,
+    "n_real_tokens": 32,
+    "pair_index": 19058811,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 148,
+    "n_real_tokens": 33,
+    "pair_index": 19060958,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 7,
+    "n_chars": 168,
+    "n_real_tokens": 32,
+    "pair_index": 29303539,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 168,
+    "n_real_tokens": 32,
+    "pair_index": 29305963,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 168,
+    "n_real_tokens": 28,
+    "pair_index": 29307616,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 168,
+    "n_real_tokens": 32,
+    "pair_index": 29309415,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 168,
+    "n_real_tokens": 33,
+    "pair_index": 29311562,
+    "text_index": 3642
+   }
+  ],
+  "text_t1_cad_d5": [
+   {
+    "cad_index": 16,
+    "n_chars": 124,
+    "n_real_tokens": 41,
+    "pair_index": 32200,
+    "text_index": 4
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 124,
+    "n_real_tokens": 36,
+    "pair_index": 34206,
+    "text_index": 4
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 124,
+    "n_real_tokens": 38,
+    "pair_index": 36341,
+    "text_index": 4
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 124,
+    "n_real_tokens": 35,
+    "pair_index": 38277,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 124,
+    "n_real_tokens": 36,
+    "pair_index": 40224,
+    "text_index": 4
+   },
+   {
+    "cad_index": 16,
+    "n_chars": 123,
+    "n_real_tokens": 41,
+    "pair_index": 9695446,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 123,
+    "n_real_tokens": 36,
+    "pair_index": 9697452,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 123,
+    "n_real_tokens": 38,
+    "pair_index": 9699587,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 123,
+    "n_real_tokens": 35,
+    "pair_index": 9701523,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 123,
+    "n_real_tokens": 36,
+    "pair_index": 9703470,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 16,
+    "n_chars": 148,
+    "n_real_tokens": 41,
+    "pair_index": 19052944,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 148,
+    "n_real_tokens": 36,
+    "pair_index": 19054950,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 148,
+    "n_real_tokens": 38,
+    "pair_index": 19057085,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 148,
+    "n_real_tokens": 35,
+    "pair_index": 19059021,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 148,
+    "n_real_tokens": 36,
+    "pair_index": 19060968,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 16,
+    "n_chars": 168,
+    "n_real_tokens": 41,
+    "pair_index": 29303548,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 168,
+    "n_real_tokens": 36,
+    "pair_index": 29305554,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 168,
+    "n_real_tokens": 38,
+    "pair_index": 29307689,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 168,
+    "n_real_tokens": 35,
+    "pair_index": 29309625,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 168,
+    "n_real_tokens": 36,
+    "pair_index": 29311572,
+    "text_index": 3642
+   }
+  ],
+  "text_t1_cad_d6": [
+   {
+    "cad_index": 4,
+    "n_chars": 124,
+    "n_real_tokens": 44,
+    "pair_index": 32188,
+    "text_index": 4
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 124,
+    "n_real_tokens": 47,
+    "pair_index": 33961,
+    "text_index": 4
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 124,
+    "n_real_tokens": 44,
+    "pair_index": 35859,
+    "text_index": 4
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 124,
+    "n_real_tokens": 47,
+    "pair_index": 37967,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 124,
+    "n_real_tokens": 43,
+    "pair_index": 40212,
+    "text_index": 4
+   },
+   {
+    "cad_index": 4,
+    "n_chars": 123,
+    "n_real_tokens": 44,
+    "pair_index": 9695434,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 123,
+    "n_real_tokens": 47,
+    "pair_index": 9697207,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 123,
+    "n_real_tokens": 44,
+    "pair_index": 9699105,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 123,
+    "n_real_tokens": 47,
+    "pair_index": 9701213,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 123,
+    "n_real_tokens": 43,
+    "pair_index": 9703458,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 4,
+    "n_chars": 148,
+    "n_real_tokens": 44,
+    "pair_index": 19052932,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 148,
+    "n_real_tokens": 47,
+    "pair_index": 19054705,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 148,
+    "n_real_tokens": 44,
+    "pair_index": 19056603,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 148,
+    "n_real_tokens": 47,
+    "pair_index": 19058711,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 148,
+    "n_real_tokens": 43,
+    "pair_index": 19060956,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 4,
+    "n_chars": 168,
+    "n_real_tokens": 44,
+    "pair_index": 29303536,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 168,
+    "n_real_tokens": 47,
+    "pair_index": 29305309,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 168,
+    "n_real_tokens": 44,
+    "pair_index": 29307207,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 168,
+    "n_real_tokens": 47,
+    "pair_index": 29309315,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 168,
+    "n_real_tokens": 43,
+    "pair_index": 29311560,
+    "text_index": 3642
+   }
+  ],
+  "text_t1_cad_d7": [
+   {
+    "cad_index": 5,
+    "n_chars": 124,
+    "n_real_tokens": 62,
+    "pair_index": 32189,
+    "text_index": 4
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 124,
+    "n_real_tokens": 58,
+    "pair_index": 34107,
+    "text_index": 4
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 124,
+    "n_real_tokens": 56,
+    "pair_index": 35993,
+    "text_index": 4
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 124,
+    "n_real_tokens": 60,
+    "pair_index": 38107,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 124,
+    "n_real_tokens": 60,
+    "pair_index": 40198,
+    "text_index": 4
+   },
+   {
+    "cad_index": 5,
+    "n_chars": 123,
+    "n_real_tokens": 62,
+    "pair_index": 9695435,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 123,
+    "n_real_tokens": 58,
+    "pair_index": 9697353,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 123,
+    "n_real_tokens": 56,
+    "pair_index": 9699239,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 123,
+    "n_real_tokens": 60,
+    "pair_index": 9701353,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 123,
+    "n_real_tokens": 60,
+    "pair_index": 9703444,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 5,
+    "n_chars": 148,
+    "n_real_tokens": 62,
+    "pair_index": 19052933,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 148,
+    "n_real_tokens": 58,
+    "pair_index": 19054851,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 148,
+    "n_real_tokens": 56,
+    "pair_index": 19056737,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 148,
+    "n_real_tokens": 60,
+    "pair_index": 19058851,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 148,
+    "n_real_tokens": 60,
+    "pair_index": 19060942,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 5,
+    "n_chars": 168,
+    "n_real_tokens": 62,
+    "pair_index": 29303537,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 168,
+    "n_real_tokens": 58,
+    "pair_index": 29305455,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 168,
+    "n_real_tokens": 56,
+    "pair_index": 29307341,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 168,
+    "n_real_tokens": 60,
+    "pair_index": 29309455,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 168,
+    "n_real_tokens": 60,
+    "pair_index": 29311546,
+    "text_index": 3642
+   }
+  ],
+  "text_t1_cad_d8": [
+   {
+    "cad_index": 1,
+    "n_chars": 124,
+    "n_real_tokens": 68,
+    "pair_index": 32185,
+    "text_index": 4
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 124,
+    "n_real_tokens": 83,
+    "pair_index": 34038,
+    "text_index": 4
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 124,
+    "n_real_tokens": 72,
+    "pair_index": 36185,
+    "text_index": 4
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 124,
+    "n_real_tokens": 84,
+    "pair_index": 38019,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 124,
+    "n_real_tokens": 78,
+    "pair_index": 40227,
+    "text_index": 4
+   },
+   {
+    "cad_index": 1,
+    "n_chars": 123,
+    "n_real_tokens": 68,
+    "pair_index": 9695431,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 123,
+    "n_real_tokens": 83,
+    "pair_index": 9697284,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 123,
+    "n_real_tokens": 72,
+    "pair_index": 9699431,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 123,
+    "n_real_tokens": 84,
+    "pair_index": 9701265,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 123,
+    "n_real_tokens": 78,
+    "pair_index": 9703473,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 1,
+    "n_chars": 148,
+    "n_real_tokens": 68,
+    "pair_index": 19052929,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 148,
+    "n_real_tokens": 83,
+    "pair_index": 19054782,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 148,
+    "n_real_tokens": 72,
+    "pair_index": 19056929,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 148,
+    "n_real_tokens": 84,
+    "pair_index": 19058763,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 148,
+    "n_real_tokens": 78,
+    "pair_index": 19060971,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 1,
+    "n_chars": 168,
+    "n_real_tokens": 68,
+    "pair_index": 29303533,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 168,
+    "n_real_tokens": 83,
+    "pair_index": 29305386,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 168,
+    "n_real_tokens": 72,
+    "pair_index": 29307533,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 168,
+    "n_real_tokens": 84,
+    "pair_index": 29309367,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 168,
+    "n_real_tokens": 78,
+    "pair_index": 29311575,
+    "text_index": 3642
+   }
+  ],
+  "text_t1_cad_d9": [
+   {
+    "cad_index": 0,
+    "n_chars": 124,
+    "n_real_tokens": 140,
+    "pair_index": 32184,
+    "text_index": 4
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 124,
+    "n_real_tokens": 101,
+    "pair_index": 34482,
+    "text_index": 4
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 124,
+    "n_real_tokens": 88,
+    "pair_index": 36359,
+    "text_index": 4
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 124,
+    "n_real_tokens": 136,
+    "pair_index": 38340,
+    "text_index": 4
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 124,
+    "n_real_tokens": 104,
+    "pair_index": 40220,
+    "text_index": 4
+   },
+   {
+    "cad_index": 0,
+    "n_chars": 123,
+    "n_real_tokens": 140,
+    "pair_index": 9695430,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 123,
+    "n_real_tokens": 101,
+    "pair_index": 9697728,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 123,
+    "n_real_tokens": 88,
+    "pair_index": 9699605,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 123,
+    "n_real_tokens": 136,
+    "pair_index": 9701586,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 123,
+    "n_real_tokens": 104,
+    "pair_index": 9703466,
+    "text_index": 1205
+   },
+   {
+    "cad_index": 0,
+    "n_chars": 148,
+    "n_real_tokens": 140,
+    "pair_index": 19052928,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 148,
+    "n_real_tokens": 101,
+    "pair_index": 19055226,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 148,
+    "n_real_tokens": 88,
+    "pair_index": 19057103,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 148,
+    "n_real_tokens": 136,
+    "pair_index": 19059084,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 148,
+    "n_real_tokens": 104,
+    "pair_index": 19060964,
+    "text_index": 2368
+   },
+   {
+    "cad_index": 0,
+    "n_chars": 168,
+    "n_real_tokens": 140,
+    "pair_index": 29303532,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 168,
+    "n_real_tokens": 101,
+    "pair_index": 29305830,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 168,
+    "n_real_tokens": 88,
+    "pair_index": 29307707,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 168,
+    "n_real_tokens": 136,
+    "pair_index": 29309688,
+    "text_index": 3642
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 168,
+    "n_real_tokens": 104,
+    "pair_index": 29311568,
+    "text_index": 3642
+   }
+  ],
+  "text_t2_cad_d0": [
+   {
+    "cad_index": 8,
+    "n_chars": 213,
+    "n_real_tokens": 23,
+    "pair_index": 8054,
+    "text_index": 1
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 213,
+    "n_real_tokens": 19,
+    "pair_index": 9368,
+    "text_index": 1
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 213,
+    "n_real_tokens": 19,
+    "pair_index": 11127,
+    "text_index": 1
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 213,
+    "n_real_tokens": 19,
+    "pair_index": 13489,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 213,
+    "n_real_tokens": 19,
+    "pair_index": 16091,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8,
+    "n_chars": 236,
+    "n_real_tokens": 23,
+    "pair_index": 9598886,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 236,
+    "n_real_tokens": 19,
+    "pair_index": 9600200,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 236,
+    "n_real_tokens": 19,
+    "pair_index": 9601959,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 236,
+    "n_real_tokens": 19,
+    "pair_index": 9604321,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 236,
+    "n_real_tokens": 19,
+    "pair_index": 9606923,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8,
+    "n_chars": 237,
+    "n_real_tokens": 23,
+    "pair_index": 19616156,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 237,
+    "n_real_tokens": 19,
+    "pair_index": 19617470,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 237,
+    "n_real_tokens": 19,
+    "pair_index": 19619229,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 237,
+    "n_real_tokens": 19,
+    "pair_index": 19621591,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 237,
+    "n_real_tokens": 19,
+    "pair_index": 19624193,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8,
+    "n_chars": 267,
+    "n_real_tokens": 23,
+    "pair_index": 29311586,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 1322,
+    "n_chars": 267,
+    "n_real_tokens": 19,
+    "pair_index": 29312900,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 3081,
+    "n_chars": 267,
+    "n_real_tokens": 19,
+    "pair_index": 29314659,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 5443,
+    "n_chars": 267,
+    "n_real_tokens": 19,
+    "pair_index": 29317021,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 8045,
+    "n_chars": 267,
+    "n_real_tokens": 19,
+    "pair_index": 29319623,
+    "text_index": 3643
+   }
+  ],
+  "text_t2_cad_d1": [
+   {
+    "cad_index": 2,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 8048,
+    "text_index": 1
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 8902,
+    "text_index": 1
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 9883,
+    "text_index": 1
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 213,
+    "n_real_tokens": 23,
+    "pair_index": 12807,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 213,
+    "n_real_tokens": 23,
+    "pair_index": 16066,
+    "text_index": 1
+   },
+   {
+    "cad_index": 2,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9598880,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9599734,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9600715,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 236,
+    "n_real_tokens": 23,
+    "pair_index": 9603639,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 236,
+    "n_real_tokens": 23,
+    "pair_index": 9606898,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 2,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19616150,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19617004,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19617985,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 237,
+    "n_real_tokens": 23,
+    "pair_index": 19620909,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 237,
+    "n_real_tokens": 23,
+    "pair_index": 19624168,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 2,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29311580,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 856,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29312434,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 1837,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29313415,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 4761,
+    "n_chars": 267,
+    "n_real_tokens": 23,
+    "pair_index": 29316339,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 8020,
+    "n_chars": 267,
+    "n_real_tokens": 23,
+    "pair_index": 29319598,
+    "text_index": 3643
+   }
+  ],
+  "text_t2_cad_d2": [
+   {
+    "cad_index": 2372,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 10418,
+    "text_index": 1
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 11379,
+    "text_index": 1
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 12268,
+    "text_index": 1
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 13020,
+    "text_index": 1
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 13899,
+    "text_index": 1
+   },
+   {
+    "cad_index": 2372,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9601250,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9602211,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9603100,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9603852,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9604731,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 2372,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19618520,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19619481,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19620370,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19621122,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19622001,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 2372,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29313950,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 3333,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29314911,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 4222,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29315800,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 4974,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29316552,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 5853,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29317431,
+    "text_index": 3643
+   }
+  ],
+  "text_t2_cad_d3": [
+   {
+    "cad_index": 6,
+    "n_chars": 213,
+    "n_real_tokens": 28,
+    "pair_index": 8052,
+    "text_index": 1
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 213,
+    "n_real_tokens": 26,
+    "pair_index": 13672,
+    "text_index": 1
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 14639,
+    "text_index": 1
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 15410,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 213,
+    "n_real_tokens": 24,
+    "pair_index": 16090,
+    "text_index": 1
+   },
+   {
+    "cad_index": 6,
+    "n_chars": 236,
+    "n_real_tokens": 28,
+    "pair_index": 9598884,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 236,
+    "n_real_tokens": 26,
+    "pair_index": 9604504,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9605471,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9606242,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 236,
+    "n_real_tokens": 24,
+    "pair_index": 9606922,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 6,
+    "n_chars": 237,
+    "n_real_tokens": 28,
+    "pair_index": 19616154,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 237,
+    "n_real_tokens": 26,
+    "pair_index": 19621774,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19622741,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19623512,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 237,
+    "n_real_tokens": 24,
+    "pair_index": 19624192,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 6,
+    "n_chars": 267,
+    "n_real_tokens": 28,
+    "pair_index": 29311584,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 5626,
+    "n_chars": 267,
+    "n_real_tokens": 26,
+    "pair_index": 29317204,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 6593,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29318171,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 7364,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29318942,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 8044,
+    "n_chars": 267,
+    "n_real_tokens": 24,
+    "pair_index": 29319622,
+    "text_index": 3643
+   }
+  ],
+  "text_t2_cad_d4": [
+   {
+    "cad_index": 7,
+    "n_chars": 213,
+    "n_real_tokens": 32,
+    "pair_index": 8053,
+    "text_index": 1
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 213,
+    "n_real_tokens": 32,
+    "pair_index": 10477,
+    "text_index": 1
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 213,
+    "n_real_tokens": 28,
+    "pair_index": 12130,
+    "text_index": 1
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 213,
+    "n_real_tokens": 32,
+    "pair_index": 13929,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 213,
+    "n_real_tokens": 33,
+    "pair_index": 16076,
+    "text_index": 1
+   },
+   {
+    "cad_index": 7,
+    "n_chars": 236,
+    "n_real_tokens": 32,
+    "pair_index": 9598885,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 236,
+    "n_real_tokens": 32,
+    "pair_index": 9601309,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 236,
+    "n_real_tokens": 28,
+    "pair_index": 9602962,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 236,
+    "n_real_tokens": 32,
+    "pair_index": 9604761,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 236,
+    "n_real_tokens": 33,
+    "pair_index": 9606908,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 7,
+    "n_chars": 237,
+    "n_real_tokens": 32,
+    "pair_index": 19616155,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 237,
+    "n_real_tokens": 32,
+    "pair_index": 19618579,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 237,
+    "n_real_tokens": 28,
+    "pair_index": 19620232,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 237,
+    "n_real_tokens": 32,
+    "pair_index": 19622031,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 237,
+    "n_real_tokens": 33,
+    "pair_index": 19624178,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 7,
+    "n_chars": 267,
+    "n_real_tokens": 32,
+    "pair_index": 29311585,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 2431,
+    "n_chars": 267,
+    "n_real_tokens": 32,
+    "pair_index": 29314009,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 4084,
+    "n_chars": 267,
+    "n_real_tokens": 28,
+    "pair_index": 29315662,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 5883,
+    "n_chars": 267,
+    "n_real_tokens": 32,
+    "pair_index": 29317461,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 8030,
+    "n_chars": 267,
+    "n_real_tokens": 33,
+    "pair_index": 29319608,
+    "text_index": 3643
+   }
+  ],
+  "text_t2_cad_d5": [
+   {
+    "cad_index": 16,
+    "n_chars": 213,
+    "n_real_tokens": 41,
+    "pair_index": 8062,
+    "text_index": 1
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 213,
+    "n_real_tokens": 36,
+    "pair_index": 10068,
+    "text_index": 1
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 213,
+    "n_real_tokens": 38,
+    "pair_index": 12203,
+    "text_index": 1
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 213,
+    "n_real_tokens": 35,
+    "pair_index": 14139,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 213,
+    "n_real_tokens": 36,
+    "pair_index": 16086,
+    "text_index": 1
+   },
+   {
+    "cad_index": 16,
+    "n_chars": 236,
+    "n_real_tokens": 41,
+    "pair_index": 9598894,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 236,
+    "n_real_tokens": 36,
+    "pair_index": 9600900,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 236,
+    "n_real_tokens": 38,
+    "pair_index": 9603035,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 236,
+    "n_real_tokens": 35,
+    "pair_index": 9604971,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 236,
+    "n_real_tokens": 36,
+    "pair_index": 9606918,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 16,
+    "n_chars": 237,
+    "n_real_tokens": 41,
+    "pair_index": 19616164,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 237,
+    "n_real_tokens": 36,
+    "pair_index": 19618170,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 237,
+    "n_real_tokens": 38,
+    "pair_index": 19620305,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 237,
+    "n_real_tokens": 35,
+    "pair_index": 19622241,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 237,
+    "n_real_tokens": 36,
+    "pair_index": 19624188,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 16,
+    "n_chars": 267,
+    "n_real_tokens": 41,
+    "pair_index": 29311594,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 2022,
+    "n_chars": 267,
+    "n_real_tokens": 36,
+    "pair_index": 29313600,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 4157,
+    "n_chars": 267,
+    "n_real_tokens": 38,
+    "pair_index": 29315735,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 6093,
+    "n_chars": 267,
+    "n_real_tokens": 35,
+    "pair_index": 29317671,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 8040,
+    "n_chars": 267,
+    "n_real_tokens": 36,
+    "pair_index": 29319618,
+    "text_index": 3643
+   }
+  ],
+  "text_t2_cad_d6": [
+   {
+    "cad_index": 4,
+    "n_chars": 213,
+    "n_real_tokens": 44,
+    "pair_index": 8050,
+    "text_index": 1
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 213,
+    "n_real_tokens": 47,
+    "pair_index": 9823,
+    "text_index": 1
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 213,
+    "n_real_tokens": 44,
+    "pair_index": 11721,
+    "text_index": 1
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 213,
+    "n_real_tokens": 47,
+    "pair_index": 13829,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 213,
+    "n_real_tokens": 43,
+    "pair_index": 16074,
+    "text_index": 1
+   },
+   {
+    "cad_index": 4,
+    "n_chars": 236,
+    "n_real_tokens": 44,
+    "pair_index": 9598882,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 236,
+    "n_real_tokens": 47,
+    "pair_index": 9600655,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 236,
+    "n_real_tokens": 44,
+    "pair_index": 9602553,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 236,
+    "n_real_tokens": 47,
+    "pair_index": 9604661,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 236,
+    "n_real_tokens": 43,
+    "pair_index": 9606906,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 4,
+    "n_chars": 237,
+    "n_real_tokens": 44,
+    "pair_index": 19616152,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 237,
+    "n_real_tokens": 47,
+    "pair_index": 19617925,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 237,
+    "n_real_tokens": 44,
+    "pair_index": 19619823,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 237,
+    "n_real_tokens": 47,
+    "pair_index": 19621931,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 237,
+    "n_real_tokens": 43,
+    "pair_index": 19624176,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 4,
+    "n_chars": 267,
+    "n_real_tokens": 44,
+    "pair_index": 29311582,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 1777,
+    "n_chars": 267,
+    "n_real_tokens": 47,
+    "pair_index": 29313355,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 3675,
+    "n_chars": 267,
+    "n_real_tokens": 44,
+    "pair_index": 29315253,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 5783,
+    "n_chars": 267,
+    "n_real_tokens": 47,
+    "pair_index": 29317361,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 8028,
+    "n_chars": 267,
+    "n_real_tokens": 43,
+    "pair_index": 29319606,
+    "text_index": 3643
+   }
+  ],
+  "text_t2_cad_d7": [
+   {
+    "cad_index": 5,
+    "n_chars": 213,
+    "n_real_tokens": 62,
+    "pair_index": 8051,
+    "text_index": 1
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 213,
+    "n_real_tokens": 58,
+    "pair_index": 9969,
+    "text_index": 1
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 213,
+    "n_real_tokens": 56,
+    "pair_index": 11855,
+    "text_index": 1
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 213,
+    "n_real_tokens": 60,
+    "pair_index": 13969,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 213,
+    "n_real_tokens": 60,
+    "pair_index": 16060,
+    "text_index": 1
+   },
+   {
+    "cad_index": 5,
+    "n_chars": 236,
+    "n_real_tokens": 62,
+    "pair_index": 9598883,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 236,
+    "n_real_tokens": 58,
+    "pair_index": 9600801,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 236,
+    "n_real_tokens": 56,
+    "pair_index": 9602687,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 236,
+    "n_real_tokens": 60,
+    "pair_index": 9604801,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 236,
+    "n_real_tokens": 60,
+    "pair_index": 9606892,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 5,
+    "n_chars": 237,
+    "n_real_tokens": 62,
+    "pair_index": 19616153,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 237,
+    "n_real_tokens": 58,
+    "pair_index": 19618071,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 237,
+    "n_real_tokens": 56,
+    "pair_index": 19619957,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 237,
+    "n_real_tokens": 60,
+    "pair_index": 19622071,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 237,
+    "n_real_tokens": 60,
+    "pair_index": 19624162,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 5,
+    "n_chars": 267,
+    "n_real_tokens": 62,
+    "pair_index": 29311583,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 1923,
+    "n_chars": 267,
+    "n_real_tokens": 58,
+    "pair_index": 29313501,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 3809,
+    "n_chars": 267,
+    "n_real_tokens": 56,
+    "pair_index": 29315387,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 5923,
+    "n_chars": 267,
+    "n_real_tokens": 60,
+    "pair_index": 29317501,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 8014,
+    "n_chars": 267,
+    "n_real_tokens": 60,
+    "pair_index": 29319592,
+    "text_index": 3643
+   }
+  ],
+  "text_t2_cad_d8": [
+   {
+    "cad_index": 1,
+    "n_chars": 213,
+    "n_real_tokens": 68,
+    "pair_index": 8047,
+    "text_index": 1
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 213,
+    "n_real_tokens": 83,
+    "pair_index": 9900,
+    "text_index": 1
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 213,
+    "n_real_tokens": 72,
+    "pair_index": 12047,
+    "text_index": 1
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 213,
+    "n_real_tokens": 84,
+    "pair_index": 13881,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 213,
+    "n_real_tokens": 78,
+    "pair_index": 16089,
+    "text_index": 1
+   },
+   {
+    "cad_index": 1,
+    "n_chars": 236,
+    "n_real_tokens": 68,
+    "pair_index": 9598879,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 236,
+    "n_real_tokens": 83,
+    "pair_index": 9600732,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 236,
+    "n_real_tokens": 72,
+    "pair_index": 9602879,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 236,
+    "n_real_tokens": 84,
+    "pair_index": 9604713,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 236,
+    "n_real_tokens": 78,
+    "pair_index": 9606921,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 1,
+    "n_chars": 237,
+    "n_real_tokens": 68,
+    "pair_index": 19616149,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 237,
+    "n_real_tokens": 83,
+    "pair_index": 19618002,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 237,
+    "n_real_tokens": 72,
+    "pair_index": 19620149,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 237,
+    "n_real_tokens": 84,
+    "pair_index": 19621983,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 237,
+    "n_real_tokens": 78,
+    "pair_index": 19624191,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 1,
+    "n_chars": 267,
+    "n_real_tokens": 68,
+    "pair_index": 29311579,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 1854,
+    "n_chars": 267,
+    "n_real_tokens": 83,
+    "pair_index": 29313432,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 4001,
+    "n_chars": 267,
+    "n_real_tokens": 72,
+    "pair_index": 29315579,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 5835,
+    "n_chars": 267,
+    "n_real_tokens": 84,
+    "pair_index": 29317413,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 8043,
+    "n_chars": 267,
+    "n_real_tokens": 78,
+    "pair_index": 29319621,
+    "text_index": 3643
+   }
+  ],
+  "text_t2_cad_d9": [
+   {
+    "cad_index": 0,
+    "n_chars": 213,
+    "n_real_tokens": 140,
+    "pair_index": 8046,
+    "text_index": 1
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 213,
+    "n_real_tokens": 101,
+    "pair_index": 10344,
+    "text_index": 1
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 213,
+    "n_real_tokens": 88,
+    "pair_index": 12221,
+    "text_index": 1
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 213,
+    "n_real_tokens": 136,
+    "pair_index": 14202,
+    "text_index": 1
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 213,
+    "n_real_tokens": 104,
+    "pair_index": 16082,
+    "text_index": 1
+   },
+   {
+    "cad_index": 0,
+    "n_chars": 236,
+    "n_real_tokens": 140,
+    "pair_index": 9598878,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 236,
+    "n_real_tokens": 101,
+    "pair_index": 9601176,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 236,
+    "n_real_tokens": 88,
+    "pair_index": 9603053,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 236,
+    "n_real_tokens": 136,
+    "pair_index": 9605034,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 236,
+    "n_real_tokens": 104,
+    "pair_index": 9606914,
+    "text_index": 1193
+   },
+   {
+    "cad_index": 0,
+    "n_chars": 237,
+    "n_real_tokens": 140,
+    "pair_index": 19616148,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 237,
+    "n_real_tokens": 101,
+    "pair_index": 19618446,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 237,
+    "n_real_tokens": 88,
+    "pair_index": 19620323,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 237,
+    "n_real_tokens": 136,
+    "pair_index": 19622304,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 237,
+    "n_real_tokens": 104,
+    "pair_index": 19624184,
+    "text_index": 2438
+   },
+   {
+    "cad_index": 0,
+    "n_chars": 267,
+    "n_real_tokens": 140,
+    "pair_index": 29311578,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 2298,
+    "n_chars": 267,
+    "n_real_tokens": 101,
+    "pair_index": 29313876,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 4175,
+    "n_chars": 267,
+    "n_real_tokens": 88,
+    "pair_index": 29315753,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 6156,
+    "n_chars": 267,
+    "n_real_tokens": 136,
+    "pair_index": 29317734,
+    "text_index": 3643
+   },
+   {
+    "cad_index": 8036,
+    "n_chars": 267,
+    "n_real_tokens": 104,
+    "pair_index": 29319614,
+    "text_index": 3643
+   }
+  ]
+ }
+}

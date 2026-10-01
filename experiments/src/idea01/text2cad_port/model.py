@@ -1190,17 +1190,31 @@ class Text2CAD(nn.Module):
         texts: list,
         mask_cad_dict: dict,
         metadata: bool = False,
+        cad_seq_len: Optional[int] = None,
     ):
         """
         vec_dict: dict contains cad_vec, flag_vec, and index_vec
         texts: list of text prompts
         mask_cad_dict: dict contains attention mask and key_padding_mask for CAD sequence
         metadata: bool to return attention scores
+        cad_seq_len: optional Stage-B2 override for the cross-attention mask
+            tiling (defaults to ``self.cad_seq_len`` == 271, the audited
+            full-length path). A shorter value L-1 is used ONLY by the
+            gated tail-padding-trim path, which passes inputs already sliced
+            to L rows and the official mask sliced to (L-1, L-1); the default
+            None keeps the reviewed behavior bit-identical.
         """
+        effective_cad_seq_len = self.cad_seq_len if cad_seq_len is None else int(cad_seq_len)
+        if not 1 <= effective_cad_seq_len <= self.cad_seq_len:
+            raise PortInputError(
+                "bad_cad_seq_len",
+                f"cad_seq_len must be in [1, {self.cad_seq_len}], got "
+                f"{effective_cad_seq_len}",
+            )
         # ------------ Get the initial text embeddings ------------ #
 
         T, key_padding_mask = self.base_text_embedder.get_embedding(texts)
-        ca_mask = {"attn_mask": prepare_cross_attention_mask_batch(key_padding_mask, cad_seq_len=self.cad_seq_len),
+        ca_mask = {"attn_mask": prepare_cross_attention_mask_batch(key_padding_mask, cad_seq_len=effective_cad_seq_len),
                    "key_padding_mask": key_padding_mask}
 
         # ------------ Pass the text embedding through the adaptive layer ------------ #
@@ -1264,7 +1278,8 @@ def build_teacher_forcing_inputs(vec_dict: dict, mask_cad_dict: dict):
     return inputs_vec_dict, inputs_mask_cad_dict, cad_vec_target, shifted_key_padding_mask
 
 
-def teacher_forced_logits(model: Text2CAD, texts: list, vec_dict: dict, mask_cad_dict: dict):
+def teacher_forced_logits(model: Text2CAD, texts: list, vec_dict: dict, mask_cad_dict: dict,
+                          cad_seq_len: Optional[int] = None):
     """Run one official teacher-forcing forward and return the raw logits.
 
     Mirrors the model invocation of train.py:273-278 (``metadata=False``);
@@ -1273,6 +1288,9 @@ def teacher_forced_logits(model: Text2CAD, texts: list, vec_dict: dict, mask_cad
     shifted_key_padding_mask)`` with ``pred`` of shape (B, N-1, 2, 267), the
     exact tensor the stage-A scorer consumes. This function does no I/O, no
     pairing and no scoring loops; the pair runner belongs to stage B2.
+
+    ``cad_seq_len`` is the Stage-B2 tail-trim override forwarded to
+    :meth:`Text2CAD.forward`; None (default) is the audited full-length path.
     """
     inputs_vec_dict, inputs_mask_cad_dict, cad_vec_target, shifted_key_padding_mask = (
         build_teacher_forcing_inputs(vec_dict, mask_cad_dict)
@@ -1282,5 +1300,6 @@ def teacher_forced_logits(model: Text2CAD, texts: list, vec_dict: dict, mask_cad
         texts=texts,
         mask_cad_dict=inputs_mask_cad_dict,
         metadata=False,
+        cad_seq_len=cad_seq_len,
     )
     return pred, cad_vec_target, shifted_key_padding_mask

@@ -1132,5 +1132,98 @@ class TestScorerIntegration(unittest.TestCase):
         self.assertGreater(abs(score_a - score_b), 1e-6)
 
 
+class TestCadSeqLenOverride(unittest.TestCase):
+    """Stage-B2 additive change (pending Codex re-review): the optional
+    ``cad_seq_len`` forward override for the gated tail-trim path.
+
+    The default (None) must be bit-identical to the reviewed B1 behavior; an
+    explicit 271 must equal the default; trimmed inputs must produce the same
+    real-position logits as the full-length reference; out-of-range values
+    are refused.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        torch.manual_seed(0)
+        cls.model = build_text2cad(DeterministicStubEmbedder(), device="cpu")
+        cls.model.eval()
+        cls.cad_vec, cls.flag_vec, cls.index_vec, cls.kpm = make_circle_like_candidate()
+
+    def _full_inputs(self):
+        vec_dict, mask_dict = make_batch(
+            self.cad_vec, self.flag_vec, self.index_vec, self.kpm
+        )
+        return build_teacher_forcing_inputs(vec_dict, mask_dict)[:2]
+
+    def test_default_unchanged_and_explicit_271_identical(self):
+        inputs_vec, inputs_mask = self._full_inputs()
+        with torch.no_grad():
+            pred_default, _ = self.model(
+                vec_dict=inputs_vec, texts=["a simple bracket"],
+                mask_cad_dict=inputs_mask, metadata=False,
+            )
+            pred_explicit, _ = self.model(
+                vec_dict=inputs_vec, texts=["a simple bracket"],
+                mask_cad_dict=inputs_mask, metadata=False, cad_seq_len=271,
+            )
+        self.assertTrue(torch.equal(pred_default, pred_explicit))
+        self.assertEqual(tuple(pred_default.shape), (1, 271, 2, ONE_HOT_SIZE))
+
+    def test_out_of_range_refused(self):
+        inputs_vec, inputs_mask = self._full_inputs()
+        for bad in (0, -1, 272, 1000):
+            with self.assertRaises(PortInputError) as ctx:
+                self.model(
+                    vec_dict=inputs_vec, texts=["a simple bracket"],
+                    mask_cad_dict=inputs_mask, metadata=False, cad_seq_len=bad,
+                )
+            self.assertEqual(ctx.exception.reason, "bad_cad_seq_len")
+
+    def test_trimmed_inputs_match_full_reference_at_real_positions(self):
+        # candidate real length 19 -> trim to 19 rows / 18 prediction rows;
+        # the official 271x271 mask sliced top-left; the trimmed forward must
+        # reproduce the reference logits at every scored row.
+        n_real = 19
+        vec_dict, mask_dict = make_batch(
+            self.cad_vec, self.flag_vec, self.index_vec, self.kpm
+        )
+        trimmed_vec = {k: v[:, :n_real] for k, v in vec_dict.items()}
+        trimmed_mask = {
+            "attn_mask": mask_dict["attn_mask"][: n_real - 1, : n_real - 1],
+            "key_padding_mask": mask_dict["key_padding_mask"][:, :n_real],
+        }
+        with torch.no_grad():
+            pred_full, _, _ = teacher_forced_logits(
+                self.model, ["a simple bracket"], vec_dict, mask_dict
+            )
+            pred_trim, _, _ = teacher_forced_logits(
+                self.model, ["a simple bracket"], trimmed_vec, trimmed_mask,
+                cad_seq_len=n_real - 1,
+            )
+        self.assertEqual(tuple(pred_trim.shape), (1, n_real - 1, 2, ONE_HOT_SIZE))
+        # Pre-registered G1 gate tolerances (text2cad_speed_bench G1_LOGITS_*):
+        # rtol=1e-4 / atol=1e-5. Measured on this fixture (torch 2.12.0+cpu,
+        # 2026-09-30): max abs diff 1.43e-06, max rel diff 1.34e-04 with
+        # headroom from atol -- kernel-selection ulp differences through 8
+        # layers, NOT a math change (the score agrees to 5.5e-06 absolute).
+        diff = (pred_trim - pred_full[:, : n_real - 1]).to(torch.float64).abs()
+        ref_abs = pred_full[:, : n_real - 1].to(torch.float64).abs()
+        n_viol = int((diff > 1e-5 + 1e-4 * ref_abs).sum())
+        self.assertEqual(n_viol, 0, f"trim path violates the registered gate tolerance")
+        # pin the observed CPU margin (1.4-2.4e-06 across RNG states; the
+        # registered atol 1e-5 is the real bound)
+        self.assertLess(float(diff.max()), 1e-5)
+        # and the audited score is preserved under trimming (registered G1
+        # score tolerance: atol 1e-4; observed 5.5e-06 on this fixture)
+        score_full = two_head_factorized_score(pred_full, self.cad_vec.unsqueeze(0))[0]
+        score_trim = two_head_factorized_score(
+            pred_trim, self.cad_vec[:n_real].unsqueeze(0)
+        )[0]
+        self.assertLess(
+            abs(score_full["score_total"] - score_trim["score_total"]), 1e-4
+        )
+        self.assertEqual(score_full["n_valid_total"], score_trim["n_valid_total"])
+
+
 if __name__ == "__main__":
     unittest.main()

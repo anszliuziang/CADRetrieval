@@ -29,9 +29,9 @@
 | `Cad_VLM/models/decoder.py:22-164` | `CADDecoder`（`__init__`/`forward`/`from_config`） | 前向逐字；`from_config` 的 `device="cuda" if torch.cuda.is_available() else "cpu"`（原 L162）改为必选显式参数；层堆栈用直接逐层构造替代 `copy.deepcopy`（原 L82-97；对新构造对象 deepcopy 结构完全等价，仅省一次拷贝）；`count_parameters`/prettytable/rich 未移植 |
 | `Cad_VLM/models/decoder.py:166-282` | `CADDecoder.decode`（自回归生成） | **未移植**：teacher-forcing 评分不调用；其依赖 `create_flag_vec`/`create_index_vec`/`top_p_sampling` 位于 OCC 链 |
 | `Cad_VLM/models/layers/adaptive_layer.py:18-109` | `TextAdaptiveLayer` | 前向逐字；删除顶层 `utils_decode`（OCC 链，仅上游 `__main__` 演示用）与 `models.utils`（prettytable）导入；`total_parameters` 未移植 |
-| `Cad_VLM/models/text2cad.py:14-127` | `Text2CAD` | `forward` 逐字；构造函数改为**接收预建子模块**（`base_text_embedder`/`adaptive_layer`/`cad_decoder` 属性名不变，state_dict 路径与上游一致），组合根移至 `loader.build_text2cad`；`test_decode`（原 L35-69，生成路径）未移植；`count_parameters` 未移植；`get_trainable_state_dict` 保留 |
+| `Cad_VLM/models/text2cad.py:14-127` | `Text2CAD` | `forward` 逐字；构造函数改为**接收预建子模块**（`base_text_embedder`/`adaptive_layer`/`cad_decoder` 属性名不变，state_dict 路径与上游一致），组合根移至 `loader.build_text2cad`；`test_decode`（原 L35-69，生成路径）未移植；`count_parameters` 未移植；`get_trainable_state_dict` 保留。**Stage B2 追加（2026-09-30，待 Codex 重审）**：`forward` 新增可选参数 `cad_seq_len`，默认 `None` 时使用构造值 271，与已审 B1 路径逐位一致；仅尾部 padding 裁剪门在显式传入 `L-1` 时使用，且输入三向量、`key_padding_mask` 与官方 `attn_mask` 均已同步切到 `L`/`L-1`。越界值（<1 或 >271）以 `bad_cad_seq_len` 拒绝 |
 | `Cad_VLM/train.py:80` 等 | `OFFICIAL_INFERENCE_CONFIG` | 值取自 `Cad_VLM/config/inference.yaml`；`cad_seq_len` 按 train.py:80 / test.py:76 / test_user_input.py:76 注入的 `MAX_CAD_SEQUENCE_LENGTH` 镜像；`text_embedder.cache_dir`（"YOUR DIR"）弃用 |
-| `Cad_VLM/train.py:257-270, 273-278` | `build_teacher_forcing_inputs` / `teacher_forced_logits` | 新增函数，精确复刻官方 teacher-forcing 切片与调用（输入 `[:, :-1]`、目标 `[:, 1:].clone()`、shifted mask、`attn_mask` 不切、`metadata=False`）；差异：**不就地修改**调用方字典（官方原地重绑定；切片视图与克隆语义一致） |
+| `Cad_VLM/train.py:257-270, 273-278` | `build_teacher_forcing_inputs` / `teacher_forced_logits` | 新增函数，精确复刻官方 teacher-forcing 切片与调用（输入 `[:, :-1]`、目标 `[:, 1:].clone()`、shifted mask、`attn_mask` 不切、`metadata=False`）；差异：**不就地修改**调用方字典（官方原地重绑定；切片视图与克隆语义一致）。**Stage B2 追加**：`teacher_forced_logits` 新增可选 `cad_seq_len` 透传参数，默认 `None` 与已审路径一致 |
 
 ### `text_embed.py`
 

@@ -1,0 +1,34 @@
+{
+ "artifact_sha256": {
+  "cad_length_index.jsonl": "56185640c93a3edbf6a3f75a63c7e7cf21d08662276be88769dcea44ff4a2f1b",
+  "cad_store.jsonl": "e6fcec97111e706f509faa061ffc6171b08dea3c5c59c946e53717d22653fdc5",
+  "texts.jsonl": "5a3132756f08e3012a3023a8b2e0470d60e09bb252b5b2a544a3830d6f4758cf"
+ },
+ "built_from": {
+  "cad_seq_zip": {
+   "n_extra_pth_members": 167974,
+   "n_store_members": 8046,
+   "n_zip_entries": 528161,
+   "zip_sha256": "9f3a8bb85f9ceb078c19bc43f750fe596d3323631f2e846a7f541e47af7e7eaa"
+  },
+  "gallery_jsonl": {
+   "sha256": "09782bd6d316e7b0863c70f1df9cd6504e7dc41ce3bb9a433821b1c22ab85e30"
+  },
+  "query_jsonl": {
+   "sha256": "a0d8504f5a5555e5312dd38a31321a6ea254087e6390e786559cfc0b6d307fcd"
+  }
+ },
+ "counts": {
+  "n_gallery": 8046,
+  "n_pairs": 29319624,
+  "n_query": 7934,
+  "n_unique_text": 3644
+ },
+ "evaluation_artifact_sha256": {
+  "evaluation_map.json": "3b00062b3c1cf842372ba934be8553ae3cbb2af8991a486536ba2ae9b397ffb7"
+ },
+ "notes": "Worker artifact fingerprints are verified by the scorer; evaluation_map.json is a separate evaluation-only artifact never opened by forward CLIs.",
+ "pair_manifest_sha256": "83d0e19c1ed8a57fc533f5777b590114e647340fc56c00bddec7b41154e18e8d",
+ "purpose": "Reviewed fingerprints of the deterministic pair-manifest artifacts; the production CLIs verify the live artifacts byte-for-byte against these SHA256 values before any forward.",
+ "schema_version": "text2cad-pair-manifest-expected-v1"
+}
