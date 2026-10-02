@@ -1,7 +1,8 @@
-"""CPU tests for the Text2CAD G3 full-gallery probe (2026-10-02).
+"""CPU tests for the Text2CAD G3 full-gallery probe (2026-10-02, R1 hardened).
 
-Contract: experiments/plans/IDEA01_M1C_G3_FULL_GALLERY_PROBE_2026-10-02.md.
-Covers, with small fake data / fake models and NO model or BERT forward:
+Contract: experiments/plans/IDEA01_M1C_G3_FULL_GALLERY_PROBE_2026-10-02.md and
+experiments/plans/IDEA01_M1C_G3_R1_FIX_2026-10-02.md. Covers, with small fake
+data / fake models and NO model or BERT forward:
 
   * pick/layer math: the pre-registered evenly spaced rank picks (endpoints,
     exact count, dedup-shrink refusal) and the global token-length layers
@@ -9,30 +10,50 @@ Covers, with small fake data / fake models and NO model or BERT forward:
   * the blind selector against the REAL frozen worker artifacts (skipUnless
     guarded): 50+50 probes including each shard's shortest/longest text,
     per-shard-per-layer coverage, deterministic regeneration byte-identity,
-    provenance/asset/dimension tamper refusals, LF output, no overwrite;
+    the pinned reviewed selection SHA, provenance/asset/dimension tamper
+    refusals, LF output, no overwrite;
   * runner probe scope on a mini manifest: probe filtering keeps the global
     indices and the full gallery, full-matrix chunks refuse under the probe
     scope and vice versa, out-of-plan chunks refuse, resume requires the
     sidecar timing line of every completed chunk;
   * scorer header: the probe scope stamp appears only in scoped runs;
   * timing sidecar: append/read roundtrip, torn-line refusal, minimal
-    resume-side scope/shard/duplicate checks;
+    resume-side scope/shard/duplicate checks plus the STRICT R1 resume
+    validation (foreign probe line, bad window/counts);
+  * probe chunk content: real read + dense pair sequence + binding/scope +
+    finite complete rows + audited valid-item counts + timing cross-checks
+    (empty/missing/duplicate/non-finite/wrong-scope/torn chunks refuse);
   * the two-card ETA on a synthetic OFFICIAL-SIZE selection: hand-computed
     per-layer slowest-query pricing, slower-card wall clock, cold starts,
-    overhead rules, 80% window overlap, the 604,800 s gate both sides, and
-    the fail-closed refusals (device/shard/host/ledger/scope/count/window);
+    overhead rules, 80% window overlap, the 604,800 s gate both sides, the
+    fail-closed refusals (device/shard/host/ledger/scope/count/window) and
+    the R1 evidence gates: fixed-asset binding (pair manifest/BERT/full-272/
+    measured load+preload reports), real accounting (stats/planned/charged/
+    caps/card-seconds), timing<->invocation binding, the FINAL shared ledger
+    (missing/extra/failed/drifted ledgers refuse), fresh-run-only accounting,
+    and a legitimate pending-peer snapshot accepted;
+  * the runner resume gate: fresh run refuses an existing sidecar; orphan /
+    foreign / duplicate / invalid sidecar lines refuse BEFORE any forward;
+    sidecar<->chunk one-to-one correspondence;
+  * a CPU end-to-end producer->reader path: the REAL runner loop helpers
+    (fake model, real chunk publish / timing sidecar / budget ledger / run
+    summary) feed the REAL ETA reader verifiers;
   * runner main() probe gates exit 2 before authorization;
-  * eta-g3 CLI end-to-end against the real committed selection.
+  * eta-g3 CLI end-to-end against the real committed selection, with REAL
+    8,046-row chunks, the --final-ledger requirement and content refusals.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import math
+import os
 import shutil
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -40,15 +61,22 @@ import torch  # noqa: F401  (parity with the runner test module)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from idea01.cadmium_runner import RunnerError  # noqa: E402
+from idea01.cadmium_runner import RunAuthorization, RunnerError  # noqa: E402
 from idea01.text2cad_g3_probe import (  # noqa: E402
+    CHUNK_SCHEMA_VERSION as G3_CHUNK_SCHEMA_VERSION,
+    EXPECTED_PAIR_HASHES_REL,
+    G2_SELECTION_CONFIG_REL,
+    G3_APPROVED_MAX_CARD_HOURS,
+    G3_APPROVED_MAX_CARD_SECONDS,
+    G3_APPROVED_MAX_PAIRS,
     G3_BATCH_SIZE,
+    G3_EXPECTED_NONBERT_TENSORS,
+    G3_MAX_CAD_SEQUENCE_LENGTH,
     G3_PROBE_SELECTION_REL,
     G3_PROVENANCE_KEYS,
     G3_SELECTION_SCHEMA_VERSION,
+    G3_TASK_ID,
     G3_TIMING_SCHEMA_VERSION,
-    G2_SELECTION_CONFIG_REL,
-    EXPECTED_PAIR_HASHES_REL,
     PINNED_BERT_FILE_SHA256,
     PINNED_CHECKPOINT_SHA256,
     PROBE_SCOPE_FIELD,
@@ -69,10 +97,16 @@ from idea01.text2cad_g3_probe import (  # noqa: E402
     text_layer_of,
     timing_sidecar_name,
     verified_sidecar_text_set,
+    verify_final_probe_ledger,
     verify_g3_g2_config_binding,
     verify_g3_probe_selection,
     verify_g3_probe_selection_against_manifest,
     verify_g3_token_audit,
+    verify_probe_budget_evidence,
+    verify_probe_chunk_content,
+    verify_probe_resume_records,
+    verify_probe_summary,
+    verify_probe_timing_records,
 )
 from idea01.text2cad_bench_protocol import SHARD_BY_DEVICE  # noqa: E402
 from idea01.text2cad_frozen_runner import (  # noqa: E402
@@ -82,16 +116,22 @@ from idea01.text2cad_frozen_runner import (  # noqa: E402
     SharedBudgetLedger,
     ZipCandidateStore,
     atomic_publish,
+    build_run_summary,
+    execute_probe_query,
+    load_probe_sidecar_timed_texts,
     main as runner_main,
     plan_chunks,
+    require_sidecar_chunk_correspondence,
 )
 from idea01.text2cad_pair_index import (  # noqa: E402
     EXPECTED_N_GALLERY,
     EXPECTED_N_UNIQUE_TEXT,
     PairSpace,
     chunk_file_name,
+    load_cad_length_index,
     sha256_file,
 )
+from idea01.text2cad_vector_scorer import validate_cad_vec  # noqa: E402
 
 from test_text2cad_frozen_runner import (  # noqa: E402
     FULL_SHA,
@@ -142,6 +182,23 @@ class G3ConstantsCrossCheckTest(unittest.TestCase):
         self.assertEqual(G2_SELECTION_CONFIG_REL, text2cad_speed_bench.G2_SELECTION_CONFIG_REL)
         self.assertEqual(EXPECTED_PAIR_HASHES_REL, text2cad_speed_bench.EXPECTED_PAIR_HASHES_REL)
         self.assertEqual(RUN_SUMMARY_SCHEMA_VERSION, text2cad_frozen_runner.SUMMARY_SCHEMA_VERSION)
+
+    def test_r1_duplicated_constants_match_their_audited_sources(self):
+        from idea01.text2cad_port import model as port_model
+        from idea01 import text2cad_frozen_runner
+
+        self.assertEqual(G3_MAX_CAD_SEQUENCE_LENGTH, port_model.MAX_CAD_SEQUENCE_LENGTH)
+        self.assertEqual(G3_TASK_ID, text2cad_frozen_runner.TASK_ID)
+        self.assertEqual(G3_CHUNK_SCHEMA_VERSION, text2cad_frozen_runner.CHUNK_SCHEMA_VERSION)
+        self.assertEqual(G3_APPROVED_MAX_PAIRS, 100 * EXPECTED_N_GALLERY)
+        self.assertEqual(G3_APPROVED_MAX_CARD_HOURS, 12.0)  # "at most", never "at least"
+        self.assertEqual(G3_APPROVED_MAX_CARD_SECONDS, G3_APPROVED_MAX_CARD_HOURS * 3600.0)
+        keys_manifest = REPO_ROOT / "experiments" / "configs" / "text2cad_checkpoint_expected_keys_20260930.json"
+        if not keys_manifest.is_file():
+            self.skipTest("committed 172-key manifest not present")
+        keys = json.loads(keys_manifest.read_text(encoding="utf-8"))
+        self.assertEqual(G3_EXPECTED_NONBERT_TENSORS, keys["n_tensors"])
+        self.assertEqual(G3_EXPECTED_NONBERT_TENSORS, len(keys["tensors"]))
 
     def test_g3_module_imports_without_torch(self):
         code = (
@@ -305,6 +362,11 @@ class G3SelectionRealDataTest(unittest.TestCase):
     def test_committed_config_is_lf_and_regeneration_is_byte_identical(self):
         raw = (REPO_ROOT / G3_PROBE_SELECTION_REL).read_bytes()
         self.assertNotIn(b"\r", raw)
+        # the committed selection is exactly the reviewed pin
+        self.assertEqual(
+            sha256_file(G3_CONFIG),
+            "f8521598b1bf517f21491bf8185cdd23cae39a34a7019389d4a05c6fcbdd4985",
+        )
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         out = Path(self._tmp.name) / "regen.json"
@@ -416,6 +478,7 @@ class _ProbeChunkMixin:
             lines.append(json.dumps({
                 "record_type": "pair", "pair_index": pair_index,
                 "text_index": text_index, "cad_index": cad_index, "status": "scored",
+                "score_name": SCORE_NAME, "spec_version": SCORE_SPEC_VERSION,
                 "score_x": -1.0, "score_y": -2.0, "score_total": -3.0,
                 "mean_x": -1.0, "mean_y": -2.0, "mean_total": -1.5,
                 "n_valid_x": 1, "n_valid_y": 1, "n_valid_total": 2,
@@ -570,13 +633,13 @@ def _scope(**overrides) -> dict:
 
 def _timing_record(text_index: int, *, shard_id: int = 0, start: float = 100.0, e2e: float = 5.0,
                    inv: str = "inv-0", device: str = "npu:0", layer: int = 0, tokens: int = 10,
-                   pick: int = 0, scope=None) -> dict:
+                   pick: int = 0, scope=None, n_valid: int = 1000) -> dict:
     return build_query_timing_record(
         invocation_id=inv, shard_id=shard_id, device=device, text_index=text_index,
         probe_facts={"text_layer": layer, "n_bert_tokens": tokens, "shard_pick": pick},
         start_epoch=start, end_epoch=start + e2e,
         n_pairs=G3_N_PAIRS_PER_QUERY, n_batches=G3_N_BATCHES_PER_QUERY,
-        n_scored=G3_N_PAIRS_PER_QUERY, n_rejected=0, n_valid_total=1000,
+        n_scored=G3_N_PAIRS_PER_QUERY, n_rejected=0, n_valid_total=n_valid,
         chunk_file=chunk_file_name(shard_id, text_index, text_index + 1),
         scope=scope or _scope(device=device),
     )
@@ -640,6 +703,589 @@ class G3TimingSidecarTest(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Probe chunk content verification (R1: read, never trust existence)
+# ---------------------------------------------------------------------------
+
+
+class G3ChunkContentTest(_ProbeChunkMixin, unittest.TestCase):
+    """Mini space 3 texts x 4 CADs; one single-query probe chunk for text 0."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.pair_space = PairSpace(3, 4)
+        self.out_dir = self.root / "out"
+        self.binding = self._binding(probe_sha=PROBE_SHA)
+        self.cad_valid = [
+            {"cad_index": c, "n_real_tokens": 2, "n_valid_x": 1, "n_valid_y": 1}
+            for c in range(4)
+        ]
+        self.timing = {
+            "n_scored": 4, "n_rejected": 0, "n_valid_total": 8,
+            "chunk_file": chunk_file_name(0, 0, 1),
+        }
+
+    def _verify(self, timing=None):
+        return verify_probe_chunk_content(
+            self.out_dir / chunk_file_name(0, 0, 1),
+            pair_space=self.pair_space, shard_id=0, text_index=0,
+            expected_binding=self.binding,
+            timing_record=timing or self.timing,
+            cad_valid_counts=self.cad_valid,
+            path_label="test",
+        )
+
+    def _rewrite(self, mutate_lines):
+        # each mutation starts from a FRESH valid chunk (mutations are independent)
+        path = self.out_dir / chunk_file_name(0, 0, 1)
+        if path.exists():
+            path.unlink()
+        self._write_chunk(self.out_dir, self.pair_space, 0, 1, probe_sha=PROBE_SHA)
+        lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        mutate_lines(lines)
+        path.unlink()
+        atomic_publish(path, [json.dumps(r) for r in lines])
+
+    def test_valid_chunk_passes_with_facts(self):
+        self._write_chunk(self.out_dir, self.pair_space, 0, 1, probe_sha=PROBE_SHA)
+        facts = self._verify()
+        self.assertEqual(facts, {"n_scored": 4, "n_valid_total": 8})
+
+    def test_missing_chunk_file_refused(self):
+        with self.assertRaisesRegex(RunnerError, "does not exist"):
+            self._verify()
+
+    def test_empty_chunk_refused(self):
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        (self.out_dir / chunk_file_name(0, 0, 1)).write_text("", encoding="utf-8")
+        with self.assertRaisesRegex(RunnerError, "empty chunk file"):
+            self._verify()
+
+    def test_torn_line_refused(self):
+        self._write_chunk(self.out_dir, self.pair_space, 0, 1, probe_sha=PROBE_SHA)
+        path = self.out_dir / chunk_file_name(0, 0, 1)
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write('{"record_type": "pair", "pair_in')
+        with self.assertRaisesRegex(RunnerError, "torn|complete JSON"):
+            self._verify()
+
+    def test_missing_duplicate_nonfinite_rows_refused(self):
+        cases = [
+            (lambda lines: lines.pop(), "expected 4|pair records"),       # missing row
+            (lambda lines: lines.append(dict(lines[-1])), "pair records|pair_index"),  # duplicated row
+            (lambda lines: lines[1].update(score_total=float("inf")), "nonfinite"),
+            (lambda lines: lines[2].update(status="error"), "scored"),
+        ]
+        for mutate, pattern in cases:
+            with self.subTest(pattern=pattern):
+                self._rewrite(mutate)
+                with self.assertRaisesRegex(RunnerError, pattern):
+                    self._verify()
+
+    def test_binding_and_scope_refused(self):
+        # full-matrix chunk (no probe stamp) refuses under the probe scope
+        self._write_chunk(self.out_dir, self.pair_space, 0, 1)
+        with self.assertRaisesRegex(RunnerError, "scope"):
+            self._verify()
+        # a foreign probe scope refuses
+        path = self.out_dir / chunk_file_name(0, 0, 1)
+        path.unlink()
+        self._write_chunk(self.out_dir, self.pair_space, 0, 1, probe_sha="e" * 64)
+        with self.assertRaisesRegex(RunnerError, "scope"):
+            self._verify()
+        # a drifted binding field refuses
+        path.unlink()
+        bad = self._binding(probe_sha=PROBE_SHA)
+        bad["device"] = "npu:9"
+        self._write_chunk(self.out_dir, self.pair_space, 0, 1, binding=bad)
+        with self.assertRaisesRegex(RunnerError, "binding"):
+            self._verify()
+
+    def test_row_score_identity_and_audited_counts_refused(self):
+        cases = [
+            (lambda lines: lines[1].update(score_name="other_score"), "score identity"),
+            # internally consistent row whose counts drift from the AUDITED index
+            (lambda lines: lines[1].update(n_valid_x=2, n_valid_total=3),
+             "audited worker length index"),
+            (lambda lines: lines[3].update(n_real_tokens=9), "audited worker length index"),
+        ]
+        for mutate, pattern in cases:
+            with self.subTest(pattern=pattern):
+                self._rewrite(mutate)
+                with self.assertRaisesRegex(RunnerError, pattern):
+                    self._verify()
+
+    def test_timing_cross_checks_refused(self):
+        self._write_chunk(self.out_dir, self.pair_space, 0, 1, probe_sha=PROBE_SHA)
+        with self.assertRaisesRegex(RunnerError, "header counts"):
+            self._verify(timing=dict(self.timing, n_scored=3))
+        with self.assertRaisesRegex(RunnerError, "valid items"):
+            self._verify(timing=dict(self.timing, n_valid_total=7))
+
+
+# ---------------------------------------------------------------------------
+# Runner resume gate (R1): fresh-run sidecar refusal, strict resume validation
+# ---------------------------------------------------------------------------
+
+
+def _mini_probe_selection() -> dict:
+    """Hand-built minimal selection dict for the 3x4 mini space (probe={0,2}).
+
+    Only the sections the resume/timing verifiers read are provided; the real
+    builder output shape is mirrored.
+    """
+    return {
+        "schema_version": G3_SELECTION_SCHEMA_VERSION,
+        "counts": {
+            "n_texts": 3, "n_cads": 4, "n_pairs": 12, "n_shards": 2,
+            "picks_per_shard": 2, "n_probe_texts": 2, "gallery_per_query": 4,
+            "probe_pairs_per_shard": 8, "probe_pairs_total": 16,
+        },
+        "probes": [
+            {"text_index": 0, "shard_id": 0, "shard_pick": 0,
+             "n_bert_tokens": 5, "text_layer": 0},
+            {"text_index": 2, "shard_id": 0, "shard_pick": 1,
+             "n_bert_tokens": 7, "text_layer": 1},
+        ],
+    }
+
+
+def _mini_timing_record(text_index: int, *, pick: int, scope, **overrides) -> dict:
+    facts = {"text_layer": pick, "n_bert_tokens": 5 + 2 * pick, "shard_pick": pick}
+    record = build_query_timing_record(
+        invocation_id="inv-mini", shard_id=0, device="cpu", text_index=text_index,
+        probe_facts=facts, start_epoch=100.0 + 10 * pick, end_epoch=105.0 + 10 * pick,
+        n_pairs=4, n_batches=1, n_scored=4, n_rejected=0, n_valid_total=8,
+        chunk_file=chunk_file_name(0, text_index, text_index + 1),
+        scope=scope,
+    )
+    record.update(overrides)
+    return record
+
+
+class G3ResumeGateTest(_ProbeChunkMixin, unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.manifest_dir = _mini_manifest_dir(self.root)
+        self.pair_space = PairSpace(3, 4)
+        self.out_dir = self.root / "out"
+        self.out_dir.mkdir()
+        self.selection = _mini_probe_selection()
+        self.cfg = RunnerConfig(
+            checkpoint_path="x", bert_dir="x",
+            cad_seq_zip=str(self.root / "cad_seq.zip"),
+            pair_manifest_dir=str(self.manifest_dir), device="cpu", batch_size=16,
+        )
+        self.scope = _scope(device="cpu")
+
+    def _timed(self, **kw):
+        return load_probe_sidecar_timed_texts(
+            self.out_dir, self.cfg, self.selection, self.scope, **kw
+        )
+
+    def _write_sidecar(self, records):
+        path = self.out_dir / timing_sidecar_name(0)
+        for record in records:
+            append_timing_record(path, record)
+        return path
+
+    def test_fresh_run_refuses_existing_sidecar(self):
+        self._write_sidecar([_mini_timing_record(0, pick=0, scope=self.scope)])
+        with self.assertRaisesRegex(RunnerError, "mix timing evidence"):
+            self._timed(resume=False)
+        # the same fresh run on an empty directory is fine
+        self.assertIsNone(
+            load_probe_sidecar_timed_texts(
+                self.root / "empty", self.cfg, self.selection, self.scope, resume=False
+            )
+        )
+
+    def test_resume_missing_sidecar_is_empty_set(self):
+        self.assertEqual(self._timed(resume=True), set())
+
+    def test_resume_valid_sidecar_returns_timed_set(self):
+        self._write_sidecar([_mini_timing_record(0, pick=0, scope=self.scope)])
+        self.assertEqual(self._timed(resume=True), {0})
+
+    def test_resume_strict_record_refusals(self):
+        good = _mini_timing_record(0, pick=0, scope=self.scope)
+        cases = [
+            # foreign probe line: not one of this shard's probes
+            (dict(good, text_index=1, chunk_file=chunk_file_name(0, 1, 2)),
+             "not one of this shard"),
+            # drifted selection facts
+            (dict(good, text_layer=2), "facts"),
+            # invalid window / counts
+            (dict(good, n_scored=3), "not complete"),
+            (dict(good, n_pairs=3), "complete gallery"),
+            (dict(good, e2e_s=99.0), "end-start"),
+            (dict(good, chunk_file="chunk_s00_t00001_00002.jsonl"), "chunk_file"),
+            (dict(good, **{PROBE_SCOPE_FIELD: "e" * 64}), "scope"),
+        ]
+        for record, pattern in cases:
+            with self.subTest(pattern=pattern):
+                self._write_sidecar([record])
+                with self.assertRaisesRegex(RunnerError, pattern):
+                    self._timed(resume=True)
+                (self.out_dir / timing_sidecar_name(0)).unlink()
+        # duplicated line refuses
+        self._write_sidecar([good, dict(good)])
+        with self.assertRaisesRegex(RunnerError, "twice"):
+            self._timed(resume=True)
+        # torn final line refuses at the reader
+        path = self.out_dir / timing_sidecar_name(0)
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write('{"record_type": "query_timing", "text_in')
+        with self.assertRaisesRegex(RunnerError, "torn|complete JSON"):
+            self._timed(resume=True)
+
+    def test_orphan_and_correspondence_refusals(self):
+        # reviewer case: an orphan timing line (no chunk) must refuse the
+        # resume, never send the query back into the todo list
+        self._write_sidecar([_mini_timing_record(0, pick=0, scope=self.scope)])
+        timed = self._timed(resume=True)
+        binding = self._binding(probe_sha=PROBE_SHA)
+        todo, completed = plan_chunks(
+            self.out_dir, self.pair_space, self.cfg, binding, resume=True,
+            probe_text_indices={0, 2}, extra_binding_fields=(PROBE_SCOPE_FIELD,),
+            timed_text_indices=timed,
+        )
+        self.assertEqual(completed, [])
+        self.assertEqual(todo, [(0, 1, 0), (2, 3, 8)])
+        with self.assertRaisesRegex(RunnerError, "no verified chunk"):
+            require_sidecar_chunk_correspondence(timed, completed, path_label="resume")
+        # with the verified chunk present the correspondence holds and only
+        # the untimed probe query stays todo
+        self._write_chunk(self.out_dir, self.pair_space, 0, 1, probe_sha=PROBE_SHA)
+        todo, completed = plan_chunks(
+            self.out_dir, self.pair_space, self.cfg, binding, resume=True,
+            probe_text_indices={0, 2}, extra_binding_fields=(PROBE_SCOPE_FIELD,),
+            timed_text_indices=timed,
+        )
+        require_sidecar_chunk_correspondence(timed, completed, path_label="resume")
+        self.assertEqual(completed, [chunk_file_name(0, 0, 1)])
+        self.assertEqual(todo, [(2, 3, 8)])
+
+
+# ---------------------------------------------------------------------------
+# CPU end-to-end: REAL runner producer (fake model) -> REAL ETA reader
+# ---------------------------------------------------------------------------
+
+
+def _genuine_valid_counts(zip_path: Path, members: list[str]) -> list[dict]:
+    """Per-candidate valid-item facts computed from the real zip tensors."""
+    counts = []
+    with zipfile.ZipFile(zip_path) as archive:
+        for cad_index, member in enumerate(members):
+            sample = torch.load(
+                io.BytesIO(archive.read(member)), map_location="cpu", weights_only=True
+            )
+            diag = validate_cad_vec(
+                sample["vec"]["cad_vec"],
+                sample["mask_cad_dict"]["key_padding_mask"],
+                sample["vec"]["flag_vec"],
+                sample["vec"]["index_vec"],
+            )
+            counts.append({
+                "cad_index": cad_index, "n_real_tokens": diag.n_real_tokens,
+                "n_valid_x": diag.n_valid_x, "n_valid_y": diag.n_valid_y,
+            })
+    return counts
+
+
+class G3ProducerReaderEndToEndTest(_ProbeChunkMixin, unittest.TestCase):
+    """100 texts x 12 CADs synthetic space, two interleaved fake cards on CPU.
+
+    The producer is the REAL runner machinery (FrozenMatrixScorer +
+    execute_probe_query + SharedBudgetLedger + build_run_summary over a fake
+    tiny model and a real candidate zip); the reader is the REAL ETA
+    verification (summary/budget/timing/chunk/final-ledger verifiers). Only
+    the model-load report is a schema-mirroring fixture (the real checkpoint
+    load is not possible on this CPU host); the candidate preload report is
+    the store's REAL output.
+    """
+
+    N_TEXTS = 100
+    N_CADS = 12
+    PAIRS_PER_CARD = 50 * 12
+    MAX_PAIRS = 100 * 12
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls._tmp.cleanup)
+        root = Path(cls._tmp.name)
+        cls.root = root
+        text_records = [{"text_index": i} for i in range(cls.N_TEXTS)]
+        lengths = {i: (i % 3) + 1 for i in range(cls.N_TEXTS)}
+        cls.selection = build_g3_probe_selection(text_records, cls.N_CADS, lengths)
+        cls.texts = [f"synthetic query text number {i}" for i in range(cls.N_TEXTS)]
+        cls.pair_space = PairSpace(cls.N_TEXTS, cls.N_CADS)
+        cad_ids = [f"0000/{i:08d}" for i in range(1, cls.N_CADS + 1)]
+        members = [f"cad_seq/{u}/seq/{u.split('/')[-1]}.pth" for u in cad_ids]
+        zip_path = root / "cad_seq.zip"
+        _make_zip(zip_path, [(m, 19 + 5 * i) for i, m in enumerate(members)])
+        cls.zip_path = zip_path
+        cls.members = members
+        cls.cad_valid = _genuine_valid_counts(zip_path, members)
+        cls.ledger_path = root / "ledger.json"
+        cls.summaries: dict[int, dict] = {}
+        cls.timing_records: dict[int, list[dict]] = {}
+        cls.out_dirs: dict[int, Path] = {}
+        cls._preloads: dict[int, dict] = {}
+        cls._produce()
+
+    @classmethod
+    def _produce(cls) -> None:
+        root = cls.root
+        ledger = SharedBudgetLedger(
+            cls.ledger_path, approved_sha=FULL_SHA,
+            max_pairs=cls.MAX_PAIRS, max_card_seconds=3600.0,
+        )
+        authorization = RunAuthorization(
+            task_state="pilot_authorized", task_id=TASK_ID, approved_sha=FULL_SHA,
+            actual_sha=FULL_SHA, max_pairs=cls.MAX_PAIRS, card_hours=1.0,
+            cards_used=1, max_wall_seconds=3600.0, active_task_source="test",
+            authorization_ref_sha="e" * 40, active_task_blob_sha256="f" * 64,
+            origin_url="test", repo_root="test",
+        )
+        mixin = _ProbeChunkMixin()
+        binding = _ProbeChunkMixin._binding(mixin, probe_sha=PROBE_SHA)
+        invocations = {0: "inv-card0", 1: "inv-card1"}
+        scorers: dict[int, FrozenMatrixScorer] = {}
+        cfgs: dict[int, RunnerConfig] = {}
+        probe_facts = {
+            shard: probe_facts_for_shard(cls.selection, shard) for shard in (0, 1)
+        }
+        for shard in (0, 1):
+            cfg = RunnerConfig(
+                checkpoint_path="x", bert_dir="x", cad_seq_zip=str(cls.zip_path),
+                pair_manifest_dir="unused", device="cpu", batch_size=G3_BATCH_SIZE,
+                shard_id=shard, n_shards=2, texts_per_chunk=1,
+            )
+            store = ZipCandidateStore(
+                cls.zip_path, cls.members, expected_sha256=sha256_file(cls.zip_path)
+            )
+            preload = store.preload()
+            assert preload["n_rejected"] == 0, preload
+            cfgs[shard] = cfg
+            cls._preloads[shard] = preload
+            ledger.begin_invocation(invocations[shard], shard_id=shard, cards_used=1)
+            scorers[shard] = FrozenMatrixScorer(
+                cfg, build_tiny_model(seed=shard), cls.texts, store, cls.pair_space,
+                ledger, invocations[shard], binding,
+            )
+            cls.out_dirs[shard] = root / f"card{shard}"
+        # interleave the two cards' queries so the measured windows overlap
+        queries = {
+            shard: probe_texts_for_shard(cls.selection, shard) for shard in (0, 1)
+        }
+        for k in range(50):
+            for shard in (0, 1):
+                execute_probe_query(
+                    scorers[shard], cls.out_dirs[shard],
+                    cls.out_dirs[shard] / timing_sidecar_name(shard),
+                    probe_facts[shard], queries[shard][k], queries[shard][k] + 1,
+                )
+        # first finisher: card 0's summary legitimately shows the peer pending
+        ledger.finalize_invocation(invocations[0], exit_code=0)
+        cls.summaries[0] = build_run_summary(
+            cfgs[0], invocation_id=invocations[0], authorization=authorization,
+            published=50, n_previously_completed=0, planned_pairs=cls.PAIRS_PER_CARD,
+            stats=scorers[0].stats, load_report=_load_report_fixture(),
+            preload_report=cls._preloads[0], ledger=ledger,
+            stale_finalized=[], failure=None, probe_selection=cls.selection,
+            probe_sha=PROBE_SHA, pair_manifest_sha256=MANIFEST_SHA, cold_start_s=0.5,
+        )
+        ledger.finalize_invocation(invocations[1], exit_code=0)
+        cls.summaries[1] = build_run_summary(
+            cfgs[1], invocation_id=invocations[1], authorization=authorization,
+            published=50, n_previously_completed=0, planned_pairs=cls.PAIRS_PER_CARD,
+            stats=scorers[1].stats, load_report=_load_report_fixture(),
+            preload_report=cls._preloads[1], ledger=ledger,
+            stale_finalized=[], failure=None, probe_selection=cls.selection,
+            probe_sha=PROBE_SHA, pair_manifest_sha256=MANIFEST_SHA, cold_start_s=0.5,
+        )
+        for shard in (0, 1):
+            atomic_publish(
+                cls.out_dirs[shard] / f"summary_{shard}.json",
+                [json.dumps(cls.summaries[shard], indent=1, sort_keys=True)],
+            )
+            cls.timing_records[shard] = read_timing_records(
+                cls.out_dirs[shard] / timing_sidecar_name(shard)
+            )
+
+    def _budget_info(self, shard: int) -> dict:
+        return verify_probe_budget_evidence(
+            self.summaries[shard], shard_id=shard,
+            expected_pairs_per_card=self.PAIRS_PER_CARD,
+            expected_max_pairs=self.MAX_PAIRS,
+            path_label=f"card{shard} summary",
+        )
+
+    def _scope_for(self, shard: int) -> dict:
+        return _scope(device="cpu")
+
+    def test_real_produced_artifacts_pass_the_real_reader(self):
+        hosts = set()
+        expected_invocations: dict[int, dict] = {}
+        windows: dict[int, dict] = {}
+        for shard in (0, 1):
+            info = verify_probe_summary(
+                self.summaries[shard], shard_id=shard, device="cpu",
+                selection=self.selection,
+                expected_pair_manifest_sha256=MANIFEST_SHA,
+                expected_max_pairs=self.MAX_PAIRS,
+                require_hbm=False, path_label=f"card{shard} summary",
+            )
+            self.assertEqual(info["git_sha"], FULL_SHA)
+            budget = self._budget_info(shard)
+            hosts.add(budget["host"])
+            ordered = verify_probe_timing_records(
+                self.timing_records[shard], shard_id=shard, device="cpu",
+                selection=self.selection, expected_scope=self._scope_for(shard),
+                expected_invocation_id=budget["invocation_id"],
+                invocation_window={
+                    "started_epoch": budget["started_epoch"],
+                    "ended_epoch": budget["ended_epoch"],
+                },
+                path_label=f"card{shard} timing",
+            )
+            self.assertEqual(len(ordered), 50)
+            binding = _ProbeChunkMixin._binding(self, probe_sha=PROBE_SHA)
+            for record in ordered:
+                facts = verify_probe_chunk_content(
+                    self.out_dirs[shard] / record["chunk_file"],
+                    pair_space=self.pair_space, shard_id=shard,
+                    text_index=int(record["text_index"]),
+                    expected_binding=binding, timing_record=record,
+                    cad_valid_counts=self.cad_valid, path_label=f"card{shard} chunk",
+                )
+                self.assertEqual(facts["n_scored"], self.N_CADS)
+            windows[shard] = {
+                "start_epoch": min(r["window"]["start_epoch"] for r in ordered),
+                "end_epoch": max(r["window"]["end_epoch"] for r in ordered),
+            }
+            expected_invocations[shard] = {
+                "invocation_id": budget["invocation_id"],
+                "started_epoch": budget["started_epoch"],
+                "ended_epoch": budget["ended_epoch"],
+                "card_seconds": budget["card_seconds"],
+                "window_start_epoch": windows[shard]["start_epoch"],
+                "window_end_epoch": windows[shard]["end_epoch"],
+            }
+        self.assertEqual(len(hosts), 1)
+        # the interleaved queries actually overlapped in time
+        from idea01.text2cad_bench_protocol import window_overlap_fraction
+
+        self.assertGreaterEqual(
+            window_overlap_fraction(windows[0], windows[1]), 0.8
+        )
+        # card 0's snapshot legitimately shows the peer still pending
+        peer = next(
+            i for i in self.summaries[0]["budget"]["invocations"]
+            if i["invocation_id"] == "inv-card1"
+        )
+        self.assertFalse(peer["finalized"])
+        # the FINAL on-disk ledger proves the complete accounting
+        final_ledger = json.loads(self.ledger_path.read_text(encoding="utf-8"))
+        verify_final_probe_ledger(
+            final_ledger, approved_sha=FULL_SHA, host=next(iter(hosts)),
+            expected_invocations=expected_invocations,
+            expected_pairs_per_card=self.PAIRS_PER_CARD,
+            expected_max_pairs=self.MAX_PAIRS,
+            path_label="final ledger",
+        )
+
+    def test_cpu_summary_still_fails_the_npu_hbm_gate(self):
+        # the production gate is not relaxed: a CPU run cannot fabricate HBM
+        with self.assertRaisesRegex(RunnerError, "HBM"):
+            verify_probe_summary(
+                self.summaries[0], shard_id=0, device="cpu",
+                selection=self.selection,
+                expected_pair_manifest_sha256=MANIFEST_SHA,
+                expected_max_pairs=self.MAX_PAIRS,
+                require_hbm=True, path_label="card0 summary",
+            )
+
+    def test_reader_refuses_corrupted_produced_artifacts(self):
+        shard = 0
+        record = self.timing_records[shard][0]
+        chunk_path = self.out_dirs[shard] / record["chunk_file"]
+        binding = _ProbeChunkMixin._binding(self, probe_sha=PROBE_SHA)
+
+        def verify_chunk(path, timing=None):
+            return verify_probe_chunk_content(
+                path, pair_space=self.pair_space, shard_id=shard,
+                text_index=int(record["text_index"]), expected_binding=binding,
+                timing_record=timing or record, cad_valid_counts=self.cad_valid,
+                path_label="corrupted",
+            )
+
+        # a corrupted copy of the real chunk refuses (non-finite score)
+        lines = [
+            json.loads(line)
+            for line in chunk_path.read_text(encoding="utf-8").splitlines() if line.strip()
+        ]
+        lines[1]["score_total"] = float("nan")
+        bad = self.root / "bad_chunk.jsonl"
+        atomic_publish(bad, [json.dumps(r) for r in lines])
+        with self.assertRaisesRegex(RunnerError, "nonfinite"):
+            verify_chunk(bad)
+        # an empty file refuses
+        empty = self.root / "empty_chunk.jsonl"
+        empty.write_text("", encoding="utf-8")
+        with self.assertRaisesRegex(RunnerError, "empty chunk file"):
+            verify_chunk(empty)
+        # an extra orphan timing line makes the resume validator refuse
+        orphan = build_query_timing_record(
+            invocation_id="inv-card0", shard_id=0, device="cpu",
+            text_index=int(record["text_index"]),
+            probe_facts={"text_layer": record["text_layer"],
+                         "n_bert_tokens": record["n_bert_tokens"],
+                         "shard_pick": record["shard_pick"]},
+            start_epoch=record["window"]["end_epoch"] + 1.0,
+            end_epoch=record["window"]["end_epoch"] + 2.0,
+            n_pairs=self.N_CADS, n_batches=1, n_scored=self.N_CADS, n_rejected=0,
+            n_valid_total=record["n_valid_total"], chunk_file=record["chunk_file"],
+            scope=binding,
+        )
+        with self.assertRaisesRegex(RunnerError, "twice"):
+            verify_probe_resume_records(
+                [*self.timing_records[shard], orphan], shard_id=shard, device="cpu",
+                selection=self.selection, expected_scope=self._scope_for(shard),
+                path_label="orphan sidecar",
+            )
+        # a drifted final ledger refuses (zero total charge)
+        final_ledger = json.loads(self.ledger_path.read_text(encoding="utf-8"))
+        final_ledger["pairs_charged"] = 0
+        expected_invocations = {}
+        hosts = set()
+        for s in (0, 1):
+            budget = self._budget_info(s)
+            hosts.add(budget["host"])
+            expected_invocations[s] = {
+                "invocation_id": budget["invocation_id"],
+                "started_epoch": budget["started_epoch"],
+                "ended_epoch": budget["ended_epoch"],
+                "card_seconds": budget["card_seconds"],
+                "window_start_epoch": budget["started_epoch"],
+                "window_end_epoch": budget["ended_epoch"],
+            }
+        with self.assertRaisesRegex(RunnerError, "pairs_charged"):
+            verify_final_probe_ledger(
+                final_ledger, approved_sha=FULL_SHA, host=next(iter(hosts)),
+                expected_invocations=expected_invocations,
+                expected_pairs_per_card=self.PAIRS_PER_CARD,
+                expected_max_pairs=self.MAX_PAIRS,
+                path_label="drifted ledger",
+            )
+
+
+# ---------------------------------------------------------------------------
 # Two-card ETA (synthetic official-size selection)
 # ---------------------------------------------------------------------------
 
@@ -650,6 +1296,59 @@ def _synthetic_selection() -> dict:
     return build_g3_probe_selection(text_records, EXPECTED_N_GALLERY, lengths)
 
 
+def _authorization_fixture(git_sha: str = FULL_SHA, max_pairs: int = G3_APPROVED_MAX_PAIRS,
+                           card_hours: float = G3_APPROVED_MAX_CARD_HOURS) -> dict:
+    """RunAuthorization.to_dict() shape the runner embeds in every summary."""
+    return {
+        "task_state": "pilot_authorized",
+        "task_id": TASK_ID,
+        "approved_sha": git_sha,
+        "actual_sha": git_sha,
+        "max_pairs": max_pairs,
+        "card_hours": card_hours,
+        "cards_used": 1,
+        "max_wall_seconds": card_hours * 3600.0,
+        "active_task_source": "test",
+        "authorization_ref_sha": "e" * 40,
+        "active_task_blob_sha256": "f" * 64,
+        "origin_url": "test",
+        "repo_root": "test",
+    }
+
+
+def _load_report_fixture() -> dict:
+    """The loader's report shape (measured SHAs; mirrors text2cad_port.loader)."""
+    return {
+        "checkpoint": {
+            "checkpoint": {"path": "ckpt", "sha256": PINNED_CHECKPOINT_SHA256},
+            "n_tensors": G3_EXPECTED_NONBERT_TENSORS,
+            "n_zero_tensors": 0,
+            "zero_tensor_keys": [],
+            "dtypes": ["torch.float32"],
+        },
+        "bert_files": {
+            name: {"path": f"bert/{name}", "sha256": sha}
+            for name, sha in sorted(PINNED_BERT_FILE_SHA256.items())
+        },
+        "bert_load": {"word_embeddings_exact_equal": True},
+        "strict_load": {
+            "n_loaded_tensors": G3_EXPECTED_NONBERT_TENSORS,
+            "n_missing_keys": 0,
+            "n_unexpected_keys": 0,
+            "zero_tensor_keys": [],
+            "numeric_equality": True,
+            "strict": True,
+        },
+        "n_nonbert_tensors": G3_EXPECTED_NONBERT_TENSORS,
+        "eval_mode": True,
+        "all_parameters_frozen": True,
+    }
+
+
+def _preload_fixture(n_cads: int = EXPECTED_N_GALLERY) -> dict:
+    return {"n_candidates": n_cads, "n_loaded": n_cads, "n_rejected": 0, "rejection_reasons": []}
+
+
 def _probe_summary(device: str, *, cold: float, inv: str, host: str = "hostA",
                    ledger: str = "/budget/g3.json", git_sha: str = FULL_SHA,
                    probe_sha: str = PROBE_SHA, manifest_sha: str = MANIFEST_SHA,
@@ -657,8 +1356,10 @@ def _probe_summary(device: str, *, cold: float, inv: str, host: str = "hostA",
                    trim: str = "none", cache: bool = False, cards_used: int = 1,
                    finalized: bool = True, exit_code: int = 0,
                    completed_now: int = 50, completed_before: int = 0,
+                   started: float = 500.0, ended: float = 2000.0,
                    status: str = "ok", failure=None, peak: int = 1_900_000_000) -> dict:
     shard = SHARD_BY_DEVICE[device]
+    card_seconds = round(ended - started, 2) * cards_used
     return {
         "schema_version": RUN_SUMMARY_SCHEMA_VERSION,
         "time_utc": "2026-10-02T00:00:00Z", "platform": "test", "python_version": "3.11",
@@ -668,33 +1369,63 @@ def _probe_summary(device: str, *, cold: float, inv: str, host: str = "hostA",
         "trim_mode": trim, "text_cache": cache, "shard_id": shard, "n_shards": 2,
         "texts_per_chunk": 1, "checkpoint_path": "ckpt",
         "checkpoint_sha256": PINNED_CHECKPOINT_SHA256, "bert_dir": "bert",
-        "bert_file_sha256": {}, "cad_seq_zip": "zip",
+        "bert_file_sha256": dict(PINNED_BERT_FILE_SHA256), "cad_seq_zip": "zip",
         "score_name": SCORE_NAME, "spec_version": SCORE_SPEC_VERSION,
-        "max_cad_sequence_length": 272, "env_vars_present": [],
+        "max_cad_sequence_length": G3_MAX_CAD_SEQUENCE_LENGTH, "env_vars_present": [],
         "git_sha": git_sha, "pair_manifest_sha256": manifest_sha,
         PROBE_SCOPE_FIELD: probe_sha, "timing_file": timing_sidecar_name(shard),
         "cold_start_s": cold, "peak_device_memory_bytes": peak, "hbm_device": device,
         "probe_queries_total": 50, "invocation_id": inv,
-        "authorization": {"approved_sha": git_sha, "task_id": TASK_ID},
+        "authorization": _authorization_fixture(git_sha),
         "chunks_completed_now": completed_now, "chunks_previously_completed": completed_before,
         "pairs_planned": 402300,
         "stats": {"batches": G3_N_BATCHES_PER_QUERY * completed_now,
                   "pairs_forwarded": G3_N_PAIRS_PER_QUERY * completed_now,
                   "pairs_rejected": 0},
-        "load_report": {}, "candidate_preload": {},
+        "load_report": _load_report_fixture(),
+        "candidate_preload": _preload_fixture(),
         "budget": {
             "budget_file": ledger, "approved_sha": git_sha,
-            "max_pairs": 804600, "max_card_seconds": 43200.0,
-            "pairs_charged": 804600, "remaining_pairs": 0, "card_seconds_spent": 50.0,
+            "max_pairs": G3_APPROVED_MAX_PAIRS,
+            "max_card_seconds": G3_APPROVED_MAX_CARD_SECONDS,
+            "pairs_charged": G3_N_PAIRS_PER_QUERY * completed_now,
+            "remaining_pairs": G3_APPROVED_MAX_PAIRS - G3_N_PAIRS_PER_QUERY * completed_now,
+            "card_seconds_spent": card_seconds if finalized else 0.0,
             "invocations": [{
                 "invocation_id": inv, "shard_id": shard, "cards_used": cards_used,
-                "pid": 1234, "host": host, "started_epoch": 1.0,
-                "last_heartbeat_epoch": 2.0, "finalized": finalized,
-                "ended_epoch": 3.0, "card_seconds": 2.0, "exit_code": exit_code,
+                "pid": 1234, "host": host, "started_epoch": started,
+                "last_heartbeat_epoch": ended - 1.0, "finalized": finalized,
+                "ended_epoch": ended, "card_seconds": card_seconds, "exit_code": exit_code,
+                "pairs_charged": G3_N_PAIRS_PER_QUERY * completed_now,
             }],
         },
         "stale_invocations_auto_finalized": [], "status": status, "failure": failure,
     }
+
+
+def _final_ledger(summaries: list[dict], **overrides) -> dict:
+    """The FINAL shared ledger consistent with the cards' own invocations."""
+    invs = []
+    spent = 0.0
+    for summary in summaries:
+        own_id = summary["invocation_id"]
+        own = next(
+            i for i in summary["budget"]["invocations"] if i["invocation_id"] == own_id
+        )
+        invs.append(dict(own))
+        spent += float(own.get("card_seconds") or 0.0)
+    ledger = {
+        "version": 1,
+        "approved_sha": summaries[0]["budget"]["approved_sha"],
+        "max_pairs": summaries[0]["budget"]["max_pairs"],
+        "max_card_seconds": summaries[0]["budget"]["max_card_seconds"],
+        "pairs_charged": sum(int(i.get("pairs_charged") or 0) for i in invs),
+        "card_seconds_spent": round(spent, 2),
+        "heartbeat_interval_s": 30.0,
+        "invocations": invs,
+    }
+    ledger.update(overrides)
+    return ledger
 
 
 def _card_records(selection: dict, device: str, *, base: float, step: float,
@@ -753,9 +1484,19 @@ class G3ETATest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.selection = _synthetic_selection()
 
-    def _estimate(self, evidence, **kw):
+    def _estimate(self, evidence, final_ledger=None, **kw):
+        if final_ledger is None:
+            final_ledger = _final_ledger(
+                [evidence[d]["summary"] for d in ("npu:0", "npu:1") if d in evidence]
+                or [list(evidence.values())[0]["summary"]]
+            )
         return estimate_g3_probe_eta(
-            self.selection, evidence, expected_probe_selection_sha256=PROBE_SHA, **kw
+            self.selection,
+            evidence,
+            expected_probe_selection_sha256=PROBE_SHA,
+            expected_pair_manifest_sha256=MANIFEST_SHA,
+            final_ledger=final_ledger,
+            **kw,
         )
 
     def test_hand_computed_slower_card_per_layer_slowest(self):
@@ -855,6 +1596,8 @@ class G3ETATest(unittest.TestCase):
         def same_invocation_twice(e):
             e["npu:1"]["summary"].update(invocation_id="inv-card0")
             e["npu:1"]["summary"]["budget"]["invocations"][0].update(invocation_id="inv-card0")
+            for record in e["npu:1"]["timing_records"]:
+                record.update(invocation_id="inv-card0")
 
         refused(same_invocation_twice, "distinct")
         # ledger outcome
@@ -879,7 +1622,8 @@ class G3ETATest(unittest.TestCase):
         def drift_git_sha(e):
             # consistent auth/budget so the failure is the scope disagreement
             e["npu:1"]["summary"].update(git_sha="f" * 40)
-            e["npu:1"]["summary"]["authorization"].update(approved_sha="f" * 40)
+            e["npu:1"]["summary"]["authorization"].update(approved_sha="f" * 40,
+                                                          actual_sha="f" * 40)
             e["npu:1"]["summary"]["budget"].update(approved_sha="f" * 40)
 
         refused(drift_git_sha, "git_sha|scope|disagree")
@@ -887,11 +1631,11 @@ class G3ETATest(unittest.TestCase):
         refused(lambda e: e["npu:0"]["summary"].update(authorization={"approved_sha": "0" * 40}),
                 "authorization")
         refused(lambda e: e["npu:1"]["summary"].update(pair_manifest_sha256="0" * 64),
-                "disagree|scope")
+                "reviewed fingerprint")
         # chunk accounting vs timed queries
         refused(lambda e: e["npu:0"]["summary"].update(chunks_completed_now=49,
                                                        chunks_previously_completed=0),
-                "accounting")
+                "chunks_completed_now")
         # single device / one card's evidence filed under both devices
         with self.assertRaisesRegex(RunnerError, "per device"):
             self._estimate({"npu:0": base["npu:0"]})
@@ -949,6 +1693,271 @@ class G3ETATest(unittest.TestCase):
         with self.assertRaisesRegex(RunnerError, "no timing record"):
             self._estimate(evidence2)
 
+    # -- R1: the final shared ledger is mandatory evidence -------------------
+
+    def test_final_ledger_required(self):
+        evidence = _evidence(self.selection)
+        with self.assertRaisesRegex(RunnerError, "FINAL shared budget ledger"):
+            estimate_g3_probe_eta(
+                self.selection, evidence,
+                expected_probe_selection_sha256=PROBE_SHA,
+                expected_pair_manifest_sha256=MANIFEST_SHA,
+                final_ledger=None,
+            )
+        with self.assertRaisesRegex(RunnerError, "FINAL shared budget ledger"):
+            self._estimate(evidence, final_ledger={})
+
+    # -- R1: real accounting, not just success flags (Root witness cases) ----
+
+    def test_zero_stats_planned_charged_refused(self):
+        base = _evidence(self.selection)
+
+        def refused(mutate, pattern, ledger_overrides=None):
+            import copy
+
+            evidence = copy.deepcopy(base)
+            mutate(evidence)
+            final = None
+            if ledger_overrides is not None:
+                final = _final_ledger(
+                    [evidence["npu:0"]["summary"], evidence["npu:1"]["summary"]],
+                    **ledger_overrides,
+                )
+            with self.assertRaisesRegex(RunnerError, pattern):
+                self._estimate(evidence, final_ledger=final)
+
+        refused(lambda e: e["npu:0"]["summary"]["stats"].update(pairs_forwarded=0),
+                "pairs_forwarded")
+        refused(lambda e: e["npu:0"]["summary"]["stats"].update(batches=0), "stats.batches")
+        refused(lambda e: e["npu:0"]["summary"].update(pairs_planned=0), "pairs_planned")
+        refused(lambda e: e["npu:0"]["summary"]["budget"].update(pairs_charged=0),
+                "pairs_charged")
+        refused(lambda e: e["npu:0"]["summary"]["budget"]["invocations"][0].update(
+            pairs_charged=0), "pairs_charged")
+        refused(lambda e: None, "pairs_charged", ledger_overrides={"pairs_charged": 0})
+
+    def test_over_card_budget_refused(self):
+        base = _evidence(self.selection)
+
+        # Root case: spent 99999 vs cap 1 (and inconsistent accounting)
+        import copy
+
+        evidence = copy.deepcopy(base)
+        evidence["npu:0"]["summary"]["budget"].update(
+            card_seconds_spent=99999.0, max_card_seconds=1.0
+        )
+        with self.assertRaisesRegex(RunnerError, "card_seconds_spent|exceeds"):
+            self._estimate(evidence)
+        # consistent but over the approved cap: cap below the spent seconds
+        evidence = copy.deepcopy(base)
+        evidence["npu:0"]["summary"]["budget"].update(max_card_seconds=1000.0)
+        with self.assertRaisesRegex(RunnerError, "exceeds the approved cap"):
+            self._estimate(evidence)
+        # a cap beyond the approved 12 card-hours refuses even with room
+        evidence = copy.deepcopy(base)
+        evidence["npu:0"]["summary"]["budget"].update(max_card_seconds=99999.0)
+        with self.assertRaisesRegex(RunnerError, "at most"):
+            self._estimate(evidence)
+        # the final ledger itself over budget
+        final = _final_ledger(
+            [base["npu:0"]["summary"], base["npu:1"]["summary"]],
+            card_seconds_spent=99999.0,
+        )
+        with self.assertRaisesRegex(RunnerError, "card_seconds_spent"):
+            self._estimate(base, final_ledger=final)
+        final = _final_ledger(
+            [base["npu:0"]["summary"], base["npu:1"]["summary"]], max_card_seconds=2000.0
+        )
+        with self.assertRaisesRegex(RunnerError, "beyond the approved"):
+            self._estimate(base, final_ledger=final)
+
+    def test_timing_invocation_binding(self):
+        base = _evidence(self.selection)
+        import copy
+
+        # Root case: timing lines naming an invocation that is not the ledger's
+        evidence = copy.deepcopy(base)
+        for record in evidence["npu:0"]["timing_records"]:
+            record.update(invocation_id="not-in-ledger")
+        with self.assertRaisesRegex(RunnerError, "charged run"):
+            self._estimate(evidence)
+        # Root case: ledger epochs 1-3 vs query windows around epoch 1000
+        evidence = copy.deepcopy(base)
+        own = evidence["npu:0"]["summary"]["budget"]["invocations"][0]
+        own.update(started_epoch=1.0, ended_epoch=3.0, card_seconds=2.0,
+                   last_heartbeat_epoch=2.0)
+        evidence["npu:0"]["summary"]["budget"].update(card_seconds_spent=2.0)
+        evidence["npu:0"]["summary"].update(cold_start_s=1.0)
+        with self.assertRaisesRegex(RunnerError, "outside the ledger invocation"):
+            self._estimate(evidence)
+        # cold start beyond the invocation interval contradicts the timeline
+        evidence = copy.deepcopy(base)
+        evidence["npu:0"]["summary"].update(cold_start_s=99999.0)
+        with self.assertRaisesRegex(RunnerError, "timeline disagrees"):
+            self._estimate(evidence)
+
+    def test_pending_peer_snapshot_accepted(self):
+        import copy
+
+        base = _evidence(self.selection)
+        # first finisher: card 0's snapshot shows the peer legitimately pending
+        evidence = copy.deepcopy(base)
+        evidence["npu:0"]["summary"]["budget"]["invocations"].append({
+            "invocation_id": "inv-card1", "shard_id": 1, "cards_used": 1,
+            "pid": 4321, "host": "hostA", "started_epoch": 510.0,
+            "last_heartbeat_epoch": 1990.0, "finalized": False,
+            "pairs_charged": 402300,
+        })
+        evidence["npu:0"]["summary"]["budget"].update(pairs_charged=804600,
+                                                      remaining_pairs=0)
+        estimate = self._estimate(evidence)
+        self.assertTrue(estimate["passes_seven_day_gate"])
+        # second finisher: the peer appears finalized-successful in the snapshot
+        evidence = copy.deepcopy(base)
+        peer_done = dict(evidence["npu:1"]["summary"]["budget"]["invocations"][0])
+        evidence["npu:0"]["summary"]["budget"]["invocations"].append(peer_done)
+        evidence["npu:0"]["summary"]["budget"].update(
+            pairs_charged=804600, remaining_pairs=0, card_seconds_spent=3000.0
+        )
+        estimate = self._estimate(evidence)
+        self.assertTrue(estimate["passes_seven_day_gate"])
+
+    def test_extra_failed_old_invocations_refused(self):
+        import copy
+
+        base = _evidence(self.selection)
+
+        def with_extra(inv):
+            evidence = copy.deepcopy(base)
+            evidence["npu:0"]["summary"]["budget"]["invocations"].append(inv)
+            return evidence
+
+        # a failed peer attempt in the snapshot refuses
+        failed = {
+            "invocation_id": "inv-old", "shard_id": 1, "cards_used": 1, "pid": 99,
+            "host": "hostA", "started_epoch": 100.0, "last_heartbeat_epoch": 150.0,
+            "finalized": True, "ended_epoch": 150.0, "card_seconds": 50.0,
+            "exit_code": 2, "pairs_charged": 16092,
+        }
+        with self.assertRaisesRegex(RunnerError, "failed"):
+            self._estimate(with_extra(failed))
+        # a second invocation on THIS shard refuses (double-run evidence)
+        same_shard = dict(failed, invocation_id="inv-dup", shard_id=0, exit_code=0)
+        with self.assertRaisesRegex(RunnerError, "double-run|shard"):
+            self._estimate(with_extra(same_shard))
+        # a third invocation (even a plausible peer) refuses the fresh round
+        evidence = copy.deepcopy(base)
+        pending_peer = {
+            "invocation_id": "inv-card1", "shard_id": 1, "cards_used": 1, "pid": 5,
+            "host": "hostA", "started_epoch": 510.0, "last_heartbeat_epoch": 600.0,
+            "finalized": False, "pairs_charged": 16092,
+        }
+        third = dict(failed, invocation_id="inv-third", exit_code=0)
+        evidence["npu:0"]["summary"]["budget"]["invocations"].extend([pending_peer, third])
+        with self.assertRaisesRegex(RunnerError, "invocations in the snapshot"):
+            self._estimate(evidence)
+        # the final ledger with an old/extra invocation refuses
+        final = _final_ledger([base["npu:0"]["summary"], base["npu:1"]["summary"]])
+        final["invocations"].append(dict(failed))
+        with self.assertRaisesRegex(RunnerError, "old/extra/failed"):
+            self._estimate(base, final_ledger=final)
+        # the final ledger missing one card refuses
+        final = _final_ledger([base["npu:0"]["summary"], base["npu:1"]["summary"]])
+        final["invocations"] = final["invocations"][:1]
+        with self.assertRaisesRegex(RunnerError, "invocation"):
+            self._estimate(base, final_ledger=final)
+        # the final ledger recording a failed card refuses
+        final = _final_ledger([base["npu:0"]["summary"], base["npu:1"]["summary"]])
+        final["invocations"][1].update(exit_code=1)
+        with self.assertRaisesRegex(RunnerError, "finalized success"):
+            self._estimate(base, final_ledger=final)
+
+    def test_final_ledger_snapshot_disagreement_refused(self):
+        import copy
+
+        base = _evidence(self.selection)
+        stale = _final_ledger([base["npu:0"]["summary"], base["npu:1"]["summary"]])
+        evidence = copy.deepcopy(base)
+        own = evidence["npu:0"]["summary"]["budget"]["invocations"][0]
+        own.update(started_epoch=400.0, card_seconds=1600.0)
+        evidence["npu:0"]["summary"]["budget"].update(card_seconds_spent=1600.0)
+        with self.assertRaisesRegex(RunnerError, "disagree"):
+            self._estimate(evidence, final_ledger=stale)
+        # a final ledger bound to another approval refuses
+        stale = _final_ledger([base["npu:0"]["summary"], base["npu:1"]["summary"]],
+                              approved_sha="0" * 40)
+        with self.assertRaisesRegex(RunnerError, "bound to"):
+            self._estimate(base, final_ledger=stale)
+        # a final ledger with a drifted pair cap refuses
+        stale = _final_ledger([base["npu:0"]["summary"], base["npu:1"]["summary"]],
+                              max_pairs=805000)
+        with self.assertRaisesRegex(RunnerError, "max_pairs"):
+            self._estimate(base, final_ledger=stale)
+
+    def test_resume_shaped_evidence_refused(self):
+        import copy
+
+        evidence = _evidence(self.selection)
+        evidence["npu:0"]["summary"].update(chunks_previously_completed=10)
+        with self.assertRaisesRegex(RunnerError, "chunks_previously_completed"):
+            self._estimate(evidence)
+
+    # -- R1: fixed-asset binding, never mutual agreement ---------------------
+
+    def test_fixed_asset_binding_refused(self):
+        base = _evidence(self.selection)
+
+        def refused(mutate, pattern):
+            import copy
+
+            evidence = copy.deepcopy(base)
+            mutate(evidence)
+            with self.assertRaisesRegex(RunnerError, pattern):
+                self._estimate(evidence)
+
+        # reviewer case: BOTH cards agree on the wrong manifest SHA -- refuses
+        def zero_manifest(e):
+            for device in ("npu:0", "npu:1"):
+                e[device]["summary"].update(pair_manifest_sha256="0" * 64)
+
+        refused(zero_manifest, "reviewed fingerprint")
+        # reviewer case: BERT fingerprints zeroed consistently
+        def zero_bert(e):
+            for device in ("npu:0", "npu:1"):
+                e[device]["summary"].update(bert_file_sha256={
+                    name: "0" * 64 for name in PINNED_BERT_FILE_SHA256
+                })
+
+        refused(zero_bert, "five pinned")
+        # reviewer case: the CAD length shrunk to 128 consistently
+        def short_cad(e):
+            for device in ("npu:0", "npu:1"):
+                e[device]["summary"].update(max_cad_sequence_length=128)
+
+        refused(short_cad, "272-row|full")
+        refused(lambda e: e["npu:0"]["summary"].update(checkpoint_sha256="0" * 64),
+                "pinned checkpoint")
+        # measured load/preload evidence, not claimed constants
+        refused(lambda e: e["npu:0"]["summary"].update(load_report={}), "load_report")
+        refused(lambda e: e["npu:0"]["summary"]["load_report"]["bert_files"].update(
+            config_json={"path": "x", "sha256": "0" * 64}), "BERT")
+        refused(lambda e: e["npu:0"]["summary"]["load_report"]["strict_load"].update(
+            n_loaded_tensors=171), "n_loaded_tensors")
+        refused(lambda e: e["npu:0"]["summary"]["load_report"]["strict_load"].update(
+            numeric_equality=False), "numeric equality")
+        refused(lambda e: e["npu:0"]["summary"].update(candidate_preload={
+            "n_candidates": 8046, "n_loaded": 8045, "n_rejected": 1,
+            "rejection_reasons": ["bad_shape"]}), "n_rejected|n_loaded")
+        # the approval itself must be the exact G3 pilot authorization
+        refused(lambda e: e["npu:0"]["summary"]["authorization"].update(max_pairs=805000),
+                "max_pairs")
+        refused(lambda e: e["npu:0"]["summary"]["authorization"].update(card_hours=13.0),
+                "card-hours")
+        refused(lambda e: e["npu:0"]["summary"]["authorization"].update(
+            task_state="implementation"), "pilot_authorized")
+        refused(lambda e: e["npu:0"]["summary"]["authorization"].update(actual_sha="0" * 40),
+                "approved commit")
+
 
 # ---------------------------------------------------------------------------
 # eta-g3 CLI end-to-end against the real committed selection
@@ -957,20 +1966,83 @@ class G3ETATest(unittest.TestCase):
 
 @unittest.skipUnless(REAL_ASSETS_PRESENT, "real frozen worker artifacts required")
 class G3EtaCliRealDataTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._cls_tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls._cls_tmp.cleanup)
+        cls.root = Path(cls._cls_tmp.name)
+        cls.selection = json.loads(G3_CONFIG.read_text(encoding="utf-8"))
+        cls.probe_sha = sha256_file(G3_CONFIG)
+        cls.manifest_sha = "62086beb064af7b738665825edbf1a3cb63ebfaceddc7e227c0aa45390902557"
+        cls.cad_valid = load_cad_length_index(WORKER_DIR)
+        cls.total_valid = sum(r["n_valid_x"] + r["n_valid_y"] for r in cls.cad_valid)
+        # REAL 8,046-row chunks for both cards (the empty-file fixture of the
+        # pre-R1 test is gone: chunks carry the audited per-CAD valid counts)
+        cls.card0 = cls._build_card("npu:0", base=1000.0, cold=10.0, slow=8.0)
+        cls.card1 = cls._build_card("npu:1", base=1000.0, cold=20.0, slow=6.0)
+        cls.final_ledger = cls.root / "final_ledger.json"
+        cls._write_final_ledger(cls.card0 / "summary_0.json", cls.card1 / "summary_1.json",
+                                cls.final_ledger)
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
-        self.selection = json.loads(G3_CONFIG.read_text(encoding="utf-8"))
-        self.probe_sha = sha256_file(G3_CONFIG)
-        self.manifest_sha = "62086beb064af7b738665825edbf1a3cb63ebfaceddc7e227c0aa45390902557"
+        self.work = Path(self._tmp.name)
 
-    def _card_dir(self, device: str, *, name: str = None, base: float, cold: float, slow: float) -> Path:
+    @classmethod
+    def _chunk_binding(cls, device: str) -> dict:
+        return {
+            "schema_version": CHUNK_SCHEMA_VERSION,
+            "pair_manifest_sha256": cls.manifest_sha,
+            "git_sha": FULL_SHA,
+            "checkpoint_sha256": PINNED_CHECKPOINT_SHA256,
+            "device": device,
+            "torch_dtype": "float32",
+            "trim_mode": "none",
+            "text_cache": False,
+            "score_name": SCORE_NAME,
+            "spec_version": SCORE_SPEC_VERSION,
+            PROBE_SCOPE_FIELD: cls.probe_sha,
+        }
+
+    @classmethod
+    def _write_real_chunk(cls, card_dir: Path, shard: int, text_index: int,
+                          binding: dict) -> None:
+        header = {
+            "record_type": "chunk_header", "shard_id": shard,
+            "text_range": [text_index, text_index + 1],
+            "n_pairs": EXPECTED_N_GALLERY, "n_scored": EXPECTED_N_GALLERY,
+            "n_rejected": 0,
+            "pair_index_first": text_index * EXPECTED_N_GALLERY,
+            "pair_index_last": (text_index + 1) * EXPECTED_N_GALLERY - 1,
+            **binding,
+        }
+        path = card_dir / chunk_file_name(shard, text_index, text_index + 1)
+        lines = [json.dumps(header, ensure_ascii=False)]
+        for cad_index, valid in enumerate(cls.cad_valid):
+            lines.append(json.dumps({
+                "record_type": "pair",
+                "pair_index": text_index * EXPECTED_N_GALLERY + cad_index,
+                "text_index": text_index, "cad_index": cad_index,
+                "status": "scored", "reason": None,
+                "score_name": SCORE_NAME, "spec_version": SCORE_SPEC_VERSION,
+                "score_x": -1.0, "score_y": -2.0, "score_total": -3.0,
+                "mean_x": -1.0, "mean_y": -2.0, "mean_total": -1.5,
+                "n_valid_x": valid["n_valid_x"], "n_valid_y": valid["n_valid_y"],
+                "n_valid_total": valid["n_valid_x"] + valid["n_valid_y"],
+                "valid_seq_len": valid["n_real_tokens"],
+                "n_real_tokens": valid["n_real_tokens"],
+            }, ensure_ascii=False, separators=(",", ":")))
+        atomic_publish(path, lines)
+
+    @classmethod
+    def _build_card(cls, device: str, *, base: float, cold: float, slow: float,
+                    name: str = None) -> Path:
         shard = SHARD_BY_DEVICE[device]
-        card_dir = self.root / (name or f"card{shard}")
-        card_dir.mkdir()
-        facts = probe_facts_for_shard(self.selection, shard)
-        records = []
+        card_dir = cls.root / (name or f"card{shard}")
+        card_dir.mkdir(exist_ok=True)
+        binding = cls._chunk_binding(device)
+        facts = probe_facts_for_shard(cls.selection, shard)
         for k, text_index in enumerate(sorted(facts)):
             e2e = slow if k == 0 else 1.0
             start = base + k * 10.0
@@ -980,22 +2052,28 @@ class G3EtaCliRealDataTest(unittest.TestCase):
                 layer=facts[text_index]["text_layer"],
                 tokens=facts[text_index]["n_bert_tokens"],
                 pick=facts[text_index]["shard_pick"],
-                scope=_scope(device=device, pair_manifest_sha256=self.manifest_sha),
+                scope=_scope(device=device, pair_manifest_sha256=cls.manifest_sha),
+                n_valid=cls.total_valid,
             )
-            record[PROBE_SCOPE_FIELD] = self.probe_sha
+            record[PROBE_SCOPE_FIELD] = cls.probe_sha
             append_timing_record(card_dir / timing_sidecar_name(shard), record)
-            (card_dir / record["chunk_file"]).write_text("", encoding="utf-8")
+            cls._write_real_chunk(card_dir, shard, text_index, binding)
         summary = _probe_summary(
-            device, cold=cold, inv=f"inv-card{shard}", probe_sha=self.probe_sha,
-            manifest_sha=self.manifest_sha,
+            device, cold=cold, inv=f"inv-card{shard}", probe_sha=cls.probe_sha,
+            manifest_sha=cls.manifest_sha,
         )
         (card_dir / f"summary_{shard}.json").write_text(
             json.dumps(summary), encoding="utf-8"
         )
         return card_dir
 
-    def _argv(self, s0: Path, s1: Path, out: Path) -> list[str]:
-        return [
+    @classmethod
+    def _write_final_ledger(cls, s0: Path, s1: Path, out: Path) -> None:
+        summaries = [json.loads(p.read_text(encoding="utf-8")) for p in (s0, s1)]
+        out.write_text(json.dumps(_final_ledger(summaries)), encoding="utf-8")
+
+    def _argv(self, s0: Path, s1: Path, out: Path, ledger: Path = None) -> list[str]:
+        argv = [
             "--mode", "eta-g3",
             "--pair-manifest-dir", str(WORKER_DIR),
             "--token-audit", str(TOKEN_AUDIT),
@@ -1004,12 +2082,30 @@ class G3EtaCliRealDataTest(unittest.TestCase):
             "--card-summary", str(s1),
             "--out", str(out),
         ]
+        if ledger is not None:
+            argv += ["--final-ledger", str(ledger)]
+        return argv
+
+    def _clone_card(self, src: Path, shard: int, name: str) -> Path:
+        """Hard-link the big chunks into a fresh dir; COPY summary/sidecar so
+        mutations of the clone never touch the shared class fixture."""
+        dst = self.work / name
+        dst.mkdir()
+        for entry in src.iterdir():
+            target = dst / entry.name
+            if entry.name.startswith("chunk_"):
+                try:
+                    os.link(entry, target)
+                except OSError:
+                    shutil.copyfile(entry, target)
+            else:
+                shutil.copyfile(entry, target)
+        return dst
 
     def test_happy_path_hand_computed(self):
-        d0 = self._card_dir("npu:0", base=1000.0, cold=10.0, slow=8.0)
-        d1 = self._card_dir("npu:1", base=1000.0, cold=20.0, slow=6.0)
-        out = self.root / "eta.json"
-        rc = g3_main(self._argv(d0 / "summary_0.json", d1 / "summary_1.json", out))
+        out = self.work / "eta.json"
+        rc = g3_main(self._argv(self.card0 / "summary_0.json", self.card1 / "summary_1.json",
+                                out, ledger=self.final_ledger))
         self.assertEqual(rc, 0)
         estimate = json.loads(out.read_text(encoding="utf-8"))
         self.assertNotIn(b"\r", out.read_bytes())
@@ -1027,30 +2123,71 @@ class G3EtaCliRealDataTest(unittest.TestCase):
         self.assertAlmostEqual(estimate["eta_seconds"], wall * 1.30)
         self.assertTrue(estimate["passes_seven_day_gate"])
         self.assertEqual(estimate["inputs"]["g3_probe_selection_sha256"], self.probe_sha)
+        self.assertEqual(estimate["inputs"]["final_ledger"], str(self.final_ledger.resolve()))
         # refuses to overwrite the estimate
         self.assertEqual(
-            g3_main(self._argv(d0 / "summary_0.json", d1 / "summary_1.json", out)), 2
-        )
-
-    def test_cli_refusals(self):
-        d0 = self._card_dir("npu:0", base=1000.0, cold=10.0, slow=8.0)
-        d1 = self._card_dir("npu:1", base=1000.0 + 400.0, cold=20.0, slow=6.0)
-        # staggered windows (400s >> 0.2 * ~498s shorter window) refuse
-        self.assertEqual(
-            g3_main(self._argv(d0 / "summary_0.json", d1 / "summary_1.json", self.root / "x.json")),
+            g3_main(self._argv(self.card0 / "summary_0.json", self.card1 / "summary_1.json",
+                               out, ledger=self.final_ledger)),
             2,
         )
-        # aligned windows pass
-        d1b = self._card_dir("npu:1", name="card1b", base=1000.0, cold=20.0, slow=6.0)
+
+    def test_cli_requires_the_final_ledger(self):
         self.assertEqual(
-            g3_main(self._argv(d0 / "summary_0.json", d1b / "summary_1.json", self.root / "y.json")),
-            0,
+            g3_main(self._argv(self.card0 / "summary_0.json", self.card1 / "summary_1.json",
+                               self.work / "x.json")),
+            2,
+        )
+        self.assertFalse((self.work / "x.json").exists())
+
+    def test_cli_refusals(self):
+        # staggered scoring windows (sidecar shifted +400s) refuse the
+        # concurrency gate even though everything else is consistent
+        d1 = self._clone_card(self.card1, 1, "card1_staggered")
+        records = read_timing_records(d1 / timing_sidecar_name(1))
+        (d1 / timing_sidecar_name(1)).unlink()
+        for record in records:
+            start = record["window"]["start_epoch"] + 400.0
+            e2e = record["e2e_s"]
+            record["window"] = {"start_epoch": start, "end_epoch": start + e2e}
+            append_timing_record(d1 / timing_sidecar_name(1), record)
+        summary = json.loads((d1 / "summary_1.json").read_text(encoding="utf-8"))
+        # widen the invocation interval so the shifted windows stay inside it
+        own = summary["budget"]["invocations"][0]
+        own.update(ended_epoch=2600.0, card_seconds=2100.0)
+        summary["budget"].update(card_seconds_spent=2100.0)
+        (d1 / "summary_1.json").write_text(json.dumps(summary), encoding="utf-8")
+        ledger = self.work / "ledger_staggered.json"
+        self._write_final_ledger(self.card0 / "summary_0.json", d1 / "summary_1.json", ledger)
+        self.assertEqual(
+            g3_main(self._argv(self.card0 / "summary_0.json", d1 / "summary_1.json",
+                               self.work / "x.json", ledger=ledger)),
+            2,
         )
         # a missing chunk file behind a timing line refuses
+        d1b = self._clone_card(self.card1, 1, "card1_missing")
         first_text = sorted(probe_facts_for_shard(self.selection, 1))[0]
         (d1b / chunk_file_name(1, first_text, first_text + 1)).unlink()
         self.assertEqual(
-            g3_main(self._argv(d0 / "summary_0.json", d1b / "summary_1.json", self.root / "z.json")),
+            g3_main(self._argv(self.card0 / "summary_0.json", d1b / "summary_1.json",
+                               self.work / "y.json", ledger=self.final_ledger)),
+            2,
+        )
+        # a zero-byte chunk (the pre-R1 fixture!) now refuses
+        d1c = self._clone_card(self.card1, 1, "card1_empty")
+        (d1c / chunk_file_name(1, first_text, first_text + 1)).unlink()
+        (d1c / chunk_file_name(1, first_text, first_text + 1)).write_text("", encoding="utf-8")
+        self.assertEqual(
+            g3_main(self._argv(self.card0 / "summary_0.json", d1c / "summary_1.json",
+                               self.work / "z.json", ledger=self.final_ledger)),
+            2,
+        )
+        # an extra foreign chunk without a timing line refuses (one-to-one)
+        d0 = self._clone_card(self.card0, 0, "card0_extra")
+        foreign = d0 / chunk_file_name(0, 9999, 10000)
+        foreign.write_text("{}\n", encoding="utf-8")
+        self.assertEqual(
+            g3_main(self._argv(d0 / "summary_0.json", self.card1 / "summary_1.json",
+                               self.work / "w.json", ledger=self.final_ledger)),
             2,
         )
         # one summary only
@@ -1058,7 +2195,8 @@ class G3EtaCliRealDataTest(unittest.TestCase):
             g3_main([
                 "--mode", "eta-g3", "--pair-manifest-dir", str(WORKER_DIR),
                 "--token-audit", str(TOKEN_AUDIT), "--repo-root", str(REPO_ROOT),
-                "--card-summary", str(d0 / "summary_0.json"),
+                "--card-summary", str(self.card0 / "summary_0.json"),
+                "--final-ledger", str(self.final_ledger),
             ]),
             2,
         )

@@ -26,7 +26,9 @@ audited loader with a unit-test cross-check, the same pattern as
   * the production-runner scope helpers: per-shard probe text sets, the
     per-query timing sidecar (appended line-by-line AFTER the chunk's atomic
     publish completes, so a timing line always implies the chunk exists) and
-    its strict reader (a torn final line fails closed).
+    its strict readers (a torn final line fails closed; the RESUME reader
+    re-validates every record's scope/facts/window/counts against the fixed
+    probe without requiring complete coverage).
   * ``eta-g3``: the two-card full-matrix ETA from the two REAL probe runs --
     per card per global text layer (``min(2, 3*rank//3644)`` over the global
     token-length rank, identical to G2) the SLOWEST complete-query E2E
@@ -39,6 +41,31 @@ audited loader with a unit-test cross-check, the same pattern as
     successful shared-ledger invocation, identical code/model/score/probe
     fingerprints, and an >=80% overlap of the two cards' actual scoring
     windows (first query start to last query publish end).
+
+R1 hardening (2026-10-02, plans/IDEA01_M1C_G3_R1_FIX_2026-10-02.md):
+
+  * summaries/timing are bound to the REVIEWED fixed assets -- the committed
+    pair-manifest fingerprint, the pinned checkpoint, the five pinned BERT
+    files, the score identity and the full 272-row shape -- never merely to
+    each other, and the run's own load/preload reports must show the actual
+    measured SHAs / tensor counts / gallery preload;
+  * the ledger snapshot inside each summary is checked for the ACTUAL
+    accounting: approved caps (804,600 pairs / at most 12 card-hours), the
+    card's real charged pairs (402,300) and batches, spent card-seconds
+    within the cap, no failed/extra/old invocations -- a legitimately
+    PENDING peer in a first-finisher's snapshot is accepted, and the FINAL
+    shared ledger (--final-ledger, retrieved after both cards exited) must
+    then prove exactly the two successful invocations, totals and timing
+    containment (this round is fresh-run-only: resume/old/extra/failed
+    invocations refuse the ETA);
+  * every timing line names the contributing ledger invocation and its
+    window must lie inside that invocation's [started, ended] interval;
+  * every probe chunk file is READ and fully verified (dense global
+    pair_index, shard/range, score/schema/asset/code/probe bindings, 8,046
+    finite complete scored rows, per-row valid-item counts equal to the
+    audited worker length index, totals cross-checked against the timing
+    record) -- never an existence check, and the card directory must hold
+    exactly the timed chunks, no more.
 """
 
 from __future__ import annotations
@@ -70,10 +97,12 @@ from .text2cad_pair_index import (
     TEXTS_FILE,
     PairSpace,
     chunk_file_name,
+    load_cad_length_index,
     load_cad_store,
     load_pair_manifest,
     read_jsonl_strict,
     sha256_file,
+    verify_chunk_records,
 )
 
 #: Score identity duplicated from text2cad_vector_scorer so this module stays
@@ -84,6 +113,31 @@ SCORE_SPEC_VERSION = "text2cad-vector-score-v1"
 #: Run-summary schema produced by the frozen runner (duplicated so this
 #: module stays torch-free; a unit test cross-checks the value).
 RUN_SUMMARY_SCHEMA_VERSION = "text2cad-run-summary-v1"
+
+#: Chunk-file schema produced by the frozen runner (duplicated so this module
+#: stays torch-free; a unit test cross-checks the value).
+CHUNK_SCHEMA_VERSION = "text2cad-chunk-v1"
+
+#: Authorization task id (duplicated from text2cad_frozen_runner.TASK_ID so
+#: this module stays torch-free; a unit test cross-checks the value).
+G3_TASK_ID = "idea01_text2cad_benchmark_20260928"
+
+#: Fixed production shape (duplicated from text2cad_port.model so this module
+#: stays torch-free; a unit test cross-checks the value). The probe scores
+#: the full padded 272-row CAD programs, FP32, no trim, no cache.
+G3_MAX_CAD_SEQUENCE_LENGTH = 272
+
+#: Non-BERT checkpoint tensors of the committed 172-key expected-keys
+#: manifest (a unit test cross-checks the committed config).
+G3_EXPECTED_NONBERT_TENSORS = 172
+
+#: The approved G3 probe budget (contract section 3.4 / section 5): EXACTLY
+#: 804,600 scored pairs (100 texts x 8,046 CADs) and AT MOST 12 card-hours.
+#: The ETA binds the run's ledger to these caps -- a larger cap, a smaller
+#: charge, or card-seconds beyond the cap all refuse.
+G3_APPROVED_MAX_PAIRS = 804600
+G3_APPROVED_MAX_CARD_HOURS = 12.0
+G3_APPROVED_MAX_CARD_SECONDS = G3_APPROVED_MAX_CARD_HOURS * 3600.0
 
 # ---------------------------------------------------------------------------
 # Contract constants
@@ -642,9 +696,101 @@ def _require_finite_positive(value: Any, label: str, *, allow_zero: bool = False
     return float(value)
 
 
-def verify_probe_summary(summary: dict[str, Any], *, device: str, path_label: str) -> dict[str, Any]:
-    """One card's run summary must prove a successful, correctly scoped probe."""
-    shard = SHARD_BY_DEVICE[device]
+def _require_int(value: Any, label: str, expected: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value != expected:
+        raise RunnerError(f"{label} must be exactly {expected}, got {value!r}")
+
+
+def _expected_probe_pairs_per_card(selection: dict[str, Any]) -> int:
+    """One card's exact probe pair count: 50 picks x the complete gallery."""
+    counts = selection["counts"]
+    return int(counts["picks_per_shard"]) * int(counts["n_cads"])
+
+
+def _expected_probe_batches_per_card(selection: dict[str, Any]) -> int:
+    n_cads = int(selection["counts"]["n_cads"])
+    per_query = (n_cads + G3_BATCH_SIZE - 1) // G3_BATCH_SIZE
+    return int(selection["counts"]["picks_per_shard"]) * per_query
+
+
+def verify_probe_load_evidence(
+    summary: dict[str, Any],
+    *,
+    n_cads: int,
+    path_label: str,
+) -> None:
+    """The run's OWN load/preload reports must show the actual measured facts.
+
+    Not the summary's self-declared constants but the loader/store output the
+    runner embedded verbatim: measured checkpoint/BERT SHAs, the strict
+    172-tensor numeric load, frozen eval mode, and the complete gallery
+    preload. A summary that only CLAIMS the pinned values without the
+    measured evidence refuses.
+    """
+    load_report = summary.get("load_report")
+    if not isinstance(load_report, dict) or not load_report:
+        raise RunnerError(f"{path_label}: no load_report; the model load is not evidenced")
+    checkpoint = (load_report.get("checkpoint") or {}).get("checkpoint") or {}
+    if checkpoint.get("sha256") != PINNED_CHECKPOINT_SHA256:
+        raise RunnerError(
+            f"{path_label}: the run did not measurably load the pinned checkpoint "
+            f"({checkpoint.get('sha256')!r})"
+        )
+    bert_files = load_report.get("bert_files")
+    if not isinstance(bert_files, dict) or set(bert_files) != set(PINNED_BERT_FILE_SHA256):
+        raise RunnerError(
+            f"{path_label}: load_report must carry measured SHAs for exactly the "
+            f"five pinned BERT files, got {sorted(bert_files) if isinstance(bert_files, dict) else bert_files!r}"
+        )
+    for name, expected in sorted(PINNED_BERT_FILE_SHA256.items()):
+        actual = (bert_files.get(name) or {}).get("sha256")
+        if actual != expected:
+            raise RunnerError(
+                f"{path_label}: BERT {name} measured SHA {actual!r} != the pinned file"
+            )
+    strict = load_report.get("strict_load") or {}
+    _require_int(strict.get("n_loaded_tensors"), f"{path_label} strict_load n_loaded_tensors",
+                 G3_EXPECTED_NONBERT_TENSORS)
+    _require_int(strict.get("n_missing_keys"), f"{path_label} strict_load n_missing_keys", 0)
+    _require_int(strict.get("n_unexpected_keys"), f"{path_label} strict_load n_unexpected_keys", 0)
+    if strict.get("numeric_equality") is not True:
+        raise RunnerError(f"{path_label}: strict load did not prove numeric equality")
+    if load_report.get("eval_mode") is not True or load_report.get("all_parameters_frozen") is not True:
+        raise RunnerError(f"{path_label}: the model was not in frozen eval mode")
+    preload = summary.get("candidate_preload")
+    if not isinstance(preload, dict) or not preload:
+        raise RunnerError(f"{path_label}: no candidate_preload report")
+    _require_int(preload.get("n_candidates"), f"{path_label} preload n_candidates", n_cads)
+    _require_int(preload.get("n_loaded"), f"{path_label} preload n_loaded", n_cads)
+    _require_int(preload.get("n_rejected"), f"{path_label} preload n_rejected", 0)
+
+
+def verify_probe_summary(
+    summary: dict[str, Any],
+    *,
+    shard_id: int,
+    device: str,
+    selection: dict[str, Any],
+    expected_pair_manifest_sha256: str,
+    expected_max_pairs: int = G3_APPROVED_MAX_PAIRS,
+    max_card_hours_cap: float = G3_APPROVED_MAX_CARD_HOURS,
+    require_hbm: bool = True,
+    path_label: str,
+) -> dict[str, Any]:
+    """One card's run summary must prove a successful, correctly scoped probe.
+
+    R1: the summary is bound to the REVIEWED fixed assets (committed pair
+    manifest fingerprint, pinned checkpoint, the five pinned BERT files, the
+    score identity, the full 272-row shape) and to its own measured
+    load/preload reports -- never merely to the other card's summary. The
+    fresh-run accounting fields must equal the exact probe plan (this ETA
+    prices fresh runs only). ``expected_max_pairs`` / ``max_card_hours_cap``
+    / ``require_hbm`` are the production pins; smaller fake runs use the
+    explicit parameters (the production CLI never overrides the defaults).
+    """
+    n_cads = int(selection["counts"]["n_cads"])
+    n_picks = int(selection["counts"]["picks_per_shard"])
+    expected_pairs = _expected_probe_pairs_per_card(selection)
     if summary.get("schema_version") != RUN_SUMMARY_SCHEMA_VERSION:
         raise RunnerError(f"{path_label}: not a {RUN_SUMMARY_SCHEMA_VERSION} run summary")
     if summary.get("status") != "ok" or summary.get("failure") is not None:
@@ -656,10 +802,10 @@ def verify_probe_summary(summary: dict[str, Any], *, device: str, path_label: st
         raise RunnerError(
             f"{path_label}: summary device {summary.get('device')!r} != {device!r}"
         )
-    if summary.get("shard_id") != shard or summary.get("n_shards") != G3_N_SHARDS:
+    if summary.get("shard_id") != shard_id or summary.get("n_shards") != G3_N_SHARDS:
         raise RunnerError(
             f"{path_label}: shard {summary.get('shard_id')!r}/{summary.get('n_shards')!r} "
-            f"!= the {device}<->shard{shard} correspondence"
+            f"!= the {device}<->shard{shard_id} correspondence"
         )
     if summary.get("batch_size") != G3_BATCH_SIZE:
         raise RunnerError(f"{path_label}: batch_size {summary.get('batch_size')!r} != {G3_BATCH_SIZE}")
@@ -671,10 +817,25 @@ def verify_probe_summary(summary: dict[str, Any], *, device: str, path_label: st
         or summary.get("text_cache") is not False
     ):
         raise RunnerError(f"{path_label}: not the frozen reference configuration")
+    if summary.get("max_cad_sequence_length") != G3_MAX_CAD_SEQUENCE_LENGTH:
+        raise RunnerError(
+            f"{path_label}: max_cad_sequence_length {summary.get('max_cad_sequence_length')!r} "
+            f"!= the full {G3_MAX_CAD_SEQUENCE_LENGTH}-row production shape"
+        )
     if summary.get("score_name") != SCORE_NAME or summary.get("spec_version") != SCORE_SPEC_VERSION:
         raise RunnerError(f"{path_label}: unreviewed score definition")
     if summary.get("checkpoint_sha256") != PINNED_CHECKPOINT_SHA256:
         raise RunnerError(f"{path_label}: not the pinned checkpoint")
+    if summary.get("bert_file_sha256") != dict(PINNED_BERT_FILE_SHA256):
+        raise RunnerError(
+            f"{path_label}: BERT file fingerprints differ from the five pinned files"
+        )
+    if summary.get("pair_manifest_sha256") != expected_pair_manifest_sha256:
+        raise RunnerError(
+            f"{path_label}: pair-manifest binding {summary.get('pair_manifest_sha256')!r} "
+            f"!= the reviewed fingerprint {expected_pair_manifest_sha256!r}"
+        )
+    verify_probe_load_evidence(summary, n_cads=n_cads, path_label=path_label)
     probe_sha = summary.get(PROBE_SCOPE_FIELD)
     if not isinstance(probe_sha, str) or len(probe_sha) != 64:
         raise RunnerError(f"{path_label}: summary carries no probe selection scope")
@@ -685,29 +846,67 @@ def verify_probe_summary(summary: dict[str, Any], *, device: str, path_label: st
         or not set(git_sha) <= set("0123456789abcdef")
     ):
         raise RunnerError(f"{path_label}: summary must carry a complete reviewed git_sha")
-    if (summary.get("authorization") or {}).get("approved_sha") != git_sha:
+    authorization = summary.get("authorization") or {}
+    if authorization.get("approved_sha") != git_sha:
         raise RunnerError(f"{path_label}: authorization SHA differs from the code SHA")
+    if authorization.get("actual_sha") != git_sha:
+        raise RunnerError(
+            f"{path_label}: the run did not execute the approved commit "
+            f"(actual {authorization.get('actual_sha')!r})"
+        )
+    if authorization.get("task_state") != "pilot_authorized" or authorization.get("task_id") != G3_TASK_ID:
+        raise RunnerError(
+            f"{path_label}: authorization is not the pilot_authorized {G3_TASK_ID} approval"
+        )
+    _require_int(authorization.get("max_pairs"), f"{path_label} authorization max_pairs",
+                 expected_max_pairs)
+    card_hours = authorization.get("card_hours")
+    if (
+        isinstance(card_hours, bool)
+        or not isinstance(card_hours, (int, float))
+        or not math.isfinite(card_hours)
+        or card_hours <= 0
+        or card_hours > max_card_hours_cap
+    ):
+        raise RunnerError(
+            f"{path_label}: approved card-hours {card_hours!r} outside (0, "
+            f"{max_card_hours_cap}] -- the G3 budget is at most "
+            f"{G3_APPROVED_MAX_CARD_HOURS} card-hours"
+        )
+    _require_int(authorization.get("cards_used"), f"{path_label} authorization cards_used", 1)
+    # fresh-run-only accounting: the whole shard probe, exactly once
+    _require_int(summary.get("pairs_planned"), f"{path_label} pairs_planned", expected_pairs)
+    _require_int(summary.get("chunks_completed_now"), f"{path_label} chunks_completed_now", n_picks)
+    _require_int(summary.get("chunks_previously_completed"),
+                 f"{path_label} chunks_previously_completed", 0)
+    _require_int(summary.get("probe_queries_total"), f"{path_label} probe_queries_total", n_picks)
+    stats = summary.get("stats") or {}
+    _require_int(stats.get("pairs_forwarded"), f"{path_label} stats.pairs_forwarded", expected_pairs)
+    _require_int(stats.get("batches"), f"{path_label} stats.batches",
+                 _expected_probe_batches_per_card(selection))
+    _require_int(stats.get("pairs_rejected"), f"{path_label} stats.pairs_rejected", 0)
     cold = summary.get("cold_start_s")
     _require_finite_positive(cold, f"{path_label} cold_start_s", allow_zero=True)
-    peak = summary.get("peak_device_memory_bytes")
-    if isinstance(peak, bool) or not isinstance(peak, int) or peak <= 0:
-        raise RunnerError(
-            f"{path_label}: no valid peak HBM reading ({peak!r}); None/zero is not evidence"
-        )
-    if summary.get("hbm_device") != device:
-        raise RunnerError(
-            f"{path_label}: HBM reading was not taken on {device} ({summary.get('hbm_device')!r})"
-        )
+    if require_hbm:
+        peak = summary.get("peak_device_memory_bytes")
+        if isinstance(peak, bool) or not isinstance(peak, int) or peak <= 0:
+            raise RunnerError(
+                f"{path_label}: no valid peak HBM reading ({peak!r}); None/zero is not evidence"
+            )
+        if summary.get("hbm_device") != device:
+            raise RunnerError(
+                f"{path_label}: HBM reading was not taken on {device} ({summary.get('hbm_device')!r})"
+            )
     timing_file = summary.get("timing_file")
     if not isinstance(timing_file, str) or Path(timing_file).name != timing_file:
         raise RunnerError(f"{path_label}: bad timing_file reference {timing_file!r}")
-    if timing_file != timing_sidecar_name(shard):
+    if timing_file != timing_sidecar_name(shard_id):
         raise RunnerError(
             f"{path_label}: timing_file {timing_file!r} != this shard's sidecar "
-            f"{timing_sidecar_name(shard)!r}"
+            f"{timing_sidecar_name(shard_id)!r}"
         )
     return {
-        "shard_id": shard,
+        "shard_id": shard_id,
         "git_sha": git_sha,
         "probe_sha": probe_sha,
         "cold_start_s": float(cold),
@@ -715,8 +914,25 @@ def verify_probe_summary(summary: dict[str, Any], *, device: str, path_label: st
     }
 
 
-def verify_probe_budget_evidence(summary: dict[str, Any], *, device: str, path_label: str) -> dict[str, str]:
-    """The summary's own ledger invocation: finished, successful, one card, same host."""
+def verify_probe_budget_evidence(
+    summary: dict[str, Any],
+    *,
+    shard_id: int,
+    expected_pairs_per_card: int,
+    expected_max_pairs: int = G3_APPROVED_MAX_PAIRS,
+    max_card_seconds_cap: float = G3_APPROVED_MAX_CARD_SECONDS,
+    path_label: str,
+) -> dict[str, Any]:
+    """The summary's ledger snapshot: REAL accounting, not just success flags.
+
+    Verifies the approved caps, the card's actual charged pairs, spent
+    card-seconds within the cap, and the invocation roster: exactly this
+    card's finalized successful invocation plus -- legitimately -- the still
+    PENDING peer of a first-finisher's snapshot. Old, extra, failed or
+    same-shard invocations refuse (this round is fresh-run-only). Returns
+    the own invocation's identity and time interval for the timing/window
+    binding and the final-ledger cross-check.
+    """
     budget = summary.get("budget") or {}
     invocation_id = summary.get("invocation_id")
     if not isinstance(invocation_id, str) or not invocation_id:
@@ -726,8 +942,20 @@ def verify_probe_budget_evidence(summary: dict[str, Any], *, device: str, path_l
     budget_file = budget.get("budget_file")
     if not isinstance(budget_file, str) or not budget_file:
         raise RunnerError(f"{path_label}: budget record lacks budget_file")
+    _require_int(budget.get("max_pairs"), f"{path_label} budget max_pairs", expected_max_pairs)
+    cap_seconds = _require_finite_positive(
+        budget.get("max_card_seconds"), f"{path_label} budget max_card_seconds"
+    )
+    if cap_seconds > max_card_seconds_cap:
+        raise RunnerError(
+            f"{path_label}: approved card-second cap {cap_seconds} exceeds the G3 "
+            f"budget of at most {max_card_seconds_cap} s ({G3_APPROVED_MAX_CARD_HOURS} card-hours)"
+        )
+    invocations = budget.get("invocations")
+    if not isinstance(invocations, list) or not invocations:
+        raise RunnerError(f"{path_label}: ledger snapshot has no invocations")
     records = [
-        inv for inv in (budget.get("invocations") or [])
+        inv for inv in invocations
         if isinstance(inv, dict) and inv.get("invocation_id") == invocation_id
     ]
     if len(records) != 1:
@@ -735,22 +963,310 @@ def verify_probe_budget_evidence(summary: dict[str, Any], *, device: str, path_l
             f"{path_label}: expected exactly one ledger record for {invocation_id!r}, "
             f"got {len(records)}"
         )
-    inv = records[0]
-    host = inv.get("host")
+    own = records[0]
+    host = own.get("host")
     if not isinstance(host, str) or not host:
         raise RunnerError(f"{path_label}: ledger invocation has no valid host")
-    if inv.get("shard_id") != SHARD_BY_DEVICE[device]:
-        raise RunnerError(f"{path_label}: ledger invocation shard does not match {device}")
-    if inv.get("cards_used") != 1:
+    if own.get("shard_id") != shard_id:
+        raise RunnerError(f"{path_label}: ledger invocation shard does not match shard{shard_id}")
+    if own.get("cards_used") != 1:
         raise RunnerError(f"{path_label}: ledger invocation cards_used != 1")
-    if inv.get("finalized") is not True:
+    if own.get("finalized") is not True:
         raise RunnerError(f"{path_label}: ledger invocation is not finalized")
-    exit_code = inv.get("exit_code")
+    exit_code = own.get("exit_code")
     if isinstance(exit_code, bool) or not isinstance(exit_code, int) or exit_code != 0:
         raise RunnerError(
             f"{path_label}: ledger invocation exit_code {exit_code!r} is not a successful integer 0"
         )
-    return {"host": host, "budget_file": budget_file, "invocation_id": invocation_id}
+    _require_int(own.get("pairs_charged"), f"{path_label} own invocation pairs_charged",
+                 expected_pairs_per_card)
+    started = _require_finite_positive(own.get("started_epoch"),
+                                       f"{path_label} invocation started_epoch")
+    ended = _require_finite_positive(own.get("ended_epoch"),
+                                     f"{path_label} invocation ended_epoch")
+    if ended <= started:
+        raise RunnerError(f"{path_label}: invocation interval is not ordered")
+    card_seconds = _require_finite_positive(own.get("card_seconds"),
+                                            f"{path_label} invocation card_seconds")
+    if not math.isclose(card_seconds, ended - started, rel_tol=1e-6, abs_tol=0.02):
+        raise RunnerError(
+            f"{path_label}: invocation card_seconds {card_seconds} != its interval "
+            f"{ended - started:.2f} s (one card)"
+        )
+    # the rest of the roster: at most the peer card's invocation, which may
+    # legitimately still be PENDING in a first-finisher's snapshot; anything
+    # failed, extra, or on THIS shard refuses the fresh-run evidence
+    spent = _require_finite_positive(
+        budget.get("card_seconds_spent"), f"{path_label} budget card_seconds_spent", allow_zero=True
+    )
+    finalized_card_seconds = card_seconds
+    charged_total = int(own.get("pairs_charged") or 0)
+    for inv in invocations:
+        if not isinstance(inv, dict) or inv.get("invocation_id") == invocation_id:
+            continue
+        if inv.get("shard_id") == shard_id:
+            raise RunnerError(
+                f"{path_label}: a second invocation {inv.get('invocation_id')!r} ran on "
+                f"shard{shard_id}; refusing double-run evidence"
+            )
+        peer_exit = inv.get("exit_code")
+        if peer_exit is not None and peer_exit != 0:
+            raise RunnerError(
+                f"{path_label}: invocation {inv.get('invocation_id')!r} failed "
+                f"(exit_code {peer_exit!r}); failed fragments are not probe evidence"
+            )
+        if inv.get("finalized") is True:
+            peer_seconds = _require_finite_positive(
+                inv.get("card_seconds"), f"{path_label} peer card_seconds"
+            )
+            finalized_card_seconds += peer_seconds
+        charged_total += int(inv.get("pairs_charged") or 0)
+    if len(invocations) > 2:
+        raise RunnerError(
+            f"{path_label}: {len(invocations)} invocations in the snapshot; the fresh "
+            "two-card probe leaves at most one invocation per card"
+        )
+    _require_int(budget.get("pairs_charged"), f"{path_label} budget pairs_charged", charged_total)
+    if not math.isclose(spent, finalized_card_seconds, rel_tol=1e-6, abs_tol=0.05):
+        raise RunnerError(
+            f"{path_label}: snapshot card_seconds_spent {spent} != the finalized "
+            f"invocations' {finalized_card_seconds:.2f} s"
+        )
+    if spent > cap_seconds:
+        raise RunnerError(
+            f"{path_label}: card_seconds_spent {spent} exceeds the approved cap "
+            f"{cap_seconds}; an over-budget run is not valid evidence"
+        )
+    return {
+        "host": host,
+        "budget_file": budget_file,
+        "invocation_id": invocation_id,
+        "started_epoch": started,
+        "ended_epoch": ended,
+        "card_seconds": card_seconds,
+        "max_card_seconds": cap_seconds,
+    }
+
+
+def verify_final_probe_ledger(
+    ledger: dict[str, Any],
+    *,
+    approved_sha: str,
+    host: str,
+    expected_invocations: dict[int, dict[str, Any]],
+    expected_pairs_per_card: int,
+    expected_max_pairs: int = G3_APPROVED_MAX_PAIRS,
+    max_card_seconds_cap: float = G3_APPROVED_MAX_CARD_SECONDS,
+    path_label: str,
+) -> None:
+    """The FINAL shared ledger, retrieved after BOTH cards exited.
+
+    This is the complete-accounting counterpart of the per-card snapshots:
+    exactly the two expected successful invocations (one per shard), the
+    exact approved caps, the full 804,600-pair charge, spent card-seconds
+    equal to the two invocations' intervals and within the cap, and each
+    card's measured scoring window inside its invocation interval. A resume,
+    an old/failed/extra invocation, or a disagreement with a card's own
+    snapshot all refuse.
+    """
+    if not isinstance(ledger, dict):
+        raise RunnerError(f"{path_label}: final ledger is not a JSON object")
+    if ledger.get("version") != 1:
+        raise RunnerError(f"{path_label}: final ledger version {ledger.get('version')!r} != 1")
+    if ledger.get("approved_sha") != approved_sha:
+        raise RunnerError(
+            f"{path_label}: final ledger is bound to {ledger.get('approved_sha')!r}, "
+            f"not the runs' approved {approved_sha!r}"
+        )
+    _require_int(ledger.get("max_pairs"), f"{path_label} final ledger max_pairs", expected_max_pairs)
+    cap_seconds = _require_finite_positive(
+        ledger.get("max_card_seconds"), f"{path_label} final ledger max_card_seconds"
+    )
+    if cap_seconds > max_card_seconds_cap:
+        raise RunnerError(
+            f"{path_label}: final ledger card-second cap {cap_seconds} exceeds the G3 "
+            f"budget of at most {max_card_seconds_cap} s"
+        )
+    invocations = ledger.get("invocations")
+    if not isinstance(invocations, list):
+        raise RunnerError(f"{path_label}: final ledger carries no invocation list")
+    if len(invocations) != len(expected_invocations):
+        raise RunnerError(
+            f"{path_label}: final ledger holds {len(invocations)} invocation(s), "
+            f"expected exactly {len(expected_invocations)} (one fresh run per card); "
+            "old/extra/failed invocations refuse the ETA"
+        )
+    by_id = {
+        inv.get("invocation_id"): inv for inv in invocations if isinstance(inv, dict)
+    }
+    spent_sum = 0.0
+    for shard_id, expected in sorted(expected_invocations.items()):
+        inv = by_id.get(expected["invocation_id"])
+        if inv is None:
+            raise RunnerError(
+                f"{path_label}: shard{shard_id} invocation {expected['invocation_id']!r} "
+                "is missing from the final ledger"
+            )
+        if inv.get("shard_id") != shard_id:
+            raise RunnerError(f"{path_label}: final ledger invocation shard mismatch")
+        if inv.get("finalized") is not True or inv.get("exit_code") != 0:
+            raise RunnerError(
+                f"{path_label}: shard{shard_id} invocation is not a finalized success "
+                f"(finalized={inv.get('finalized')!r} exit_code={inv.get('exit_code')!r})"
+            )
+        if inv.get("cards_used") != 1 or inv.get("host") != host:
+            raise RunnerError(
+                f"{path_label}: shard{shard_id} invocation cards/host "
+                f"{inv.get('cards_used')!r}/{inv.get('host')!r} != 1/{host!r}"
+            )
+        _require_int(inv.get("pairs_charged"), f"{path_label} shard{shard_id} pairs_charged",
+                     expected_pairs_per_card)
+        # the final ledger must agree with the card's own snapshot verbatim
+        for field in ("started_epoch", "ended_epoch", "card_seconds"):
+            if inv.get(field) != expected[field]:
+                raise RunnerError(
+                    f"{path_label}: shard{shard_id} {field} {inv.get(field)!r} != the "
+                    f"card snapshot's {expected[field]!r}; snapshot and final ledger disagree"
+                )
+        started = float(expected["started_epoch"])
+        ended = float(expected["ended_epoch"])
+        window_start = float(expected["window_start_epoch"])
+        window_end = float(expected["window_end_epoch"])
+        if window_start < started or window_end > ended:
+            raise RunnerError(
+                f"{path_label}: shard{shard_id} scoring window "
+                f"[{window_start:.3f}, {window_end:.3f}] lies outside its ledger "
+                f"invocation [{started:.3f}, {ended:.3f}]"
+            )
+        spent_sum += float(expected["card_seconds"])
+    _require_int(ledger.get("pairs_charged"), f"{path_label} final ledger pairs_charged",
+                 len(expected_invocations) * expected_pairs_per_card)
+    spent = _require_finite_positive(
+        ledger.get("card_seconds_spent"), f"{path_label} final ledger card_seconds_spent",
+        allow_zero=True,
+    )
+    if not math.isclose(spent, spent_sum, rel_tol=1e-6, abs_tol=0.05):
+        raise RunnerError(
+            f"{path_label}: final ledger card_seconds_spent {spent} != the two "
+            f"invocations' {spent_sum:.2f} s"
+        )
+    if spent > cap_seconds:
+        raise RunnerError(
+            f"{path_label}: the two cards spent {spent} card-seconds, beyond the "
+            f"approved {cap_seconds}"
+        )
+
+
+def _check_probe_timing_record(
+    record: dict[str, Any],
+    *,
+    shard_id: int,
+    device: str,
+    probe_facts: dict[int, dict[str, int]],
+    n_cads: int,
+    expected_scope: dict[str, Any],
+    where: str,
+) -> int:
+    """One timing line must describe a complete probe query of THIS run scope.
+
+    Shared by the ETA (full-coverage + invocation binding on top) and the
+    runner's resume gate (no completeness requirement): scope, shard/device,
+    membership in the shard's fixed probe set, selection facts, a finite
+    ordered window whose e2e equals end-start, the complete gallery pair /
+    batch / scored counts and this query's chunk file name.
+    """
+    expected_batches = (n_cads + G3_BATCH_SIZE - 1) // G3_BATCH_SIZE
+    if record.get("record_type") != "query_timing" or record.get("schema_version") != G3_TIMING_SCHEMA_VERSION:
+        raise RunnerError(f"{where}: not a {G3_TIMING_SCHEMA_VERSION} query_timing record")
+    for field, expected in expected_scope.items():
+        if record.get(field) != expected:
+            raise RunnerError(
+                f"{where}: scope {field} {record.get(field)!r} != {expected!r}"
+            )
+    if record.get("shard_id") != shard_id or record.get("device") != device:
+        raise RunnerError(f"{where}: shard/device mismatch for {device}/shard{shard_id}")
+    text_index = record.get("text_index")
+    if not isinstance(text_index, int) or isinstance(text_index, bool) or text_index not in probe_facts:
+        raise RunnerError(f"{where}: text_index {text_index!r} is not one of this shard's probes")
+    facts = probe_facts[text_index]
+    if record.get("text_layer") != facts["text_layer"] or record.get("n_bert_tokens") != facts["n_bert_tokens"]:
+        raise RunnerError(f"{where}: layer/length facts differ from the verified selection")
+    if record.get("text_range") != [text_index, text_index + G3_TEXTS_PER_CHUNK]:
+        raise RunnerError(f"{where}: text_range is not the single-query chunk")
+    window = record.get("window")
+    try:
+        start = float(window["start_epoch"])
+        end = float(window["end_epoch"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RunnerError(f"{where}: invalid window {window!r}") from exc
+    if not (math.isfinite(start) and math.isfinite(end)) or start > end:
+        raise RunnerError(f"{where}: window is not finite/ordered")
+    e2e = record.get("e2e_s")
+    _require_finite_positive(e2e, f"{where} e2e_s")
+    if not math.isclose(float(e2e), end - start, rel_tol=1e-6, abs_tol=1e-6):
+        raise RunnerError(f"{where}: e2e_s does not equal end-start of its window")
+    if record.get("n_pairs") != n_cads:
+        raise RunnerError(
+            f"{where}: n_pairs {record.get('n_pairs')!r} != the complete gallery {n_cads}"
+        )
+    if record.get("n_batches") != expected_batches:
+        raise RunnerError(
+            f"{where}: n_batches {record.get('n_batches')!r} != the batch{G3_BATCH_SIZE} "
+            f"production count {expected_batches}"
+        )
+    if record.get("n_scored") != n_cads or record.get("n_rejected") != 0:
+        raise RunnerError(
+            f"{where}: query is not complete (scored={record.get('n_scored')!r} "
+            f"rejected={record.get('n_rejected')!r}); only complete-gallery "
+            "queries are valid evidence"
+        )
+    n_valid = record.get("n_valid_total")
+    if isinstance(n_valid, bool) or not isinstance(n_valid, int) or n_valid <= 0:
+        raise RunnerError(f"{where}: n_valid_total {n_valid!r} is not a positive int")
+    if record.get("chunk_file") != chunk_file_name(shard_id, text_index, text_index + G3_TEXTS_PER_CHUNK):
+        raise RunnerError(f"{where}: chunk_file does not name this query's chunk")
+    return text_index
+
+
+def verify_probe_resume_records(
+    records: Sequence[dict[str, Any]],
+    *,
+    shard_id: int,
+    device: str,
+    selection: dict[str, Any],
+    expected_scope: dict[str, Any],
+    path_label: str,
+) -> set[int]:
+    """STRICT resume-side sidecar validation (runner gate; no completeness).
+
+    Every line must be a valid complete probe-query timing record of THIS
+    shard's fixed probe under the current scope -- a foreign, drifted,
+    duplicated, torn, non-probe or count-invalid line refuses the resume
+    BEFORE any new forward. Returns the set of timed query text indices; the
+    caller cross-checks them one-to-one against the verified chunks (an
+    orphan timing line without a verified chunk refuses; a verified chunk
+    without its timing line refuses in plan_chunks).
+    """
+    n_cads = int(selection["counts"]["n_cads"])
+    probe_facts = probe_facts_for_shard(selection, shard_id)
+    texts: set[int] = set()
+    for i, record in enumerate(records):
+        text_index = _check_probe_timing_record(
+            record,
+            shard_id=shard_id,
+            device=device,
+            probe_facts=probe_facts,
+            n_cads=n_cads,
+            expected_scope=expected_scope,
+            where=f"{path_label} record {i}",
+        )
+        if text_index in texts:
+            raise RunnerError(
+                f"{path_label} record {i}: text_index {text_index} timed twice "
+                "(duplicate query); refusing the resume"
+            )
+        texts.add(text_index)
+    return texts
 
 
 def verify_probe_timing_records(
@@ -760,66 +1276,57 @@ def verify_probe_timing_records(
     device: str,
     selection: dict[str, Any],
     expected_scope: dict[str, Any],
+    expected_invocation_id: Optional[str] = None,
+    invocation_window: Optional[dict[str, float]] = None,
     path_label: str,
 ) -> list[dict[str, Any]]:
-    """The sidecar must cover EXACTLY the shard's 50 probes, each complete once."""
+    """The sidecar must cover EXACTLY the shard's 50 probes, each complete once.
+
+    R1: with ``expected_invocation_id``/``invocation_window`` every line must
+    also name the card's contributing ledger invocation and lie inside that
+    invocation's [started, ended] interval -- a timing line pointing at no
+    ledger invocation, or measured outside the charged interval, refuses.
+    """
     n_cads = int(selection["counts"]["n_cads"])
-    expected_batches = (n_cads + G3_BATCH_SIZE - 1) // G3_BATCH_SIZE
     probe_facts = probe_facts_for_shard(selection, shard_id)
+    if expected_invocation_id is not None or invocation_window is not None:
+        if not isinstance(expected_invocation_id, str) or not expected_invocation_id:
+            raise RunnerError(f"{path_label}: no contributing invocation to bind against")
+        try:
+            inv_started = float((invocation_window or {})["started_epoch"])
+            inv_ended = float((invocation_window or {})["ended_epoch"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RunnerError(f"{path_label}: invalid invocation window") from exc
+        if not (math.isfinite(inv_started) and math.isfinite(inv_ended)) or inv_started >= inv_ended:
+            raise RunnerError(f"{path_label}: invocation window is not finite/ordered")
     seen: dict[int, dict[str, Any]] = {}
     for i, record in enumerate(records):
         where = f"{path_label} record {i}"
-        if record.get("record_type") != "query_timing" or record.get("schema_version") != G3_TIMING_SCHEMA_VERSION:
-            raise RunnerError(f"{where}: not a {G3_TIMING_SCHEMA_VERSION} query_timing record")
-        for field, expected in expected_scope.items():
-            if record.get(field) != expected:
+        text_index = _check_probe_timing_record(
+            record,
+            shard_id=shard_id,
+            device=device,
+            probe_facts=probe_facts,
+            n_cads=n_cads,
+            expected_scope=expected_scope,
+            where=where,
+        )
+        if expected_invocation_id is not None:
+            if record.get("invocation_id") != expected_invocation_id:
                 raise RunnerError(
-                    f"{where}: scope {field} {record.get(field)!r} != {expected!r}"
+                    f"{where}: invocation_id {record.get('invocation_id')!r} != the "
+                    f"card's successful ledger invocation {expected_invocation_id!r}; "
+                    "the timing line did not come from the charged run"
                 )
-        if record.get("shard_id") != shard_id or record.get("device") != device:
-            raise RunnerError(f"{where}: shard/device mismatch for {device}/shard{shard_id}")
-        text_index = record.get("text_index")
-        if not isinstance(text_index, int) or isinstance(text_index, bool) or text_index not in probe_facts:
-            raise RunnerError(f"{where}: text_index {text_index!r} is not one of this shard's probes")
+            start = float(record["window"]["start_epoch"])
+            end = float(record["window"]["end_epoch"])
+            if start < inv_started or end > inv_ended:
+                raise RunnerError(
+                    f"{where}: query window [{start:.3f}, {end:.3f}] lies outside the "
+                    f"ledger invocation [{inv_started:.3f}, {inv_ended:.3f}]"
+                )
         if text_index in seen:
             raise RunnerError(f"{where}: text_index {text_index} timed twice (duplicate query)")
-        facts = probe_facts[text_index]
-        if record.get("text_layer") != facts["text_layer"] or record.get("n_bert_tokens") != facts["n_bert_tokens"]:
-            raise RunnerError(f"{where}: layer/length facts differ from the verified selection")
-        if record.get("text_range") != [text_index, text_index + G3_TEXTS_PER_CHUNK]:
-            raise RunnerError(f"{where}: text_range is not the single-query chunk")
-        window = record.get("window")
-        try:
-            start = float(window["start_epoch"])
-            end = float(window["end_epoch"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise RunnerError(f"{where}: invalid window {window!r}") from exc
-        if not (math.isfinite(start) and math.isfinite(end)) or start > end:
-            raise RunnerError(f"{where}: window is not finite/ordered")
-        e2e = record.get("e2e_s")
-        _require_finite_positive(e2e, f"{where} e2e_s")
-        if not math.isclose(float(e2e), end - start, rel_tol=1e-6, abs_tol=1e-6):
-            raise RunnerError(f"{where}: e2e_s does not equal end-start of its window")
-        if record.get("n_pairs") != n_cads:
-            raise RunnerError(
-                f"{where}: n_pairs {record.get('n_pairs')!r} != the complete gallery {n_cads}"
-            )
-        if record.get("n_batches") != expected_batches:
-            raise RunnerError(
-                f"{where}: n_batches {record.get('n_batches')!r} != the batch{G3_BATCH_SIZE} "
-                f"production count {expected_batches}"
-            )
-        if record.get("n_scored") != n_cads or record.get("n_rejected") != 0:
-            raise RunnerError(
-                f"{where}: query is not complete (scored={record.get('n_scored')!r} "
-                f"rejected={record.get('n_rejected')!r}); the ETA prices only "
-                "complete-gallery queries"
-            )
-        n_valid = record.get("n_valid_total")
-        if isinstance(n_valid, bool) or not isinstance(n_valid, int) or n_valid <= 0:
-            raise RunnerError(f"{where}: n_valid_total {n_valid!r} is not a positive int")
-        if record.get("chunk_file") != chunk_file_name(shard_id, text_index, text_index + G3_TEXTS_PER_CHUNK):
-            raise RunnerError(f"{where}: chunk_file does not name this query's chunk")
         seen[text_index] = record
     missing = sorted(set(probe_facts) - set(seen))
     if missing:
@@ -832,6 +1339,105 @@ def verify_probe_timing_records(
 
 
 # ---------------------------------------------------------------------------
+# Probe chunk content verification (ETA: read, never trust existence)
+# ---------------------------------------------------------------------------
+
+
+def verify_probe_chunk_content(
+    path,
+    *,
+    pair_space: PairSpace,
+    shard_id: int,
+    text_index: int,
+    expected_binding: dict[str, Any],
+    timing_record: dict[str, Any],
+    cad_valid_counts: Sequence[dict[str, int]],
+    path_label: str,
+) -> dict[str, int]:
+    """READ and fully verify ONE complete probe query chunk (fail closed).
+
+    A timing line must be backed by a real published chunk: strict JSONL
+    parse (a torn/invalid line refuses), the audited dense exact pair
+    sequence with all binding fields (score/schema/asset/code/probe scope),
+    8,046 finite complete scored rows whose per-row valid-item counts equal
+    the AUDITED worker length index, and totals that match the timing record
+    exactly (scored/rejected counts and the summed valid items). Missing or
+    duplicated rows, empty files, non-finite scores, a wrong scope and any
+    count disagreement all refuse -- nothing is inferred from claimed counts.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise RunnerError(
+            f"{path_label}: chunk {path.name} does not exist; a timing line must "
+            "imply its published chunk"
+        )
+    t0, t1 = text_index, text_index + G3_TEXTS_PER_CHUNK
+    records: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as stream:
+        for lineno, line in enumerate(stream, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise RunnerError(
+                    f"{path_label}: {path.name} line {lineno} is not complete JSON "
+                    f"(torn write?): {exc}"
+                ) from exc
+            if not isinstance(record, dict):
+                raise RunnerError(f"{path_label}: {path.name} line {lineno} is not an object")
+            records.append(record)
+    issues = verify_chunk_records(
+        records,
+        pair_space,
+        shard_id,
+        t0,
+        t1,
+        expected_binding,
+        extra_binding_fields=(PROBE_SCOPE_FIELD,),
+    )
+    if issues:
+        raise RunnerError(f"{path_label}: {path.name} failed verification: {issues[:3]}")
+    body = records[1:]
+    valid_sum = 0
+    for offset, row in enumerate(body):
+        if row.get("score_name") != SCORE_NAME or row.get("spec_version") != SCORE_SPEC_VERSION:
+            raise RunnerError(
+                f"{path_label}: {path.name} row {offset} carries an unreviewed "
+                f"score identity {row.get('score_name')!r}/{row.get('spec_version')!r}"
+            )
+        cad_index = int(row["cad_index"])
+        expected = cad_valid_counts[cad_index]
+        if (
+            row.get("n_valid_x") != expected["n_valid_x"]
+            or row.get("n_valid_y") != expected["n_valid_y"]
+            or row.get("n_real_tokens") != expected["n_real_tokens"]
+        ):
+            raise RunnerError(
+                f"{path_label}: {path.name} row {offset} (cad_index {cad_index}) valid-item "
+                "counts differ from the audited worker length index"
+            )
+        valid_sum += int(row["n_valid_total"])
+    header = records[0]
+    if (
+        header.get("n_scored") != timing_record.get("n_scored")
+        or header.get("n_rejected") != timing_record.get("n_rejected")
+    ):
+        raise RunnerError(
+            f"{path_label}: {path.name} header counts "
+            f"({header.get('n_scored')!r}/{header.get('n_rejected')!r}) != the "
+            f"timing record ({timing_record.get('n_scored')!r}/{timing_record.get('n_rejected')!r})"
+        )
+    if valid_sum != timing_record.get("n_valid_total"):
+        raise RunnerError(
+            f"{path_label}: {path.name} rows sum to {valid_sum} valid items, the "
+            f"timing record claims {timing_record.get('n_valid_total')!r}"
+        )
+    return {"n_scored": len(body), "n_valid_total": valid_sum}
+
+
+# ---------------------------------------------------------------------------
 # The two-card G3 ETA (slower card; per-layer slowest query; fail-closed)
 # ---------------------------------------------------------------------------
 
@@ -841,6 +1447,8 @@ def estimate_g3_probe_eta(
     evidence_by_device: dict[str, dict[str, Any]],
     *,
     expected_probe_selection_sha256: str,
+    expected_pair_manifest_sha256: str,
+    final_ledger: dict[str, Any],
     overhead_seconds: Optional[float] = None,
     safety_factor: float = ETA_SAFETY_FACTOR,
 ) -> dict[str, Any]:
@@ -854,6 +1462,16 @@ def estimate_g3_probe_eta(
     must be finite and >= the sum of both cold starts. The total is
     multiplied by ``safety_factor`` (>= 1.30) and compared against the
     604,800 s gate. The coefficient is never widened after seeing results.
+
+    R1: beyond the cross-card agreement, both summaries are bound to the
+    REVIEWED fixed assets (``expected_pair_manifest_sha256`` from the
+    committed fingerprint config, the pinned checkpoint/BERT/score/full-272
+    shape) and their ledger snapshots must show the real accounting; the
+    FINAL shared ``final_ledger`` (retrieved after both cards exited) must
+    prove exactly the two successful fresh-run invocations, the exact
+    804,600-pair charge and card-seconds within the approved cap. A first
+    finisher's snapshot with a legitimately pending peer is accepted; the
+    final ledger is the completeness arbiter.
     """
     if (
         isinstance(safety_factor, bool)
@@ -864,67 +1482,113 @@ def estimate_g3_probe_eta(
         raise RunnerError(
             f"safety_factor must be finite and >= {ETA_SAFETY_FACTOR}, got {safety_factor!r}"
         )
+    if not isinstance(final_ledger, dict) or not final_ledger:
+        raise RunnerError(
+            "the G3 ETA requires the FINAL shared budget ledger (retrieved after "
+            "both cards exited); per-card snapshots alone cannot prove the "
+            "complete successful accounting"
+        )
     if selection.get("schema_version") != G3_SELECTION_SCHEMA_VERSION:
         raise RunnerError(f"eta-g3 requires a {G3_SELECTION_SCHEMA_VERSION} selection")
     verify_official_dimensions(int(selection["counts"]["n_texts"]), int(selection["counts"]["n_cads"]))
+    if int(selection["counts"]["probe_pairs_total"]) != G3_APPROVED_MAX_PAIRS:
+        raise RunnerError(
+            f"probe selection totals {selection['counts']['probe_pairs_total']} pairs, "
+            f"not the approved {G3_APPROVED_MAX_PAIRS}"
+        )
     if set(evidence_by_device) != set(SHARD_BY_DEVICE):
         raise RunnerError("exactly one probe evidence bundle per device (npu:0 and npu:1)")
 
     n_cads = int(selection["counts"]["n_cads"])
     full_pairs = int(selection["counts"]["n_pairs"])
+    expected_pairs_per_card = _expected_probe_pairs_per_card(selection)
     per_card: dict[str, Any] = {}
     windows: dict[str, dict[str, float]] = {}
     hosts: set[str] = set()
     ledgers: set[str] = set()
+    ledger_caps: set[float] = set()
     invocation_ids: set[str] = set()
     env_shared: dict[str, dict[str, Any]] = {}
+    expected_invocations: dict[int, dict[str, Any]] = {}
+    approved_sha: Optional[str] = None
     for device, shard in sorted(SHARD_BY_DEVICE.items(), key=lambda kv: kv[1]):
         evidence = evidence_by_device[device]
         summary = evidence.get("summary") or {}
         records = evidence.get("timing_records")
         if not isinstance(records, list) or not records:
             raise RunnerError(f"{device}: no timing records")
-        info = verify_probe_summary(summary, device=device, path_label=f"{device} summary")
-        budget_info = verify_probe_budget_evidence(summary, device=device, path_label=f"{device} summary")
+        info = verify_probe_summary(
+            summary,
+            shard_id=shard,
+            device=device,
+            selection=selection,
+            expected_pair_manifest_sha256=expected_pair_manifest_sha256,
+            path_label=f"{device} summary",
+        )
+        budget_info = verify_probe_budget_evidence(
+            summary,
+            shard_id=shard,
+            expected_pairs_per_card=expected_pairs_per_card,
+            path_label=f"{device} summary",
+        )
         if info["probe_sha"] != expected_probe_selection_sha256:
             raise RunnerError(
                 f"{device}: run is bound to probe selection {info['probe_sha']!r}, "
                 f"not the committed {expected_probe_selection_sha256!r}"
             )
+        if info["cold_start_s"] > budget_info["ended_epoch"] - budget_info["started_epoch"] + 1e-9:
+            raise RunnerError(
+                f"{device}: cold start {info['cold_start_s']} exceeds the ledger "
+                "invocation interval; the run's own timeline disagrees"
+            )
         env_shared[device] = {field: summary.get(field) for field in _ETA_ENV_SHARED_FIELDS}
         scope = {
             PROBE_SCOPE_FIELD: expected_probe_selection_sha256,
             "git_sha": info["git_sha"],
-            "pair_manifest_sha256": summary.get("pair_manifest_sha256"),
+            "pair_manifest_sha256": expected_pair_manifest_sha256,
             "checkpoint_sha256": PINNED_CHECKPOINT_SHA256,
             "score_name": SCORE_NAME,
             "spec_version": SCORE_SPEC_VERSION,
         }
-        if not scope["pair_manifest_sha256"]:
-            raise RunnerError(f"{device}: summary lacks the pair-manifest binding")
         ordered = verify_probe_timing_records(
             records,
             shard_id=shard,
             device=device,
             selection=selection,
             expected_scope=scope,
+            expected_invocation_id=budget_info["invocation_id"],
+            invocation_window={
+                "started_epoch": budget_info["started_epoch"],
+                "ended_epoch": budget_info["ended_epoch"],
+            },
             path_label=f"{device} timing",
         )
         hosts.add(budget_info["host"])
         ledgers.add(budget_info["budget_file"])
+        ledger_caps.add(budget_info["max_card_seconds"])
         invocation_ids.add(budget_info["invocation_id"])
-        # chunk accounting cross-check: this invocation plus the previously
-        # completed ones must account for the shard's full probe set
+        approved_sha = info["git_sha"]
+        expected_invocations[shard] = {
+            "invocation_id": budget_info["invocation_id"],
+            "started_epoch": budget_info["started_epoch"],
+            "ended_epoch": budget_info["ended_epoch"],
+            "card_seconds": budget_info["card_seconds"],
+            "window_start_epoch": min(float(r["window"]["start_epoch"]) for r in ordered),
+            "window_end_epoch": max(float(r["window"]["end_epoch"]) for r in ordered),
+        }
+        # fresh-run-only chunk accounting: the whole shard probe exactly once
         completed_now = summary.get("chunks_completed_now")
         completed_before = summary.get("chunks_previously_completed")
         if (
             not isinstance(completed_now, int) or isinstance(completed_now, bool)
             or not isinstance(completed_before, int) or isinstance(completed_before, bool)
-            or completed_now + completed_before != len(ordered)
+            or completed_before != 0
+            or completed_now != len(ordered)
         ):
             raise RunnerError(
                 f"{device}: chunk accounting {completed_now!r}+{completed_before!r} "
-                f"!= the {len(ordered)} timed queries"
+                f"!= the {len(ordered)} timed queries of one fresh run; resumed or "
+                "partial evidence refuses the ETA"
             )
         shard_entry = next(s for s in selection["shards"] if int(s["shard_id"]) == shard)
         layer_full = {int(k): int(v) for k, v in shard_entry["layer_text_counts"].items()}
@@ -973,10 +1637,25 @@ def estimate_g3_probe_eta(
         raise RunnerError(f"probe results come from different hosts {sorted(hosts)}")
     if len(ledgers) != 1:
         raise RunnerError(f"probe results were charged to different ledgers {sorted(ledgers)}")
+    if len(ledger_caps) != 1:
+        raise RunnerError(
+            f"the two cards were charged under different card-second caps {sorted(ledger_caps)}"
+        )
     for field in _ETA_ENV_SHARED_FIELDS:
         values = [env_shared[d][field] for d in SHARD_BY_DEVICE]
         if not values[0] or values[0] != values[1]:
             raise RunnerError(f"the two probe runs disagree on {field}")
+    # the FINAL shared ledger is the completeness arbiter: exactly the two
+    # successful fresh-run invocations, exact caps and charges, card-seconds
+    # within the approved budget, scoring windows inside the charged intervals
+    verify_final_probe_ledger(
+        final_ledger,
+        approved_sha=approved_sha,
+        host=next(iter(hosts)),
+        expected_invocations=expected_invocations,
+        expected_pairs_per_card=expected_pairs_per_card,
+        path_label="final ledger",
+    )
 
     overlap = window_overlap_fraction(windows["npu:0"], windows["npu:1"])
     if overlap < MIN_WINDOW_OVERLAP_FRACTION:
@@ -1112,15 +1791,33 @@ def run_eta_g3(args) -> tuple[dict[str, Any], Optional[Path]]:
 
     Pure CPU. Re-verifies the committed probe selection against the live
     manifest + token audit + frozen G2 config, binds both summaries and both
-    timing sidecars to the committed selection SHA and the reviewed
-    fingerprints, then applies the slower-card / per-layer-slowest-query /
-    cold-start / overlap / safety-factor rules.
+    timing sidecars to the committed selection SHA and the REVIEWED fixed
+    fingerprints (never merely to each other), checks the real ledger
+    accounting in both snapshots plus the FINAL shared ledger
+    (``--final-ledger``, retrieved after both cards exited), READS and fully
+    verifies every probe chunk against the audited worker length index, then
+    applies the slower-card / per-layer-slowest-query / cold-start / overlap
+    / safety-factor rules.
     """
     if len(args.card_summary) != 2:
         raise RunnerError(
             "eta-g3 requires exactly two --card-summary files (one per card; a "
             "single card is never scaled by an ideal 2x)"
         )
+    if not args.final_ledger:
+        raise RunnerError(
+            "eta-g3 requires --final-ledger: the shared budget ledger JSON "
+            "retrieved from the run's budget path AFTER BOTH cards finalized; "
+            "archive it next to the summaries (SHA256SUMS) as the complete "
+            "accounting evidence"
+        )
+    final_ledger_path = Path(args.final_ledger).resolve()
+    if not final_ledger_path.is_file():
+        raise RunnerError(f"final ledger {final_ledger_path} does not exist")
+    try:
+        final_ledger = json.loads(final_ledger_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RunnerError(f"final ledger {final_ledger_path} is not valid JSON: {exc}") from exc
     paths = [Path(p).resolve() for p in args.card_summary]
     if paths[0] == paths[1]:
         raise RunnerError("eta-g3 requires two distinct card summary files")
@@ -1154,24 +1851,65 @@ def run_eta_g3(args) -> tuple[dict[str, Any], Optional[Path]]:
             raise RunnerError(f"{device}: bad timing_file reference {timing_name!r}")
         timing_path = path.parent / timing_name
         records = read_timing_records(timing_path)
-        for record in records:
-            chunk = record.get("chunk_file")
-            if isinstance(chunk, str) and Path(chunk).name == chunk:
-                if not (path.parent / chunk).is_file():
-                    raise RunnerError(
-                        f"{device}: timing claims chunk {chunk} but {path.parent / chunk} "
-                        "does not exist; a timing line must imply its published chunk"
-                    )
         evidence_by_device[device] = {"summary": summary, "timing_records": records}
 
     estimate = estimate_g3_probe_eta(
         selection,
         evidence_by_device,
         expected_probe_selection_sha256=selection_sha,
+        expected_pair_manifest_sha256=reviewed[PAIR_MANIFEST_FILE],
+        final_ledger=final_ledger,
         overhead_seconds=args.overhead_seconds,
     )
+
+    # Every timing line must be backed by a REAL verified chunk, and the card
+    # directory must hold exactly the timed chunks -- an existence check or a
+    # claimed count is never accepted as evidence.
+    pair_space = PairSpace(
+        n_texts=int(selection["counts"]["n_texts"]), n_cads=int(selection["counts"]["n_cads"])
+    )
+    cad_valid_counts = load_cad_length_index(manifest_dir)
+    for path, summary in zip(paths, summaries):
+        device = summary["device"]
+        shard = SHARD_BY_DEVICE[device]
+        binding = {
+            "schema_version": CHUNK_SCHEMA_VERSION,
+            "pair_manifest_sha256": reviewed[PAIR_MANIFEST_FILE],
+            "git_sha": summary["git_sha"],
+            "checkpoint_sha256": PINNED_CHECKPOINT_SHA256,
+            "device": device,
+            "torch_dtype": "float32",
+            "trim_mode": "none",
+            "text_cache": False,
+            "score_name": SCORE_NAME,
+            "spec_version": SCORE_SPEC_VERSION,
+            PROBE_SCOPE_FIELD: selection_sha,
+        }
+        records = evidence_by_device[device]["timing_records"]
+        timed_chunks = {record["chunk_file"] for record in records}
+        on_disk = {p.name for p in path.parent.glob("chunk_s*_t*_*.jsonl")}
+        extra = sorted(on_disk - timed_chunks)
+        if extra:
+            raise RunnerError(
+                f"{device}: {len(extra)} chunk file(s) without a timing line in this "
+                f"scope, e.g. {extra[:3]}; chunks and the sidecar must correspond "
+                "one-to-one"
+            )
+        for record in records:
+            verify_probe_chunk_content(
+                path.parent / record["chunk_file"],
+                pair_space=pair_space,
+                shard_id=shard,
+                text_index=int(record["text_index"]),
+                expected_binding=binding,
+                timing_record=record,
+                cad_valid_counts=cad_valid_counts,
+                path_label=f"{device} chunk",
+            )
+
     estimate["inputs"] = {
         "card_summaries": [str(p) for p in paths],
+        "final_ledger": str(final_ledger_path),
         "overhead_seconds": args.overhead_seconds,
         "g3_probe_selection_sha256": selection_sha,
         "g2_selection_sha256": g2_sha,
@@ -1204,6 +1942,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="reviewed derived token-length audit JSON (required by both modes)")
     parser.add_argument("--card-summary", action="append", default=[],
                         help="eta-g3: a per-card probe run summary JSON (pass exactly two)")
+    parser.add_argument("--final-ledger", default=None,
+                        help="eta-g3: REQUIRED final shared budget ledger JSON, "
+                             "retrieved after BOTH cards finalized (the complete "
+                             "accounting evidence; archive it with the summaries)")
     parser.add_argument("--overhead-seconds", type=float, default=None,
                         help="eta-g3: total overhead; must be >= the two measured cold starts")
     parser.add_argument("--repo-root", default=".")

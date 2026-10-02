@@ -85,8 +85,12 @@ in their headers; chunk verification checks that scope field in BOTH
 directions, so full-matrix and probe outputs can never verify under each
 other's resume. A per-query timing sidecar (``timing_s{SS}.jsonl``) is
 appended AFTER each chunk's atomic publish (true start/end epochs, E2E =
-score + serialization + disk, real pair/batch/valid counts); a completed
-chunk without its timing line refuses the resume. Probe runs are fixed to
+score + serialization + disk, real pair/batch/valid counts). R1 (2026-10-02):
+a FRESH probe run refuses an existing sidecar outright; a RESUME strictly
+re-validates every sidecar line against this shard's fixed probe and the
+current scope BEFORE any forward, a completed chunk without its timing line
+refuses, and an orphan timing line without a verified chunk refuses too --
+chunks and sidecar must pair one-to-one. Probe runs are fixed to
 batch 16 (+honest tail), texts_per_chunk=1; the summary additionally records
 cold start, per-device peak HBM, the timing sidecar name and all scope
 fingerprints. Without ``--probe-selection`` every output is byte-identical
@@ -135,10 +139,10 @@ from .text2cad_g3_probe import (  # G3 probe scope (pure-CPU module, no forward)
     probe_texts_for_shard,
     read_timing_records,
     timing_sidecar_name,
-    verified_sidecar_text_set,
     verify_g3_g2_config_binding,
     verify_g3_probe_selection_against_manifest,
     verify_g3_token_audit,
+    verify_probe_resume_records,
 )
 from .text2cad_pair_index import (
     CAD_SEQ_ZIP_SHA256,
@@ -997,6 +1001,76 @@ def plan_chunks(
     return todo, completed
 
 
+def load_probe_sidecar_timed_texts(
+    out_dir,
+    cfg: RunnerConfig,
+    selection: dict[str, Any],
+    scope: dict[str, Any],
+    *,
+    resume: bool,
+) -> Optional[set[int]]:
+    """G3 R1: the probe sidecar gate, always BEFORE any new forward.
+
+    A FRESH probe run refuses an existing timing sidecar outright -- appending
+    to leftover timing lines would mix evidence across runs. A RESUME reads
+    the sidecar with the STRICT per-record validation (this shard's fixed
+    probe under the current scope; foreign/drifted/duplicated/torn or
+    count-invalid lines refuse) and returns the timed query text set (empty
+    when no sidecar exists yet). Returns None for a fresh run (no timing
+    requirements). The caller then cross-checks the returned set one-to-one
+    against the verified chunks.
+    """
+    sidecar = Path(out_dir) / timing_sidecar_name(cfg.shard_id)
+    if not resume:
+        if sidecar.exists():
+            raise RunnerError(
+                f"fresh probe run but timing sidecar {sidecar} already exists; "
+                "refusing to mix timing evidence across runs -- pass --resume to "
+                "continue the SAME shard after verification, or stop"
+            )
+        return None
+    if not sidecar.exists():
+        return set()
+    return verify_probe_resume_records(
+        read_timing_records(sidecar),
+        shard_id=cfg.shard_id,
+        device=cfg.device,
+        selection=selection,
+        expected_scope=scope,
+        path_label=str(sidecar),
+    )
+
+
+def require_sidecar_chunk_correspondence(
+    timed_texts: set[int],
+    completed_names: Sequence[str],
+    *,
+    path_label: str,
+) -> None:
+    """G3 R1 resume: sidecar lines and verified chunks must pair one-to-one.
+
+    ``plan_chunks`` already refuses a completed chunk WITHOUT its timing
+    line; this refuses the reverse -- an orphan timing line whose query has
+    no verified chunk. Such a line can never send the query back into the
+    todo list (no re-scoring of timed-but-chunkless queries, no fabricated
+    reconstruction of missing outputs).
+    """
+    completed_texts = set()
+    for name in completed_names:
+        match = _CHUNK_NAME_RE.match(name)
+        if match is None:  # plan_chunks only returns verified same-shard names
+            raise RunnerError(f"{path_label}: unexpected completed chunk name {name!r}")
+        completed_texts.add(int(match.group(2)))
+    orphans = sorted(set(timed_texts) - completed_texts)
+    if orphans:
+        raise RunnerError(
+            f"{path_label}: sidecar timing has no verified chunk for "
+            f"{len(orphans)} query(ies), e.g. text_index {orphans[:3]}; the "
+            "timing evidence and the published chunks disagree -- refusing to "
+            "re-score them"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Environment / summary records
 # ---------------------------------------------------------------------------
@@ -1228,6 +1302,112 @@ class FrozenMatrixScorer:
             ):
                 record[key] = score[key]
         return record
+
+
+def execute_probe_query(
+    scorer: FrozenMatrixScorer,
+    out_dir,
+    timing_path,
+    probe_facts: dict[int, dict[str, int]],
+    t0: int,
+    t1: int,
+) -> None:
+    """G3 probe: score ONE query, publish its chunk, THEN append its timing line.
+
+    The measured window starts at the real scoring start and ends only AFTER
+    the chunk's atomic publish completed (score + serialization + disk). No
+    warmup query is added; a complete timing line always implies its chunk
+    exists. This is the exact loop body the production CLI runs per probe
+    query, factored so CPU tests drive the REAL producer.
+    """
+    query_start_epoch = time.time()
+    batches_before = scorer.stats["batches"]
+    chunk_records = scorer.score_chunk(t0, t1)
+    chunk_name = chunk_file_name(scorer.cfg.shard_id, t0, t1)
+    atomic_publish(
+        Path(out_dir) / chunk_name,
+        [json.dumps(r, ensure_ascii=False) for r in chunk_records],
+    )
+    query_end_epoch = time.time()
+    header = chunk_records[0]
+    append_timing_record(
+        timing_path,
+        build_query_timing_record(
+            invocation_id=scorer.invocation_id,
+            shard_id=scorer.cfg.shard_id,
+            device=scorer.cfg.device,
+            text_index=t0,
+            probe_facts=probe_facts[t0],
+            start_epoch=query_start_epoch,
+            end_epoch=query_end_epoch,
+            n_pairs=header["n_pairs"],
+            n_batches=scorer.stats["batches"] - batches_before,
+            n_scored=header["n_scored"],
+            n_rejected=header["n_rejected"],
+            n_valid_total=sum(
+                int(r["n_valid_total"])
+                for r in chunk_records[1:]
+                if r["status"] == STATUS_SCORED
+            ),
+            chunk_file=chunk_name,
+            scope=scorer.binding,
+        ),
+    )
+
+
+def build_run_summary(
+    cfg: RunnerConfig,
+    *,
+    invocation_id: str,
+    authorization: RunAuthorization,
+    published: int,
+    n_previously_completed: int,
+    planned_pairs: int,
+    stats: dict[str, Any],
+    load_report: dict[str, Any],
+    preload_report: dict[str, Any],
+    ledger: SharedBudgetLedger,
+    stale_finalized: Sequence[str],
+    failure: Optional[str],
+    probe_selection: Optional[dict[str, Any]] = None,
+    probe_sha: Optional[str] = None,
+    pair_manifest_sha256: Optional[str] = None,
+    cold_start_s: Optional[float] = None,
+) -> dict[str, Any]:
+    """The exact run-summary assembly of the production CLI (factored for tests).
+
+    Probe runs additionally record the code/asset/scope fingerprints, the
+    timing sidecar name, the measured cold start and the per-device peak HBM
+    reading. ``environment_record`` stamps the fixed configuration identity.
+    """
+    summary_extra: dict[str, Any] = {
+        "invocation_id": invocation_id,
+        "authorization": authorization.to_dict(),
+        "chunks_completed_now": published,
+        "chunks_previously_completed": n_previously_completed,
+        "pairs_planned": planned_pairs,
+        "stats": stats,
+        "load_report": load_report,
+        "candidate_preload": preload_report,
+        "budget": ledger.to_dict(),
+        "stale_invocations_auto_finalized": stale_finalized,
+        "status": "failed" if failure else "ok",
+        "failure": failure,
+    }
+    if probe_selection is not None:
+        summary_extra.update(
+            {
+                "git_sha": authorization.approved_sha,
+                "pair_manifest_sha256": pair_manifest_sha256,
+                PROBE_SCOPE_FIELD: probe_sha,
+                "timing_file": timing_sidecar_name(cfg.shard_id),
+                "cold_start_s": cold_start_s,
+                "peak_device_memory_bytes": _peak_device_memory_bytes(cfg.device),
+                "hbm_device": cfg.device,
+                "probe_queries_total": published + n_previously_completed,
+            }
+        )
+    return environment_record(cfg, summary_extra)
 
 
 # ---------------------------------------------------------------------------
@@ -1621,12 +1801,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         }
         if probe_sha is not None:
             binding[PROBE_SCOPE_FIELD] = probe_sha
-        # Resume timing completeness (probe scope): a previously completed
-        # chunk must already have its sidecar timing line -- a chunk without
-        # one is unverifiable and stops the run (never re-scored silently,
-        # never re-timed by fabrication).
+        # Probe sidecar gate (G3 R1; BEFORE any new forward): a fresh run
+        # refuses an existing sidecar; a resume strictly re-validates every
+        # timing line of THIS shard's fixed probe under the current scope.
         timed_texts: Optional[set[int]] = None
-        if probe_selection is not None and args.resume:
+        if probe_selection is not None:
             scope = {
                 PROBE_SCOPE_FIELD: probe_sha,
                 "git_sha": authorization.approved_sha,
@@ -1636,16 +1815,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "spec_version": SCORE_SPEC_VERSION,
                 "device": cfg.device,
             }
-            sidecar = out_dir / timing_sidecar_name(cfg.shard_id)
-            timed_texts = (
-                verified_sidecar_text_set(
-                    read_timing_records(sidecar),
-                    shard_id=cfg.shard_id,
-                    scope=scope,
-                    path_label=str(sidecar),
-                )
-                if sidecar.exists()
-                else set()
+            timed_texts = load_probe_sidecar_timed_texts(
+                out_dir, cfg, probe_selection, scope, resume=bool(args.resume)
             )
         todo, completed = plan_chunks(
             out_dir,
@@ -1667,6 +1838,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 raise RunnerError(
                     f"probe plan covers {len(todo) + len(completed)} chunks, expected "
                     f"exactly the shard's {n_probe} probe queries"
+                )
+            if args.resume:
+                # sidecar lines and verified chunks must pair one-to-one: an
+                # orphan timing line (no verified chunk) refuses here; a chunk
+                # without its timing line already refused inside plan_chunks
+                require_sidecar_chunk_correspondence(
+                    timed_texts or set(), completed, path_label="probe resume"
                 )
         planned_pairs = sum((t1 - t0) * pair_space.n_cads for t0, t1, _ in todo)
         if planned_pairs > ledger.remaining_pairs():
@@ -1711,43 +1889,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         published = 0
         try:
             for t0, t1, _pair_start in todo:
-                # G3 probe: the per-query measured window starts at the real
-                # scoring start and ends only AFTER the chunk's atomic publish
-                # completed (score + serialization + disk). No warmup query is
-                # added; the formal path takes no timestamps.
-                query_start_epoch = time.time() if probe_selection is not None else None
-                batches_before = scorer.stats["batches"]
-                chunk_records = scorer.score_chunk(t0, t1)
-                chunk_name = chunk_file_name(cfg.shard_id, t0, t1)
-                atomic_publish(
-                    out_dir / chunk_name,
-                    [json.dumps(r, ensure_ascii=False) for r in chunk_records],
-                )
                 if probe_selection is not None:
-                    query_end_epoch = time.time()
-                    header = chunk_records[0]
-                    append_timing_record(
-                        timing_path,
-                        build_query_timing_record(
-                            invocation_id=invocation_id,
-                            shard_id=cfg.shard_id,
-                            device=cfg.device,
-                            text_index=t0,
-                            probe_facts=probe_facts[t0],
-                            start_epoch=query_start_epoch,
-                            end_epoch=query_end_epoch,
-                            n_pairs=header["n_pairs"],
-                            n_batches=scorer.stats["batches"] - batches_before,
-                            n_scored=header["n_scored"],
-                            n_rejected=header["n_rejected"],
-                            n_valid_total=sum(
-                                int(r["n_valid_total"])
-                                for r in chunk_records[1:]
-                                if r["status"] == STATUS_SCORED
-                            ),
-                            chunk_file=chunk_name,
-                            scope=binding,
-                        ),
+                    # G3 probe: real per-query window (score + serialization +
+                    # atomic publish), timing line appended after the publish
+                    execute_probe_query(scorer, out_dir, timing_path, probe_facts, t0, t1)
+                else:
+                    chunk_records = scorer.score_chunk(t0, t1)
+                    atomic_publish(
+                        out_dir / chunk_file_name(cfg.shard_id, t0, t1),
+                        [json.dumps(r, ensure_ascii=False) for r in chunk_records],
                     )
                 published += 1
         except Exception as exc:  # noqa: BLE001 -- ledger finalize must record ANY abort
@@ -1757,34 +1907,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         finally:
             ledger.finalize_invocation(invocation_id, exit_code=exit_code, note=note)
 
-        summary_extra: dict[str, Any] = {
-            "invocation_id": invocation_id,
-            "authorization": authorization.to_dict(),
-            "chunks_completed_now": published,
-            "chunks_previously_completed": len(completed),
-            "pairs_planned": planned_pairs,
-            "stats": scorer.stats,
-            "load_report": load_report,
-            "candidate_preload": preload_report,
-            "budget": ledger.to_dict(),
-            "stale_invocations_auto_finalized": stale_finalized,
-            "status": "failed" if failure else "ok",
-            "failure": failure,
-        }
-        if probe_selection is not None:
-            summary_extra.update(
-                {
-                    "git_sha": authorization.approved_sha,
-                    "pair_manifest_sha256": fingerprints.get(PAIR_MANIFEST_FILE),
-                    PROBE_SCOPE_FIELD: probe_sha,
-                    "timing_file": timing_sidecar_name(cfg.shard_id),
-                    "cold_start_s": cold_start_s,
-                    "peak_device_memory_bytes": _peak_device_memory_bytes(cfg.device),
-                    "hbm_device": cfg.device,
-                    "probe_queries_total": published + len(completed),
-                }
-            )
-        summary = environment_record(cfg, summary_extra)
+        summary = build_run_summary(
+            cfg,
+            invocation_id=invocation_id,
+            authorization=authorization,
+            published=published,
+            n_previously_completed=len(completed),
+            planned_pairs=planned_pairs,
+            stats=scorer.stats,
+            load_report=load_report,
+            preload_report=preload_report,
+            ledger=ledger,
+            stale_finalized=stale_finalized,
+            failure=failure,
+            probe_selection=probe_selection,
+            probe_sha=probe_sha,
+            pair_manifest_sha256=fingerprints.get(PAIR_MANIFEST_FILE),
+            cold_start_s=cold_start_s,
+        )
         atomic_publish(
             out_dir / f"summary_{invocation_id}.json",
             [json.dumps(summary, indent=2, sort_keys=True)],
