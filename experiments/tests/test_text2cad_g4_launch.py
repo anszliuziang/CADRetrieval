@@ -29,6 +29,19 @@ CPU: no model, no BERT, no NPU, no network. Covers:
     while the peer succeeds, real timeout termination under the common
     deadline, spawn failure of card1 keeping card0, and preflight/disk
     refusals leaving no residue;
+  * POST-SPAWN FAULT SUPERVISION (R1, Root probe repro): an injected write
+    failure for card0.pid.txt or controller_launch.json AFTER a successful
+    Popen no longer orphans the live children, never writes a fake exit,
+    reaps both real exit codes, writes controller_exit.json and ends
+    "failed"; event-log / final-Git / exit-record failures are likewise
+    contained (children reaped first, non-zero honest outcome);
+  * PROCESS-GROUP LIFECYCLE (R1): deadline TERM/KILL addresses the child's
+    whole process group (pgid == pid, injected POSIX-semantics mock on this
+    Windows host -- NOT claimed as Linux evidence) and the post-exit drain
+    terminates surviving group members; REAL parent+descendant trees run
+    both the normal-parent-exit and deadline paths, asserting real group
+    cleanup on POSIX and the recorded PID-only degradation on Windows (the
+    Windows tests clean up their own leaked descendants themselves);
   * the common-deadline arithmetic with a deterministic fake clock: the
     staggered second card does NOT extend the wall clock, TERM/KILL grace
     sits inside the budget, per-card exits are reaped with their real codes;
@@ -62,8 +75,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -378,6 +393,36 @@ class NpuPreflightTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(RunnerError, "process"):
             g4.parse_npu_smi_health(busy)
+
+    def test_busy_row_with_marker_present_still_refused(self):
+        """REAL pipe-column format: a busy process row must refuse the launch
+        EVEN WHEN a 'No running processes found' marker is also present in
+        the mixed output (the old space-separated-triples regex missed the
+        row entirely and would have ACCEPTED the busy card here)."""
+        mixed = (
+            "+----+\n"
+            "| 2     Ascend910           | OK            | 162.2       41                0    / 0             |\n"
+            "| 0     4                   | 0000:95:00.0  | 0           0    / 0          3102 / 65536         |\n"
+            "+----+\n"
+            "| 2     Ascend910           | OK            | -           40                0    / 0             |\n"
+            "| 1     5                   | 0000:97:00.0  | 0           0    / 0          2873 / 65536         |\n"
+            "+----+\n"
+            "| NPU     Chip              | Process id    | Process name             | Process memory(MB)      |\n"
+            "+----+\n"
+            "| 2     0                   | 3294246       | python                     | 1849                  |\n"
+            "+----+\n"
+            "| No running processes found in NPU 2                                                            |\n"
+            "+----+\n"
+        )
+        with self.assertRaisesRegex(RunnerError, "running process"):
+            g4.parse_npu_smi_health(mixed)
+
+    def test_chip_detail_row_not_misread_as_process(self):
+        """The second per-chip line ('| 0     4  | 0000:95:00.0 | ...') has a
+        numeric pair in column 1 but a PCI bus id (not a pid) in column 2 --
+        it must NOT count as a process row."""
+        report = g4.parse_npu_smi_health(self.SAMPLE)
+        self.assertEqual(report["running_processes"], 0)
 
     def test_unhealthy_refused(self):
         with self.assertRaisesRegex(RunnerError, "unhealthy"):
@@ -787,6 +832,34 @@ class _FakeProc:
         self.killed = True
 
 
+def _fake_group_signal(procs_by_pgid: dict):
+    """Injected POSIX-semantics group signal for FAKE processes (MOCK -- not
+    real Linux evidence): maps pgid == pid to the fake proc, delivers TERM /
+    KILL through its handles, probes with signal 0, and records the calls.
+    Fake-proc tests MUST inject this: the real default would address real
+    process groups that do not belong to the test."""
+    calls = []
+
+    def fn(pgid, sig):
+        proc = procs_by_pgid.get(pgid)
+        if proc is None:
+            return False
+        if sig == 0:
+            return proc.poll() is None
+        if sig == g4._SIGTERM:
+            calls.append((pgid, sig))
+            proc.terminate()
+            return True
+        if sig == g4._SIGKILL:
+            calls.append((pgid, sig))
+            proc.kill()
+            return True
+        return True
+
+    fn.calls = calls
+    return fn
+
+
 @unittest.skipUnless(GIT_AVAILABLE, "git executable required")
 class CommonDeadlineTest(unittest.TestCase):
     def setUp(self):
@@ -807,6 +880,7 @@ class CommonDeadlineTest(unittest.TestCase):
             shard = int(argv[argv.index("--shard-id") + 1])
             return procs[shard]
 
+        gsig = _fake_group_signal({4201: procs[0], 4202: procs[1]})
         cfg = _launch_cfg(
             self.work, self.origin_url, self.code_sha, self.rt,
             wall_budget_s=100.0, stagger_s=3.0, poll_interval_s=0.5,
@@ -815,7 +889,7 @@ class CommonDeadlineTest(unittest.TestCase):
         record = g4.launch(
             cfg, now_fn=clock.now, sleep_fn=clock.sleep,
             popen_fn=fake_popen, preflight_fn=FAKE_PREFLIGHT,
-            free_bytes_fn=FAKE_FREE_BYTES,
+            free_bytes_fn=FAKE_FREE_BYTES, group_signal_fn=gsig,
         )
         # common start 1000 -> deadline 1100 for BOTH cards, even though
         # card1 launched at 1003 (stagger never extends the wall clock).
@@ -833,6 +907,12 @@ class CommonDeadlineTest(unittest.TestCase):
         self.assertGreaterEqual(card1["exit_epoch"], 1096.0)
         self.assertLessEqual(record["ended_epoch"], 1100.0 + cfg.kill_wait_s)
         self.assertEqual(record["status"], "failed")  # honest, never spawn-success
+        # the deadline signals addressed the GROUP (pgid == pid), in order
+        self.assertEqual(
+            gsig.calls, [(4202, g4._SIGTERM), (4202, g4._SIGKILL)]
+        )
+        self.assertEqual(card0["group_cleanup"], "empty")
+        self.assertEqual(card1["group_cleanup"], "empty")
         events = [
             json.loads(ln)
             for ln in (self.rt / "runs" / g4.G4_RUN_ID / g4.EVENTS_LOG_NAME)
@@ -848,6 +928,8 @@ class CommonDeadlineTest(unittest.TestCase):
         kills = [e for e in events if e["event"] == "kill_sent"]
         self.assertEqual([e["shard_id"] for e in terms], [1])
         self.assertEqual([e["shard_id"] for e in kills], [1])
+        self.assertEqual([e["signal_scope"] for e in terms], ["process_group"])
+        self.assertEqual([e["signal_scope"] for e in kills], ["process_group"])
         exits = {e["shard_id"]: e for e in events if e["event"] == "card_exit"}
         self.assertEqual(exits[0]["exit_code"], 0)
         self.assertEqual(exits[1]["exit_code"], -9)
@@ -863,6 +945,7 @@ class CommonDeadlineTest(unittest.TestCase):
         def fake_popen(argv, **kwargs):
             return procs[int(argv[argv.index("--shard-id") + 1])]
 
+        gsig = _fake_group_signal({1: procs[0], 2: procs[1]})
         cfg = _launch_cfg(
             self.work, self.origin_url, self.code_sha, self.rt,
             wall_budget_s=100.0, stagger_s=1.0, poll_interval_s=0.5,
@@ -870,11 +953,384 @@ class CommonDeadlineTest(unittest.TestCase):
         record = g4.launch(
             cfg, now_fn=clock.now, sleep_fn=clock.sleep,
             popen_fn=fake_popen, preflight_fn=FAKE_PREFLIGHT,
-            free_bytes_fn=FAKE_FREE_BYTES,
+            free_bytes_fn=FAKE_FREE_BYTES, group_signal_fn=gsig,
         )
         self.assertEqual(record["status"], "ok")
         self.assertFalse(record["cards"]["1"]["deadline_enforced"])
         self.assertLessEqual(record["ended_epoch"], 2100.0)
+        self.assertEqual(gsig.calls, [])  # no deadline signals were needed
+        self.assertEqual(record["cards"]["0"]["group_cleanup"], "empty")
+        self.assertEqual(record["cards"]["1"]["group_cleanup"], "empty")
+
+
+# ---------------------------------------------------------------------------
+# R1 Important 1: post-spawn evidence-I/O faults (Root probe reproduction)
+# ---------------------------------------------------------------------------
+
+
+@unittest.skipUnless(GIT_AVAILABLE, "git executable required")
+class PostSpawnFaultTest(unittest.TestCase):
+    """Root fault-probe scenarios against the FIXED controller: an evidence
+    write failure AFTER a successful Popen must never orphan the live
+    children, never write a fake exit for a live process, and never
+    masquerade as ok. REAL short-lived child processes; only the evidence
+    writes are fault-injected."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+        self.work, self.origin_url, self.code_sha = _build_dual_version_repo(self.base)
+        self.rt = _make_runtime(self.base)
+        self.run_root = self.rt / "runs" / g4.G4_RUN_ID
+
+    def _factory(self, scripts, procs):
+        def factory(argv, **kwargs):
+            shard = int(argv[argv.index("--shard-id") + 1])
+            proc = subprocess.Popen([sys.executable, "-c", scripts[shard]], **kwargs)
+            procs.append(proc)
+            return proc
+
+        return factory
+
+    def _launch_with_atomic_fault(self, fail_name, scripts=None):
+        scripts = scripts or {0: "import sys; sys.exit(0)", 1: "import sys; sys.exit(0)"}
+        procs = []
+        original = g4._atomic_write_text
+
+        def faulty(path, text):
+            if Path(path).name == fail_name:
+                raise OSError(f"injected evidence write failure for {fail_name}")
+            return original(path, text)
+
+        cfg = _launch_cfg(self.work, self.origin_url, self.code_sha, self.rt)
+        with mock.patch.object(g4, "_atomic_write_text", side_effect=faulty):
+            record = g4.launch(
+                cfg, popen_fn=self._factory(scripts, procs),
+                preflight_fn=FAKE_PREFLIGHT, free_bytes_fn=FAKE_FREE_BYTES,
+            )
+        return record, procs
+
+    def test_pid_write_failure_keeps_real_exit_and_peer(self):
+        """Root case 1: card0.pid.txt write fails AFTER spawn. Old code wrote
+        a fake NONE exit, then crashed on the real reap (exit file exists),
+        killing the controller with the peer alive. Fixed: real exits reaped
+        for BOTH cards, no fake exit, controller_exit written, run failed."""
+        record, procs = self._launch_with_atomic_fault("card0.pid.txt")
+        self.assertEqual(record["status"], "failed")
+        # no fake exit for the LIVE child: its REAL exit 0 was reaped+written
+        self.assertEqual(record["cards"]["0"]["exit_code"], 0)
+        self.assertEqual(record["cards"]["1"]["exit_code"], 0)
+        self.assertEqual((self.run_root / "card0.exit_code.txt").read_text().strip(), "0")
+        self.assertEqual((self.run_root / "card1.exit_code.txt").read_text().strip(), "0")
+        self.assertFalse((self.run_root / "card0.pid.txt").exists())
+        self.assertIn("card0.pid.txt", record["cards"]["0"]["record_error"])
+        self.assertIsNone(record["cards"]["1"]["record_error"])
+        # every spawned child was reaped before the controller returned
+        self.assertTrue(all(p.poll() is not None for p in procs))
+        self.assertEqual(len(procs), 2)
+        # the final record exists and the launch record still carries the pid
+        self.assertTrue((self.run_root / g4.EXIT_RECORD_NAME).exists())
+        launch_record = json.loads((self.run_root / g4.LAUNCH_RECORD_NAME).read_text())
+        self.assertGreater(launch_record["cards"]["0"]["pid"], 0)
+        self.assertIn("card0.pid.txt", launch_record["cards"]["0"]["record_error"])
+        events = [
+            json.loads(ln)
+            for ln in (self.run_root / g4.EVENTS_LOG_NAME).read_text().splitlines()
+        ]
+        spawn0 = [e for e in events if e["event"] == "spawn" and e["shard_id"] == 0][0]
+        self.assertFalse(spawn0["pid_recorded"])
+        self.assertEqual(events[-1]["event"], "controller_exit")
+
+    def test_launch_record_write_failure_children_still_supervised(self):
+        """Root case 2: controller_launch.json write fails with BOTH children
+        already running. Old code raised past the wait loop and left two live
+        children unsupervised. Fixed: both reaped with real exits, run failed."""
+        record, procs = self._launch_with_atomic_fault(g4.LAUNCH_RECORD_NAME)
+        self.assertEqual(record["status"], "failed")
+        self.assertIn(g4.LAUNCH_RECORD_NAME, record["launch_record_error"])
+        for shard in (0, 1):
+            self.assertEqual(record["cards"][str(shard)]["exit_code"], 0)
+            self.assertEqual(
+                (self.run_root / f"card{shard}.exit_code.txt").read_text().strip(), "0"
+            )
+        self.assertFalse((self.run_root / g4.LAUNCH_RECORD_NAME).exists())
+        self.assertTrue((self.run_root / g4.EXIT_RECORD_NAME).exists())
+        self.assertTrue(all(p.poll() is not None for p in procs))
+        self.assertEqual(len(procs), 2)
+
+    def test_event_log_failure_keeps_supervision(self):
+        """A permanently failing event log must not abort supervision either:
+        children reaped, exit files written, controller_exit written, run
+        failed with the event errors remembered."""
+        scripts = {0: "import sys; sys.exit(0)", 1: "import sys; sys.exit(0)"}
+        procs = []
+        cfg = _launch_cfg(self.work, self.origin_url, self.code_sha, self.rt)
+        with mock.patch.object(
+            g4, "_append_event", side_effect=OSError("injected event log failure")
+        ):
+            record = g4.launch(
+                cfg, popen_fn=self._factory(scripts, procs),
+                preflight_fn=FAKE_PREFLIGHT, free_bytes_fn=FAKE_FREE_BYTES,
+            )
+        self.assertEqual(record["status"], "failed")
+        self.assertTrue(record["event_log_errors"])
+        self.assertIn("injected event log failure", record["event_log_errors"][0])
+        for shard in (0, 1):
+            self.assertEqual(record["cards"][str(shard)]["exit_code"], 0)
+            self.assertEqual(
+                (self.run_root / f"card{shard}.exit_code.txt").read_text().strip(), "0"
+            )
+        self.assertTrue((self.run_root / g4.EXIT_RECORD_NAME).exists())
+        self.assertTrue(all(p.poll() is not None for p in procs))
+
+    def test_final_git_recheck_failure_still_records_exit(self):
+        """The post-launch Git re-check fails AFTER the children are reaped:
+        the controller still writes controller_exit.json and fails honestly."""
+        scripts = {0: "import sys; sys.exit(0)", 1: "import sys; sys.exit(0)"}
+        procs = []
+        cfg = _launch_cfg(self.work, self.origin_url, self.code_sha, self.rt)
+        with mock.patch.object(
+            g4, "recheck_git_state", side_effect=OSError("injected final git read failure")
+        ):
+            record = g4.launch(
+                cfg, popen_fn=self._factory(scripts, procs),
+                preflight_fn=FAKE_PREFLIGHT, free_bytes_fn=FAKE_FREE_BYTES,
+            )
+        self.assertEqual(record["status"], "failed")
+        self.assertIn("injected final git read failure", record["post_launch_git"]["error"])
+        self.assertFalse(record["post_launch_git"]["head_matches_approved"])
+        for shard in (0, 1):
+            self.assertEqual(record["cards"][str(shard)]["exit_code"], 0)
+        self.assertTrue((self.run_root / g4.EXIT_RECORD_NAME).exists())
+        self.assertTrue(all(p.poll() is not None for p in procs))
+
+    def test_exit_record_write_failure_raises_after_children_reaped(self):
+        """Total disk fault at controller_exit.json: the write may fail, but
+        ONLY after every child is reaped and every real exit recorded -- and
+        the controller exits non-zero (RunnerError) instead of claiming ok."""
+        scripts = {0: "import sys; sys.exit(0)", 1: "import sys; sys.exit(0)"}
+        procs = []
+        original = g4._atomic_write_text
+
+        def faulty(path, text):
+            if Path(path).name == g4.EXIT_RECORD_NAME:
+                raise OSError("injected controller_exit write failure")
+            return original(path, text)
+
+        cfg = _launch_cfg(self.work, self.origin_url, self.code_sha, self.rt)
+        with mock.patch.object(g4, "_atomic_write_text", side_effect=faulty):
+            with self.assertRaisesRegex(RunnerError, "controller_exit.json"):
+                g4.launch(
+                    cfg, popen_fn=self._factory(scripts, procs),
+                    preflight_fn=FAKE_PREFLIGHT, free_bytes_fn=FAKE_FREE_BYTES,
+                )
+        self.assertTrue(all(p.poll() is not None for p in procs))
+        self.assertEqual(len(procs), 2)
+        for shard in (0, 1):
+            self.assertEqual(
+                (self.run_root / f"card{shard}.exit_code.txt").read_text().strip(), "0"
+            )
+        self.assertFalse((self.run_root / g4.EXIT_RECORD_NAME).exists())
+
+
+# ---------------------------------------------------------------------------
+# R1 Important 2: process-group signaling + descendant drain
+# ---------------------------------------------------------------------------
+
+
+def _parent_descendant_scripts(base: Path, mode: str):
+    """REAL parent (card0) spawning ONE REAL descendant (a 60 s sleeper that
+    would write a marker only if it survived that long). The parent records
+    the descendant pid so the TEST can clean up its own leaked child on
+    platforms where the controller honestly degrades to PID-only signaling.
+    mode "deadline": the parent sleeps 60 s (deadline path); mode "exit0":
+    the parent exits 0 immediately (normal-completion path)."""
+    marker = base / f"descendant_marker_{mode}.txt"
+    pid_file = base / f"descendant_pid_{mode}.txt"
+    descendant = (
+        "import time,pathlib;"
+        "time.sleep(60);"
+        f"pathlib.Path({str(marker)!r}).write_text('survived controller')"
+    )
+    parent = (
+        "import subprocess,sys,time,pathlib;"
+        f"_d=subprocess.Popen([sys.executable,'-c',{descendant!r}]);"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(_d.pid));"
+        + ("time.sleep(60)" if mode == "deadline" else "sys.exit(0)")
+    )
+    return parent, marker, pid_file
+
+
+@unittest.skipUnless(GIT_AVAILABLE, "git executable required")
+class ProcessGroupTest(unittest.TestCase):
+    """The controller must not leave any member of the process groups IT
+    created running after it returns -- on either the deadline path or the
+    normal parent-exit path. REAL parent+descendant trees run on any
+    platform: POSIX asserts the real group cleanup (the server-side POSIX
+    witness runs the same file); Windows asserts the recorded PID-only
+    degradation and the TEST reaps its own leaked descendant. An injected
+    POSIX-semantics mock separately pins the exact pgid/signal sequence --
+    mock evidence is never claimed as real Linux evidence."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+        self.work, self.origin_url, self.code_sha = _build_dual_version_repo(self.base)
+        self.rt = _make_runtime(self.base)
+
+    def _kill_own_descendant(self, pid_file: Path):
+        """Reap the descendant THIS test leaked (never anything else). On
+        POSIX the fixed controller already drained it, so this is a no-op."""
+        if not pid_file.exists():
+            return
+        try:
+            pid = int(pid_file.read_text().strip())
+        except ValueError:
+            return
+        for _ in range(40):  # up to ~2 s: TERM until the pid is gone
+            try:
+                os.kill(pid, g4._SIGTERM)  # Windows: TerminateProcess
+            except OSError:
+                return
+            time.sleep(0.05)
+        try:
+            os.kill(pid, g4._SIGKILL)
+        except OSError:
+            pass
+
+    def _run_tree(self, mode, scripts, **cfg_overrides):
+        received = {}
+        cfg = _launch_cfg(self.work, self.origin_url, self.code_sha, self.rt,
+                          **cfg_overrides)
+        record = g4.launch(
+            cfg, popen_fn=_real_popen_factory(scripts, received),
+            preflight_fn=FAKE_PREFLIGHT, free_bytes_fn=FAKE_FREE_BYTES,
+        )
+        return record
+
+    def test_deadline_terminates_parent_and_descendant(self):
+        parent0, marker, pid_file = _parent_descendant_scripts(self.base, "deadline")
+        scripts = {0: parent0, 1: "import time; time.sleep(60)"}
+        try:
+            record = self._run_tree(
+                "deadline", scripts,
+                wall_budget_s=1.2, term_grace_s=0.3, kill_wait_s=0.3,
+                stagger_s=0.0, poll_interval_s=0.02,
+                descendant_settle_s=0.3, descendant_term_grace_s=0.3,
+                descendant_kill_wait_s=0.5,
+            )
+        finally:
+            self._kill_own_descendant(pid_file)
+        card0 = record["cards"]["0"]
+        self.assertEqual(record["status"], "failed")
+        self.assertTrue(card0["deadline_enforced"])
+        self.assertNotIn(card0["exit_code"], (0, None))
+        used = record["ended_epoch"] - record["common_start_epoch"]
+        self.assertLess(used, 10.0)  # nothing lingers for the 60 s sleeps
+        self.assertFalse(marker.exists())
+        if g4._PROCESS_GROUP_SUPPORTED:
+            # REAL POSIX witness: TERM reached the whole group at the
+            # deadline; the descendant died with its parent before the
+            # controller returned.
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(card0["pid"], 0)
+            self.assertFalse(card0["leftover_descendants"])
+            self.assertIn(card0["group_cleanup"], ("empty", "drained_within_grace"))
+        else:
+            # Windows degradation: PID-only scope recorded honestly; the
+            # leaked descendant was reaped by the TEST in `finally`.
+            self.assertFalse(record["process_group_supported"])
+            self.assertEqual(card0["group_cleanup"], "unsupported_platform")
+            events = [
+                json.loads(ln)
+                for ln in (self.rt / "runs" / g4.G4_RUN_ID / g4.EVENTS_LOG_NAME)
+                .read_text().splitlines()
+            ]
+            scopes = [e.get("signal_scope") for e in events
+                      if e["event"] in ("term_sent", "kill_sent")]
+            self.assertTrue(scopes)
+            self.assertEqual(set(scopes), {"pid_only"})
+
+    def test_parent_exit0_descendant_drained_posix_or_degradation_recorded(self):
+        parent0, marker, pid_file = _parent_descendant_scripts(self.base, "exit0")
+        scripts = {0: parent0, 1: "import sys; sys.exit(0)"}
+        try:
+            record = self._run_tree(
+                "exit0", scripts,
+                wall_budget_s=600.0, stagger_s=0.0, poll_interval_s=0.02,
+                descendant_settle_s=0.3, descendant_term_grace_s=0.4,
+                descendant_kill_wait_s=0.5,
+            )
+        finally:
+            self._kill_own_descendant(pid_file)
+        card0 = record["cards"]["0"]
+        self.assertEqual(card0["exit_code"], 0)  # the PARENT really exited 0
+        self.assertFalse(marker.exists())
+        if g4._PROCESS_GROUP_SUPPORTED:
+            # REAL POSIX witness: the 60 s descendant outlived its parent;
+            # the controller settled, TERMed the group and reported the
+            # anomaly instead of returning ok with a live tree behind it.
+            self.assertTrue(card0["leftover_descendants"])
+            self.assertEqual(card0["group_cleanup"], "terminated")
+            self.assertEqual(record["status"], "failed")
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(card0["pid"], 0)
+            used = record["ended_epoch"] - record["common_start_epoch"]
+            self.assertLess(used, 10.0)
+        else:
+            # Windows degradation: the record says plainly that NO group
+            # cleanup happened; the test reaped the leaked descendant.
+            self.assertFalse(record["process_group_supported"])
+            self.assertEqual(card0["group_cleanup"], "unsupported_platform")
+            self.assertFalse(card0["leftover_descendants"])
+
+    def test_drain_terminates_surviving_group_mock(self):
+        """MOCK POSIX semantics (NOT real Linux evidence): the parent exits 0
+        but its group stays non-empty; the controller must settle-probe, TERM
+        the group (pgid == pid) and report leftover_descendants -> failed."""
+        clock = _FakeClock(4000.0)
+        procs = {
+            0: _FakeProc(clock, pid=6101, exit_at=4002.0, exit_code=0),
+            1: _FakeProc(clock, pid=6102, exit_at=4003.0, exit_code=0),
+        }
+        group_members = {6101: True}
+        calls = []
+
+        def gsig(pgid, sig):
+            if pgid == 6101:
+                if sig == 0:
+                    return group_members[6101]
+                calls.append((pgid, sig))
+                if sig == g4._SIGTERM:
+                    group_members[6101] = False
+                return True
+            if sig == 0:
+                return procs[1].poll() is None
+            return True
+
+        def fake_popen(argv, **kwargs):
+            return procs[int(argv[argv.index("--shard-id") + 1])]
+
+        cfg = _launch_cfg(
+            self.work, self.origin_url, self.code_sha, self.rt,
+            wall_budget_s=600.0, stagger_s=0.0, poll_interval_s=0.5,
+            descendant_settle_s=1.0, descendant_term_grace_s=1.0,
+            descendant_kill_wait_s=1.0,
+        )
+        record = g4.launch(
+            cfg, now_fn=clock.now, sleep_fn=clock.sleep,
+            popen_fn=fake_popen, preflight_fn=FAKE_PREFLIGHT,
+            free_bytes_fn=FAKE_FREE_BYTES, group_signal_fn=gsig,
+        )
+        card0 = record["cards"]["0"]
+        self.assertEqual(record["status"], "failed")
+        self.assertEqual(card0["exit_code"], 0)  # the PARENT really exited 0
+        self.assertTrue(card0["leftover_descendants"])
+        self.assertEqual(card0["group_cleanup"], "terminated")
+        self.assertEqual(calls, [(6101, g4._SIGTERM)])  # TERM sufficed, no KILL
+        self.assertEqual(record["cards"]["1"]["group_cleanup"], "empty")
 
 
 # ---------------------------------------------------------------------------

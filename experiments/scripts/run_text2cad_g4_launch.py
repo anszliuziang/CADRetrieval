@@ -9,8 +9,15 @@ pre-launch gate passes, and it is NOT authorized to run as of 2026-10-02
 review, and origin/master ACTIVE_TASK must state pilot_authorized with the
 fixed G4 task/run/budget scope).
 
-Production usage (yunnan-share2, AFTER Codex approval; NOT authorized now):
+Production usage (yunnan-share2, AFTER Codex approval; NOT authorized now).
+The controller's OWN interpreter also runs with bytecode writes disabled and
+every cache/tmp directory outside the checkout (prefix the controller
+command itself, not only the scorer children):
 
+    PYTHONDONTWRITEBYTECODE=1 \
+    HF_HOME=/home/ma-user/work/CADRetrieval_runtime/hf \
+    XDG_CACHE_HOME=/home/ma-user/work/CADRetrieval_runtime/xdg \
+    TMPDIR=/home/ma-user/work/CADRetrieval_runtime/tmp \
     nohup /home/ma-user/work/envs/cadretrieval-idea01-torch271/bin/python \
       /home/ma-user/work/CADRetrieval/experiments/scripts/run_text2cad_g4_launch.py \
       --approved-sha <40-hex approved by Codex> \

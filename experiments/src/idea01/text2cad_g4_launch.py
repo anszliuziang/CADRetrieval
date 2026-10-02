@@ -71,7 +71,11 @@ WHAT THE CONTROLLER DOES (and nothing more)
    kill the job), stdin from /dev/null, stdout/stderr to separate per-card
    log files. The real PID, launch time and exact shell-quoted command are
    written per card immediately after spawn; every event is also appended
-   (fsync) to ``controller_events.jsonl``.
+   (fsync) to ``controller_events.jsonl``. A post-spawn evidence-write
+   failure NEVER abandons or fake-exits the live child: the failure is
+   remembered, the child keeps its deadline supervision, and the run ends
+   ``failed`` -- a successful spawn is never reported as experimental
+   success.
 
 5. ONE common deadline: ``common_start`` is taken once before card0 spawns;
    ``deadline = common_start + 604800 s`` (the seven-day hard wall). The two
@@ -80,13 +84,20 @@ WHAT THE CONTROLLER DOES (and nothing more)
    never gets extra wall clock. Termination grace is INSIDE the budget:
    SIGTERM at ``deadline - (term_grace + kill_wait)`` (60 s + 30 s), SIGKILL
    at ``deadline - kill_wait``, so both processes are dead by the deadline.
-   Each card's real exit code is reaped and written to
+   On POSIX the signals go to the WHOLE process group the controller created
+   (the child leads it via ``start_new_session``, pgid == pid, so no other
+   job can be reached); after each parent's REAL exit is recorded, surviving
+   group members are drained (settle window, TERM, KILL) inside the same
+   hard bound, and a card that needed that drain is an honest anomaly that
+   fails the run. Platforms without process groups (Windows dev host)
+   degrade to PID-only signaling and RECORD the degradation instead of
+   claiming cleanup. Each card's real exit code is reaped and written to
    ``card{s}.exit_code.txt`` IMMEDIATELY when the process exits (no pipe
    masks it, no waiting for the peer). A failed card is recorded and handed
    over; the surviving card keeps its authorized run -- the controller never
    restarts a failed card, never retries, and reports ``ok`` ONLY when both
-   cards really exited 0 without deadline enforcement (a successful spawn is
-   never reported as experimental success).
+   cards really exited 0 without deadline enforcement, without leftover
+   descendants and without any evidence-record failure.
 
 The scorer's own audited gates (fresh origin/master authorization, committed
 fingerprints, strict load, shared budget ledger) remain the final word; this
@@ -105,6 +116,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -165,6 +177,15 @@ G4_KILL_WAIT_S = 30.0
 #: the common deadline does not move.
 G4_STAGGER_S = 3.0
 G4_POLL_INTERVAL_S = 5.0
+#: Descendant drain (POSIX process groups): after a card's REAL exit is
+#: recorded, surviving members of the group the controller created get a
+#: short settle window, then TERM, then KILL -- every wait capped by the
+#: same hard bound (deadline + kill_wait). The audited production scorer
+#: spawns no children, so any survivor is an anomaly that fails the run
+#: honestly instead of leaking past the controller.
+G4_DESCENDANT_SETTLE_S = 10.0
+G4_DESCENDANT_TERM_GRACE_S = 5.0
+G4_DESCENDANT_KILL_WAIT_S = 5.0
 #: Contract sec.4: confirm >= 100 GB free on the runtime partition before
 #: launch (raw JSONL is expected at ~20-25 GB).
 G4_MIN_FREE_BYTES = 100 * 1024**3
@@ -204,6 +225,34 @@ _SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 #: Read-only git subcommands the controller may run (enforced in _git_readonly;
 #: the controller NEVER fetches, checks out, resets, cleans or configures).
 _READ_ONLY_GIT = ("rev-parse", "symbolic-ref", "status", "show", "remote")
+
+#: Signal numbers: ``signal.SIGKILL`` does not exist on Windows, so resolve
+#: both by name at import time (the numeric values are the POSIX ABI).
+_SIGTERM = int(getattr(signal, "SIGTERM", 15))
+_SIGKILL = int(getattr(signal, "SIGKILL", 9))
+
+#: POSIX process-group support. The controller spawns every card with
+#: ``start_new_session=True``, so each child leads its OWN session/group
+#: (pgid == pid) containing only itself and its descendants -- signaling
+#: that group can never reach another job. Platforms without ``killpg``
+#: (Windows dev host) degrade to PID-only signaling and record the
+#: degradation honestly; they are NEVER cited as POSIX evidence.
+_PROCESS_GROUP_SUPPORTED = os.name == "posix" and hasattr(os, "killpg")
+
+
+def _posix_group_signal(pgid: int, sig: int) -> bool:
+    """Signal the process group this controller created; False when empty.
+
+    Only ever called with ``pgid == card.pid`` of a child this controller
+    spawned with ``start_new_session=True`` (the child leads the group), so
+    it cannot reach processes outside that card's own tree. ``sig == 0``
+    probes group existence without delivering a signal.
+    """
+    try:
+        os.killpg(pgid, sig)
+        return True
+    except ProcessLookupError:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +544,11 @@ def parse_npu_smi_health(text: str) -> dict[str, Any]:
 
     Any ambiguity (fewer than two chip rows, a non-OK health field, a process
     row in the process table, or a missing 'No running processes found'
-    marker) refuses the launch; the raw output is always recorded.
+    marker) refuses the launch; the raw output is always recorded. Process
+    rows are detected by the REAL pipe-separated column layout
+    (``| NPU  Chip | Process id | Process name | Process memory(MB) |``), so
+    a busy card is refused even when a 'No running processes found' marker
+    is also present in a mixed output.
     """
     chips: list[dict[str, str]] = []
     process_rows: list[str] = []
@@ -510,7 +563,12 @@ def parse_npu_smi_health(text: str) -> dict[str, Any]:
         if fields and re.match(r"^\d+\s+Ascend", fields[0]):
             chips.append({"chip": fields[0], "health": fields[1] if len(fields) > 1 else ""})
             continue
-        if re.match(r"^\|\s*\d+\s+\d+\s+\d+\s+\S", line):
+        if (
+            len(fields) >= 2
+            and re.match(r"^\d+\s+\d+$", fields[0])
+            and re.match(r"^\d+$", fields[1])
+        ):
+            # process table data row, e.g. "| 2     0  | 3294246 | python | 1849 |"
             process_rows.append(line.strip())
     problems: list[str] = []
     if len(chips) < 2:
@@ -611,6 +669,9 @@ class LaunchConfig:
     min_free_bytes: int = G4_MIN_FREE_BYTES
     expected_origin: str = EXPECTED_ORIGIN_URL
     authorization_ref: str = AUTHORIZATION_REF
+    descendant_settle_s: float = G4_DESCENDANT_SETTLE_S
+    descendant_term_grace_s: float = G4_DESCENDANT_TERM_GRACE_S
+    descendant_kill_wait_s: float = G4_DESCENDANT_KILL_WAIT_S
 
 
 def _validate_config(cfg: LaunchConfig) -> None:
@@ -626,6 +687,12 @@ def _validate_config(cfg: LaunchConfig) -> None:
         raise RunnerError("stagger must be >= 0 and the poll interval > 0")
     if cfg.term_grace_s < 0 or cfg.kill_wait_s <= 0:
         raise RunnerError("kill grace values must be positive")
+    if (
+        cfg.descendant_settle_s < 0
+        or cfg.descendant_term_grace_s < 0
+        or cfg.descendant_kill_wait_s <= 0
+    ):
+        raise RunnerError("descendant drain values must be >= 0 (kill wait > 0)")
     argv_probe = build_card_argv(
         0,
         repo_root=cfg.repo_root,
@@ -689,6 +756,17 @@ class _CardState:
     exit_epoch: Optional[float] = None
     term_sent: bool = False
     kill_sent: bool = False
+    #: Post-spawn evidence-I/O failure(s) (pid/time/exit file writes). The
+    #: live child is never abandoned and never fake-exited because of these;
+    #: any value here forces the run to end "failed".
+    record_error: Optional[str] = None
+    #: True when members of the card's own process group outlived the parent
+    #: past the settle window and had to be terminated (POSIX only).
+    leftover_descendants: bool = False
+    #: Outcome of the post-exit group drain: not_spawned /
+    #: unsupported_platform / empty / drained_within_grace / terminated /
+    #: killed / survivors_after_kill / *_error:... .
+    group_cleanup: Optional[str] = None
     stdout_path: Optional[Path] = None
     stderr_path: Optional[Path] = None
     _stdout_stream: Any = field(default=None, repr=False)
@@ -699,6 +777,123 @@ class _CardState:
         return self.term_sent or self.kill_sent
 
 
+def _note_card_error(card: _CardState, message: str) -> None:
+    """Remember a post-spawn evidence-I/O failure; forces status failed."""
+    card.record_error = (
+        message if card.record_error is None else f"{card.record_error}; {message}"
+    )
+
+
+def _signal_card(card: _CardState, signum: int, group_signal_fn) -> str:
+    """Signal a LIVE card at the deadline; returns the delivery scope.
+
+    POSIX: the WHOLE process group the controller created (the child leads it
+    via ``start_new_session``, so no other job can be reached). Elsewhere the
+    bare PID only -- the degradation is recorded in the returned scope and in
+    the exit record, never silently claimed as group cleanup.
+    """
+    if group_signal_fn is not None and card.pid is not None:
+        try:
+            if group_signal_fn(card.pid, signum):
+                return "process_group"
+            return "already_gone"  # the whole group exited between poll and signal
+        except OSError:
+            pass  # unexpected group-signal fault: fall back to the PID handle
+    try:
+        if signum == _SIGTERM:
+            card.proc.terminate()
+        else:
+            card.proc.kill()
+    except OSError:
+        return "already_gone"
+    return "pid_only"
+
+
+def _drain_card_group(
+    card: _CardState,
+    *,
+    group_signal_fn,
+    now_fn,
+    sleep_fn,
+    settle_s: float,
+    term_grace_s: float,
+    kill_wait_s: float,
+    hard_end: float,
+    events,
+) -> None:
+    """No member of the group WE created may outlive the controller (POSIX).
+
+    Runs only AFTER the card's real exit is already reaped and recorded, and
+    after the wait loop ended for every card, so peer supervision is never
+    delayed. Survivors past the settle window are terminated (TERM, bounded
+    grace, KILL, all waits capped by ``hard_end`` -- the common deadline
+    budget is not extended) and flip ``leftover_descendants`` -- an honest
+    anomaly that fails the run. Platforms without process groups record the
+    degradation instead of claiming cleanup.
+    """
+    if card.proc is None or card.pid is None:
+        card.group_cleanup = "not_spawned"
+        return
+    if group_signal_fn is None:
+        card.group_cleanup = "unsupported_platform"
+        return
+    pgid = card.pid  # start_new_session=True: our child leads this group
+
+    def group_alive() -> bool:
+        try:
+            return bool(group_signal_fn(pgid, 0))
+        except OSError:
+            return False
+
+    if not group_alive():
+        card.group_cleanup = "empty"
+        return
+    settle_end = min(now_fn() + settle_s, hard_end)
+    while group_alive():
+        now = now_fn()
+        if now >= settle_end:
+            break
+        sleep_fn(min(0.05, max(0.0, settle_end - now)))
+    if not group_alive():
+        card.group_cleanup = "drained_within_grace"
+        return
+    card.leftover_descendants = True
+    events({"event": "descendants_detected", "shard_id": card.shard_id, "pgid": pgid})
+    try:
+        group_signal_fn(pgid, _SIGTERM)
+    except OSError as exc:
+        card.group_cleanup = f"term_error:{type(exc).__name__}:{exc}"
+        return
+    card.group_cleanup = "terminated"
+    events({"event": "descendant_term_sent", "shard_id": card.shard_id, "pgid": pgid})
+    term_end = min(now_fn() + term_grace_s, hard_end)
+    while group_alive():
+        now = now_fn()
+        if now >= term_end:
+            break
+        sleep_fn(min(0.05, max(0.0, term_end - now)))
+    if not group_alive():
+        return
+    try:
+        group_signal_fn(pgid, _SIGKILL)
+    except OSError as exc:
+        card.group_cleanup = f"kill_error:{type(exc).__name__}:{exc}"
+        return
+    card.group_cleanup = "killed"
+    events({"event": "descendant_kill_sent", "shard_id": card.shard_id, "pgid": pgid})
+    kill_end = min(now_fn() + kill_wait_s, hard_end)
+    while group_alive():
+        now = now_fn()
+        if now >= kill_end:
+            break
+        sleep_fn(min(0.05, max(0.0, kill_end - now)))
+    if group_alive():
+        card.group_cleanup = "survivors_after_kill"
+        events(
+            {"event": "descendants_unreaped", "shard_id": card.shard_id, "pgid": pgid}
+        )
+
+
 def launch(
     cfg: LaunchConfig,
     *,
@@ -707,6 +902,7 @@ def launch(
     popen_fn=_default_popen,
     preflight_fn=npu_smi_preflight,
     free_bytes_fn=None,
+    group_signal_fn=None,
 ) -> dict[str, Any]:
     """Verify, spawn both cards, wait under the COMMON deadline, record all.
 
@@ -715,12 +911,26 @@ def launch(
     operator fixes the cause). Once the run root exists the function always
     finishes with a written ``controller_exit.json``; it never relaunches,
     never retries a failed card and never deletes evidence.
+
+    Lifecycle guarantees (R1): after a SUCCESSFUL Popen the live child stays
+    under the common deadline no matter what happens to any evidence write,
+    the event log or the final Git re-check -- post-spawn I/O failures are
+    remembered and force ``failed`` instead of abandoning the child or
+    writing it a fake exit. If even ``controller_exit.json`` cannot be
+    written, the function still reaps every child first and then raises
+    RunnerError (a non-zero controller exit), never a false ``ok``.
+    ``group_signal_fn`` delivers signals to the process groups the
+    controller created (POSIX default ``os.killpg``); ``None`` means the
+    platform has no process groups and the controller degrades to PID-only
+    signaling, recorded honestly.
     """
     _validate_config(cfg)
     repo_root = Path(cfg.repo_root)
     runtime_root = Path(cfg.runtime_root)
     if free_bytes_fn is None:
         free_bytes_fn = lambda p: shutil.disk_usage(p).free  # noqa: E731
+    if group_signal_fn is None and _PROCESS_GROUP_SUPPORTED:
+        group_signal_fn = _posix_group_signal
 
     # 1. read-only Git + authorization-source verification.
     git_facts = check_git_state(
@@ -756,9 +966,17 @@ def launch(
             f"run root {run_root} already exists; refusing a second launch"
         ) from exc
 
-    events = lambda record: _append_event(  # noqa: E731
-        run_root, {"time_epoch": now_fn(), **record}
-    )
+    event_errors: list[str] = []
+
+    def events(record: dict[str, Any]) -> None:
+        """Append one controller event (best-effort). A failing event log
+        NEVER aborts the supervision of live children; the failure is
+        remembered and forces the run to end "failed"."""
+        try:
+            _append_event(run_root, {"time_epoch": now_fn(), **record})
+        except Exception as exc:  # noqa: BLE001 -- evidence I/O must not kill supervision
+            if len(event_errors) < 5:
+                event_errors.append(f"{type(exc).__name__}: {exc}")
     pair_space = g4_pair_space()
     plans = {s: shard_plan(pair_space, s) for s in (0, 1)}
     cards: dict[int, _CardState] = {}
@@ -811,24 +1029,9 @@ def launch(
                 stderr=card._stderr_stream,
                 start_new_session=True,  # setsid: SSH disconnect must not kill the job
             )
-            card.pid = int(card.proc.pid)
-            card.launch_epoch = now_fn()
-            _atomic_write_text(run_root / f"card{shard}.pid.txt", f"{card.pid}\n")
-            _atomic_write_text(
-                run_root / f"card{shard}.launch_time.txt",
-                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(card.launch_epoch))
-                + f" epoch={card.launch_epoch}\n",
-            )
-            events(
-                {
-                    "event": "spawn",
-                    "shard_id": shard,
-                    "pid": card.pid,
-                    "device": f"npu:{shard}",
-                    "removed_device_mask_vars": removed_masks,
-                }
-            )
         except Exception as exc:  # noqa: BLE001 -- record and keep the peer card
+            # GENUINE spawn failure: Popen never returned, so this card owns
+            # NO live process -- recording its NONE exit is honest and final.
             card.spawn_error = f"{type(exc).__name__}: {exc}"
             for stream in (card._stdout_stream, card._stderr_stream):
                 try:
@@ -837,6 +1040,35 @@ def launch(
                 except OSError:
                     pass
             _record_card_exit(run_root, card, None, now_fn(), events, note="spawn_failed")
+            continue
+        # Popen SUCCEEDED: from here on the live child stays under the common
+        # deadline NO MATTER what happens to the evidence writes below. A
+        # post-spawn record failure is remembered (and fails the run at the
+        # end) -- it never writes a fake exit for the live process and never
+        # aborts the supervision of either card.
+        card.pid = int(card.proc.pid)
+        card.launch_epoch = now_fn()
+        try:
+            _atomic_write_text(run_root / f"card{shard}.pid.txt", f"{card.pid}\n")
+            _atomic_write_text(
+                run_root / f"card{shard}.launch_time.txt",
+                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(card.launch_epoch))
+                + f" epoch={card.launch_epoch}\n",
+            )
+        except Exception as exc:  # noqa: BLE001 -- child alive; keep supervising
+            _note_card_error(
+                card, f"post-spawn pid/time record failed: {type(exc).__name__}: {exc}"
+            )
+        events(
+            {
+                "event": "spawn",
+                "shard_id": shard,
+                "pid": card.pid,
+                "device": f"npu:{shard}",
+                "removed_device_mask_vars": removed_masks,
+                "pid_recorded": card.record_error is None,
+            }
+        )
 
     # 7. the complete launch record (fail-if-exists).
     launch_record = {
@@ -863,6 +1095,7 @@ def launch(
                 "pid": cards[s].pid,
                 "launch_epoch": cards[s].launch_epoch,
                 "spawn_error": cards[s].spawn_error,
+                "record_error": cards[s].record_error,
                 "out_dir": str(runtime_root / "runs" / cfg.run_id / f"card{s}"),
                 "stdout_log": str(cards[s].stdout_path),
                 "stderr_log": str(cards[s].stderr_path),
@@ -870,9 +1103,16 @@ def launch(
             for s in (0, 1)
         },
     }
-    _atomic_write_text(
-        run_root / LAUNCH_RECORD_NAME, json.dumps(launch_record, indent=2, sort_keys=True) + "\n"
-    )
+    # Its failure is NOT a reason to abandon the already-spawned children:
+    # remember it, force the run to end "failed", and keep supervising under
+    # the common deadline.
+    launch_record_error: Optional[str] = None
+    try:
+        _atomic_write_text(
+            run_root / LAUNCH_RECORD_NAME, json.dumps(launch_record, indent=2, sort_keys=True) + "\n"
+        )
+    except Exception as exc:  # noqa: BLE001 -- children stay supervised below
+        launch_record_error = f"{type(exc).__name__}: {exc}"
 
     # 8. wait under the COMMON deadline; reap + record each exit IMMEDIATELY.
     pending = {s for s in (0, 1) if cards[s].proc is not None}
@@ -886,13 +1126,15 @@ def launch(
                 pending.discard(shard)
                 continue
             if now >= kill_at and not card.kill_sent:
-                card.proc.kill()
+                scope = _signal_card(card, _SIGKILL, group_signal_fn)
                 card.kill_sent = True
-                events({"event": "kill_sent", "shard_id": shard, "pid": card.pid})
+                events({"event": "kill_sent", "shard_id": shard, "pid": card.pid,
+                        "signal_scope": scope})
             elif now >= term_at and not card.term_sent:
-                card.proc.terminate()
+                scope = _signal_card(card, _SIGTERM, group_signal_fn)
                 card.term_sent = True
-                events({"event": "term_sent", "shard_id": shard, "pid": card.pid})
+                events({"event": "term_sent", "shard_id": shard, "pid": card.pid,
+                        "signal_scope": scope})
         if not pending:
             break
         if now_fn() >= deadline + cfg.kill_wait_s:
@@ -915,12 +1157,53 @@ def launch(
             except OSError:
                 pass
 
-    # 9. final exit record + post-launch Git evidence.
-    post_git = recheck_git_state(repo_root, cfg.approved_sha)
-    ok = all(
-        cards[s].exit_code == 0 and not cards[s].deadline_enforced and cards[s].spawn_error is None
-        for s in (0, 1)
-    ) and post_git["head_matches_approved"] and post_git["worktree_clean"]
+    # 8b. drain leftover members of the process groups WE created (POSIX).
+    # Runs only after EVERY parent is reaped (or honestly recorded as
+    # unreaped), so peer supervision is never delayed; every drain wait is
+    # capped by the same hard bound, so the common deadline budget does not
+    # move. On platforms without process groups this records the degradation.
+    hard_end = deadline + cfg.kill_wait_s
+    for shard in (0, 1):
+        _drain_card_group(
+            cards[shard],
+            group_signal_fn=group_signal_fn,
+            now_fn=now_fn,
+            sleep_fn=sleep_fn,
+            settle_s=cfg.descendant_settle_s,
+            term_grace_s=cfg.descendant_term_grace_s,
+            kill_wait_s=cfg.descendant_kill_wait_s,
+            hard_end=hard_end,
+            events=events,
+        )
+
+    # 9. final exit record + post-launch Git evidence. The Git re-check is
+    # evidence only: by now every child is reaped, so its failure cannot
+    # orphan anything -- it is remembered and fails the run honestly.
+    post_git_error: Optional[str] = None
+    try:
+        post_git = recheck_git_state(repo_root, cfg.approved_sha)
+    except Exception as exc:  # noqa: BLE001 -- children already reaped above
+        post_git_error = f"{type(exc).__name__}: {exc}"
+        post_git = {
+            "error": post_git_error,
+            "head_matches_approved": False,
+            "worktree_clean": False,
+        }
+    ok = (
+        all(
+            cards[s].exit_code == 0
+            and not cards[s].deadline_enforced
+            and cards[s].spawn_error is None
+            and cards[s].record_error is None
+            and not cards[s].leftover_descendants
+            for s in (0, 1)
+        )
+        and launch_record_error is None
+        and not event_errors
+        and post_git_error is None
+        and post_git["head_matches_approved"]
+        and post_git["worktree_clean"]
+    )
     exit_record = {
         "schema_version": LAUNCH_SCHEMA_VERSION,
         "run_id": cfg.run_id,
@@ -930,6 +1213,9 @@ def launch(
         "ended_epoch": now_fn(),
         "wall_budget_s": cfg.wall_budget_s,
         "post_launch_git": post_git,
+        "launch_record_error": launch_record_error,
+        "event_log_errors": event_errors,
+        "process_group_supported": _PROCESS_GROUP_SUPPORTED,
         "cards": {
             str(s): {
                 "shard_id": s,
@@ -942,26 +1228,50 @@ def launch(
                 "term_sent": cards[s].term_sent,
                 "kill_sent": cards[s].kill_sent,
                 "spawn_error": cards[s].spawn_error,
+                "record_error": cards[s].record_error,
+                "leftover_descendants": cards[s].leftover_descendants,
+                "group_cleanup": cards[s].group_cleanup,
             }
             for s in (0, 1)
         },
         "status": "ok" if ok else "failed",
     }
-    _atomic_write_text(
-        run_root / EXIT_RECORD_NAME, json.dumps(exit_record, indent=2, sort_keys=True) + "\n"
-    )
+    try:
+        _atomic_write_text(
+            run_root / EXIT_RECORD_NAME, json.dumps(exit_record, indent=2, sort_keys=True) + "\n"
+        )
+    except Exception as exc:  # noqa: BLE001 -- every child is already reaped;
+        # a total disk fault may lose this file, but the controller must exit
+        # non-zero instead of leaving a false "ok" ambiguous.
+        raise RunnerError(
+            f"controller_exit.json could not be written ({type(exc).__name__}: {exc}); "
+            "all children were reaped and their real exits recorded where the "
+            "disk allowed, but this run is NOT ok"
+        ) from exc
     events({"event": "controller_exit", "status": exit_record["status"]})
     return exit_record
 
 
 def _record_card_exit(run_root: Path, card: _CardState, rc, when: float, events, note: str = "") -> None:
-    """Write the card's REAL exit code the moment it is known (fail-if-exists)."""
+    """Record the card's REAL exit the moment it is known.
+
+    In-memory first -- supervision decisions never depend on the disk. The
+    fail-if-exists file write and the event append are best-effort: their
+    failure is remembered on the card (forcing the run to end "failed") but
+    NEVER raises out of the wait loop, so the peer keeps its supervision.
+    Called at most once per card, so the exit file is written exactly once:
+    a live process never gets a fake exit and a real exit is never
+    overwritten.
+    """
     card.exit_code = None if rc is None else int(rc)
     card.exit_epoch = when
-    _atomic_write_text(
-        run_root / f"card{card.shard_id}.exit_code.txt",
-        f"{card.exit_code if card.exit_code is not None else 'NONE'}\n",
-    )
+    try:
+        _atomic_write_text(
+            run_root / f"card{card.shard_id}.exit_code.txt",
+            f"{card.exit_code if card.exit_code is not None else 'NONE'}\n",
+        )
+    except Exception as exc:  # noqa: BLE001 -- peer supervision must go on
+        _note_card_error(card, f"exit record write failed: {type(exc).__name__}: {exc}")
     events(
         {
             "event": "card_exit",
