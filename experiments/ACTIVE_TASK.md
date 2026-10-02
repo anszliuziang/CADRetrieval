@@ -1,21 +1,21 @@
 # 当前实验任务：原版 Text2CAD M1c batch16双卡测速准备
 
-- `state`: `implementation`（用户同意先用已通过的batch16测速；当前仅本地同步最小修复/CPU核验，仍不允许模型前向）
+- `state`: `pilot_authorized`（仅本轮batch16两卡throughput，各一次；不批准G1重试、其它档/优化、G3或全量）
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G2_B16_2026-10-02.md`（上位子合同仍为 M1c 2026-09-30）
-- `phase`: G1结果已审；2026-10-02用户同意先用batch16/全长/无缓存测速。CPU发现现有0.2秒同步轮询让短rep错开，允许Kimi本地仅改默认轮询至0.001秒并做必要CPU回归/见证，交新实现报告；Codex审码、确认每卡8100/总16200计划后才另批SHA运行。不重跑G1 batch32，不改原容差或评分路径
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G1_PROFILE_CODEX_REVIEW_2026-10-01.md`；建议以已通过的batch16/全长/无缓存先测速，尚未授权
+- `phase`: 同步最小修复已审，Codex独立CPU窗口0.999912/13项通过，静态预算每卡8100/总16200确认。允许batch16、FP32、全长、无缓存的两个同步throughput调用，warmup2/reps3，真实尾批14。任何失败保留证据并停止，不重试或放宽窗口/数值门
+- `latest_review`: `experiments/reviews/IDEA01_M1C_G2_B16_CODEX_CODE_REVIEW_2026-10-02.md`（G1失败审查另保留）
 - `reviewed_cpu_sha`: `598dd40b0cf6f8ce87003225c0ba3ee434abb450`（仅CPU资产入口审定；服务器只Git检出此SHA运行，不授权真实前向）
-- `approved_sha`: `none`（不批准新的前向；已完成运行的SHA另列于下，不代表继续授权）
+- `approved_sha`: `08a0183c86afc7198eed1c798d289d4b6f0c4a42`（远端仅干净detached此完整SHA运行，不用本地最新HEAD替代）
 - `last_run_sha`: `a2219e25b7f018aa12e820616466672fd8d70729`；invocation `20261001T062948Z-4fb6b1fc`，exit_code=3，账本finalized=true
-- `gpu_budget`: 0；`max_scored_pairs`: 0（当前审核阶段）。历史单次额度为704对/3600卡秒，实际192对/38.44卡秒；剩余账面512对不构成新授权，不修改原始账本，不重试
-- `run_id`: `idea01_text2cad_g2_b16_20261002`（仅预定，尚未运行）；token审计SHA `9abfd5b403d0f117ca70d512b4b5ab3a8020d8b5ec08b8b2ad7ad895f62627e8`；配置SHA `fe42096c5ff63e8532bcb80f9c2cdb2175eb10f5d00679013c36899d58571dce`
+- `gpu_budget`: 2 卡小时；`max_scored_pairs`: 16200（两卡合计，含warmup，各8100）。仅npu:0/1两个单卡进程，各cards_used=1、throughput一次、timeout3600秒；同一新SHA共享账本。旧G1余额不构成授权，不改旧账本，不重试
+- `run_id`: `idea01_text2cad_g2_b16_20261002`；out `/home/ma-user/work/CADRetrieval_runtime/runs/idea01_text2cad_g2_b16_20261002/card0/`、`card1/`；sync同run的`sync/`，group `g2_b16_20261002`，拒绝旧目录/marker。token审计SHA `9abfd5b403d0f117ca70d512b4b5ab3a8020d8b5ec08b8b2ad7ad895f62627e8`；配置SHA `fe42096c5ff63e8532bcb80f9c2cdb2175eb10f5d00679013c36899d58571dce`
 - `data`: `SadilKhan/Text2CAD@422d4c93198c3cd98d5c2092c0ab214b3a76a68d` 官方 v1.0；复用 M0 冻结的 8,046 CAD 图库、7,934 非空 L0 查询、3,644 唯一 `strip()` 文本和独立 qrels。官方 `cad_seq.zip` 是本臂唯一候选原生表示；评分输入不得含原 CSV、caption metadata、UID 正例映射或 qrels
 - `model`: 原作者 `Text2CAD_1.0.pth` SHA256 `235b137e72f97c740550e29698c342967d3be7c1d4cd0067a1b3380389034598`，固定 `google-bert/bert-large-uncased@6da4b6a26a1877e173fca3225479512db81a5e5b`；官方源码本地镜像 SHA `669a81472ede2269837c22a4d00070eaac360c82`。代码许可 CC BY-NC-SA 4.0，若改编纳入仓库须保留许可/出处
-- `server`: `yunnan-share2`（当前只读核查、无模型前向）；checkout `/home/ma-user/work/CADRetrieval`，源码树保持干净。资产及日志在 checkout 外 `/home/ma-user/work/CADRetrieval_runtime/`；`cvteam14` 仅用于共享 OBS 归档，不计计算资源
+- `server`: `yunnan-share2`（仅上述两卡throughput；启动前再次确认健康/无其它NPU进程）；checkout `/home/ma-user/work/CADRetrieval`，源码树保持干净。资产及日志在 checkout 外 `/home/ma-user/work/CADRetrieval_runtime/`；`cvteam14` 仅用于共享 OBS 归档，不计计算资源
 - `allowed_network`: 固定官方仓库/Revision 的源码与资产、只读元数据。大权重与数据由 Codex 当前选择性准备和校验；不要下载图像/深度图全库或其它模型
-- `required_output`: 新submission `TEXT2CAD_G2_B16_IMPLEMENTATION_2026-10-02.md`，最小代码差异、CPU同步before/after及受影响测试、完整实现SHA和两卡准确命令。仅Codex修改本文件/计划/审核；Kimi不改配置/旧报告/模型/score，不自行运行任何模型前向
+- `required_output`: 两卡真实rep/pair/score/窗口/HBM/阶段耗时、stdout/stderr/真实退出码、完整代码与授权SHA/环境/命令、共享账本快照、sync markers；已审eta-g2 CPU输出 `eta_g2_b16_20261002.json`。本地原始镜像与共享OBS逐SHA归档；新submission `TEXT2CAD_G2_B16_RESULTS_2026-10-02.md`。仅Codex修改本文件/计划/审核；Kimi不改源码/配置/旧报告/模型/score，不自行进入下一门
 - `stop_conditions`: checkpoint 非 BERT 键无法严格对应、官方数据 CAD 向量/有效 mask 不自洽、文本或 CAD 被静默截断、qrels 泄漏、910 移植改变数学、资产 SHA/许可不明、远端 Git 不干净；在本地交接阻塞并停止受影响步骤
 
 原版 Text2CAD 的训练 loss 使用 `label_smoothing=0.1`；只允许从冻结模型原始两路 logits 构造清楚命名的条件排序分数，不把训练 loss 或双头分数称为 CAD 几何的精确 NLL。此前 Qwen Text-to-CadQuery 与 A test 有 4,581 UID 训练交叉，不能作为 A 的无泄漏主结果。
