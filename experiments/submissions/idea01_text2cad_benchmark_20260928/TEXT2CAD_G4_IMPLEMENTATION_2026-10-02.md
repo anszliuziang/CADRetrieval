@@ -101,4 +101,4 @@ Codex 审码重点建议：wait/kill 循环（`launch()` 第 8 节）、spawn �
 
 ## 8. 状态与回填
 
-**review_required**。实现提交 `0bba6a7acb573aefbe1797a043b6dafe974e61e8`（git status 干净、未 push）；本报告提交 SHA：（回填处）。
+**review_required**。实现提交 `0bba6a7acb573aefbe1797a043b6dafe974e61e8`（git status 干净、未 push）；本报告提交 SHA：`5acb984a60d58aff26ec5a47322f74cad7a029cf`（本行为 SHA 回填，单独提交）。
