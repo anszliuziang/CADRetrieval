@@ -29,7 +29,7 @@ nohup /home/ma-user/work/envs/cadretrieval-idea01-torch271/bin/python \
 
 不要第二次运行该命令；controller创建正式run的原子fresh guard、两条full固定argv、实际PID与共同deadline。原子记录/退出由已审代码完成，不在服务器热补脚本。controller外层日志/PID也须fresh检查，不覆盖已有文件。
 
-5. 只读确认controller及两scorer PID/命令、同一SHA和完整argv无probe；新账本恰两invocation、cap29319624/1209600，均cards_used1。至少两卡各首个完整chunk/timing与非有限/拒绝0、NPU进程/设备对应、共同deadline、干净Git。不是spawn成功就宣称全量成功。遇真实失败记录并停下交流，不重启/重复评分；单卡失败peer由既有controller持续监管，不擅自杀正常作业。
+5. 只读确认controller及两scorer PID/命令、同一SHA和完整argv无probe；新账本恰两invocation、cap29319624/1209600，均cards_used1。至少两卡各首个完整chunk与非有限/拒绝0、实际mtime、NPU进程/设备对应、共同deadline、干净Git。正式full路径不生成G3的timing_sXX.jsonl；以mtime观察产出节奏，以final ledger/controller退出核总耗时，不声称逐query计时或冷启动。不是spawn成功就宣称全量成功。遇真实失败记录并停下交流，不重启/重复评分；单卡失败peer由既有controller持续监管，不擅自杀正常作业。
 6. 本地自己的新LAUNCH报告列实际UTC/PID/invocation/授权ref/argv/ledger/首chunk/日志/源资产/限制、完整代码与报告SHA。exact stage自己的报告、commit及SHA回填后停止交接，不push、不改Codex文档/源/配置。Codex随后只读审核启动并推送报告。
 
 ## 运行后

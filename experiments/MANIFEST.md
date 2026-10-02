@@ -31,3 +31,4 @@
 | 2026-10-02 | /requesting-code-review | experiments/plans/IDEA01_M1C_G4_POSIX_CPU_WITNESS_2026-10-02.md | implementation | Git部署56ac0f8、固定22项CPU与清理前原始观测；不改断言/源码/评分 |
 | 2026-10-02 | /requesting-code-review | experiments/reviews/IDEA01_M1C_G4_CODEX_FULL_APPROVAL_2026-10-02.md | pilot_authorized | 真实Linux22/清理前状态及16+9本地OBS SHA通过，正式全量完整SHA准入 |
 | 2026-10-02 | /experiment-plan | experiments/plans/IDEA01_M1C_G4_EXECUTION_2026-10-02.md | pilot_authorized | 全29319624对、仅两fresh/336卡时/共同七天，已审Git启动与交接合同 |
+| 2026-10-02 | /monitor-experiment | experiments/reviews/IDEA01_M1C_G4_CODEX_LAUNCH_REVIEW_2026-10-02.md | pilot_authorized | 两卡正式全量启动；独立PID/预算/首16092行96593检查及9权威本地OBS SHA，full计时口径更正 |
