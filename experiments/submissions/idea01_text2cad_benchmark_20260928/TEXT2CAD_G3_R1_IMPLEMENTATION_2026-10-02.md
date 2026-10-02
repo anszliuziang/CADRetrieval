@@ -3,7 +3,7 @@
 - 任务：`idea01_text2cad_benchmark_20260928`（ACTIVE_TASK state=`implementation`；本轮真实模型/BERT/NPU 预算 0，未做任何真实前向）
 - 依据：`experiments/plans/IDEA01_M1C_G3_R1_FIX_2026-10-02.md`（active_subplan）；上位合同 `experiments/plans/IDEA01_M1C_G3_FULL_GALLERY_PROBE_2026-10-02.md`；审查 `experiments/reviews/IDEA01_M1C_G3_CODEX_CODE_REVIEW_R1_2026-10-02.md`
 - 起点 HEAD：`6df6f94`。原实现 `759691b9` / 原报告 `5422ed8` 保留未动；本阶段未 SSH、未 push、未下载/安装依赖、未做真实模型/BERT 前向或 NPU 操作、未读 qrels/UID 映射/原 CSV/旧模型分数；全部工作为本地 CPU（`D:\miniconda\python.exe`，Python 3.13.5，torch CPU，pytest 9.1.1）
-- **实现提交完整 SHA：`7f650d22a6259bb7b25bdc45abb8de989579ff79`**（修复 + 测试；本文件随后单独提交回填）
+- **实现提交完整 SHA：`7f650d22a6259bb7b25bdc45abb8de989579ff79`**（修复 + 测试）；**本报告提交完整 SHA：`3af274dbc73d8d4afd41f1b6f30732a10396d9c6`**（随后一次 SHA 回填提交仅更新本行）
 - 固定选择配置未改：SHA 仍为 `f8521598b1bf517f21491bf8185cdd23cae39a34a7019389d4a05c6fcbdd4985`（提交内 blob 复算一致，测试钉死该值）
 - 预定 run_id：`idea01_text2cad_g3_probe_20261002`（仅预定，未运行；总 804600 对、**最多** 12 卡小时/6 小时墙钟为后续授权上限，不是当前额度，也不是"至少 12"）
 
