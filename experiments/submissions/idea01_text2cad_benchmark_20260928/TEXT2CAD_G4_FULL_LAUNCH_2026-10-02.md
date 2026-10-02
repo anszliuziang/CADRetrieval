@@ -8,7 +8,7 @@
 - 授权来源：`origin/master:experiments/ACTIVE_TASK.md` @ `67e89a20eb6fc3b35d27c3ba2363da4311d9113c`（state=`pilot_authorized`）
 - 批准运行 SHA：`56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719`
 - run_id：`idea01_text2cad_g4_full_20261002`
-- 本报告提交 SHA：`（提交后回填）`
+- 本报告提交 SHA：`9dd46182d7a1cd6a0805fe6a25361ea58f0f82c7`（回填本行的后续提交仅改此一行）
 
 ## 一、事实（启动前核验）
 
