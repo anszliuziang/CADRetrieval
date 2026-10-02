@@ -87,17 +87,25 @@ WHAT THE CONTROLLER DOES (and nothing more)
    On POSIX the signals go to the WHOLE process group the controller created
    (the child leads it via ``start_new_session``, pgid == pid, so no other
    job can be reached); after each parent's REAL exit is recorded, surviving
-   group members are drained (settle window, TERM, KILL) inside the same
-   hard bound, and a card that needed that drain is an honest anomaly that
-   fails the run. Platforms without process groups (Windows dev host)
-   degrade to PID-only signaling and RECORD the degradation instead of
-   claiming cleanup. Each card's real exit code is reaped and written to
-   ``card{s}.exit_code.txt`` IMMEDIATELY when the process exits (no pipe
-   masks it, no waiting for the peer). A failed card is recorded and handed
-   over; the surviving card keeps its authorized run -- the controller never
-   restarts a failed card, never retries, and reports ``ok`` ONLY when both
-   cards really exited 0 without deadline enforcement, without leftover
-   descendants and without any evidence-record failure.
+   group members are drained (settle window, TERM, KILL) with every signal
+   scheduled INSIDE the original common deadline -- the settle window shrinks
+   and is skipped as the deadline approaches, TERM/KILL cutoffs never move
+   past it, and only the post-KILL confirmation wait may extend to
+   ``deadline + kill_wait_s`` (pure accounting after the KILL was sent). A
+   drain that itself starts past the deadline sends the remaining signals
+   immediately and records the breach (``group_deadline_breach``); a card
+   that needed that drain is an honest anomaly that fails the run. Platforms
+   without process groups (Windows dev host) degrade to PID-only signaling
+   and RECORD the degradation instead of claiming cleanup. Each card's real
+   exit code is reaped and written to ``card{s}.exit_code.txt`` IMMEDIATELY
+   when the process exits (no pipe masks it, no waiting for the peer). A
+   failed card is recorded and handed over; the surviving card keeps its
+   authorized run -- the controller never restarts a failed card, never
+   retries, and reports ``ok`` ONLY when both cards really exited 0 without
+   deadline enforcement, without leftover descendants, without a deadline
+   breach or unconfirmable group, and without any evidence-record failure --
+   including the final ``controller_exit`` event, whose write result is
+   folded into the returned AND persisted status.
 
 The scorer's own audited gates (fresh origin/master authorization, committed
 fingerprints, strict load, shared budget ledger) remain the final word; this
@@ -179,8 +187,13 @@ G4_STAGGER_S = 3.0
 G4_POLL_INTERVAL_S = 5.0
 #: Descendant drain (POSIX process groups): after a card's REAL exit is
 #: recorded, surviving members of the group the controller created get a
-#: short settle window, then TERM, then KILL -- every wait capped by the
-#: same hard bound (deadline + kill_wait). The audited production scorer
+#: settle window, then TERM, then KILL. Every SIGNAL is scheduled inside the
+#: ORIGINAL common deadline: the settle window ends no later than
+#: deadline - (term grace + kill wait), and the TERM grace is capped at
+#: deadline - kill wait, so no descendant termination is ever scheduled past
+#: the deadline; only the post-KILL confirmation wait may extend to
+#: deadline + kill_wait (pure accounting). A drain starting past the deadline
+#: signals immediately and records the breach. The audited production scorer
 #: spawns no children, so any survivor is an anomaly that fails the run
 #: honestly instead of leaking past the controller.
 G4_DESCENDANT_SETTLE_S = 10.0
@@ -767,6 +780,17 @@ class _CardState:
     #: unsupported_platform / empty / drained_within_grace / terminated /
     #: killed / survivors_after_kill / *_error:... .
     group_cleanup: Optional[str] = None
+    #: True when a descendant TERM/KILL had to be sent AT or AFTER the
+    #: original common deadline (only possible when the drain itself started
+    #: late, e.g. a parent reaped at the pathological hard bound). The signal
+    #: is still sent IMMEDIATELY -- never re-scheduled further out -- but the
+    #: lateness is recorded here so the run can never claim the common budget
+    #: held; it forces status "failed".
+    group_deadline_breach: bool = False
+    #: Non-ESRCH fault while probing the group (signal 0): the group's state
+    #: could not be confirmed, so it is recorded honestly and forces status
+    #: "failed" -- it is NEVER misreported as an empty group.
+    group_probe_error: Optional[str] = None
     stdout_path: Optional[Path] = None
     stderr_path: Optional[Path] = None
     _stdout_stream: Any = field(default=None, repr=False)
@@ -818,18 +842,41 @@ def _drain_card_group(
     settle_s: float,
     term_grace_s: float,
     kill_wait_s: float,
-    hard_end: float,
+    deadline: float,
+    confirm_end: float,
     events,
 ) -> None:
     """No member of the group WE created may outlive the controller (POSIX).
 
     Runs only AFTER the card's real exit is already reaped and recorded, and
     after the wait loop ended for every card, so peer supervision is never
-    delayed. Survivors past the settle window are terminated (TERM, bounded
-    grace, KILL, all waits capped by ``hard_end`` -- the common deadline
-    budget is not extended) and flip ``leftover_descendants`` -- an honest
-    anomaly that fails the run. Platforms without process groups record the
-    degradation instead of claiming cleanup.
+    delayed. Every descendant SIGNAL is scheduled inside the ORIGINAL common
+    ``deadline`` -- the +outer-kill-wait bound (``confirm_end``) is pure
+    accounting and may cap ONLY the post-KILL confirmation wait:
+
+      * the settle window ends no later than
+        ``deadline - (term_grace_s + kill_wait_s)`` so the full TERM grace
+        and KILL still fit inside the deadline; as the deadline approaches
+        the window shrinks and is finally SKIPPED, never moved past it;
+      * TERM is sent immediately after the settle window and its grace is
+        capped at ``deadline - kill_wait_s`` so KILL, when needed, is also
+        sent inside the deadline;
+      * the post-KILL confirmation wait is capped by ``confirm_end`` --
+        bookkeeping AFTER the KILL was already sent, never a new grace that
+        lets descendants run past the common deadline.
+
+    If the drain itself STARTS past those cutoffs (e.g. a parent was only
+    reaped at the pathological hard bound), the remaining TERM/KILL are sent
+    IMMEDIATELY back-to-back -- never re-scheduled further out -- and every
+    signal sent at/after the original deadline flips
+    ``group_deadline_breach``: the cleanup still happens (a live job is never
+    abandoned just to keep the log pretty) but the run honestly fails and can
+    never claim the budget held. Survivors past the settle window flip
+    ``leftover_descendants`` -- an honest anomaly that fails the run. A probe
+    fault other than ESRCH is recorded as ``group_probe_error`` (and fails
+    the run) instead of being misreported as an empty group. Platforms
+    without process groups record the degradation instead of claiming
+    cleanup.
     """
     if card.proc is None or card.pid is None:
         card.group_cleanup = "not_spawned"
@@ -842,56 +889,97 @@ def _drain_card_group(
     def group_alive() -> bool:
         try:
             return bool(group_signal_fn(pgid, 0))
-        except OSError:
+        except ProcessLookupError:
             return False
+        # Any other OSError (EPERM, ...) propagates: an unconfirmable group
+        # must NEVER be misreported as empty.
 
-    if not group_alive():
-        card.group_cleanup = "empty"
-        return
-    settle_end = min(now_fn() + settle_s, hard_end)
-    while group_alive():
-        now = now_fn()
-        if now >= settle_end:
-            break
-        sleep_fn(min(0.05, max(0.0, settle_end - now)))
-    if not group_alive():
-        card.group_cleanup = "drained_within_grace"
+    term_cutoff = deadline - (term_grace_s + kill_wait_s)
+    kill_cutoff = deadline - kill_wait_s
+    try:
+        if not group_alive():
+            card.group_cleanup = "empty"
+            return
+        settle_end = min(now_fn() + settle_s, term_cutoff)
+        while group_alive():
+            now = now_fn()
+            if now >= settle_end:
+                break
+            sleep_fn(min(0.05, max(0.0, settle_end - now)))
+        if not group_alive():
+            card.group_cleanup = "drained_within_grace"
+            return
+    except OSError as exc:
+        card.group_probe_error = f"{type(exc).__name__}: {exc}"
+        card.group_cleanup = f"probe_error:{type(exc).__name__}: {exc}"
         return
     card.leftover_descendants = True
     events({"event": "descendants_detected", "shard_id": card.shard_id, "pgid": pgid})
+    sent_at = now_fn()
     try:
         group_signal_fn(pgid, _SIGTERM)
     except OSError as exc:
         card.group_cleanup = f"term_error:{type(exc).__name__}:{exc}"
         return
+    if sent_at >= deadline:
+        card.group_deadline_breach = True
     card.group_cleanup = "terminated"
-    events({"event": "descendant_term_sent", "shard_id": card.shard_id, "pgid": pgid})
-    term_end = min(now_fn() + term_grace_s, hard_end)
-    while group_alive():
-        now = now_fn()
-        if now >= term_end:
-            break
-        sleep_fn(min(0.05, max(0.0, term_end - now)))
-    if not group_alive():
+    events(
+        {
+            "event": "descendant_term_sent",
+            "shard_id": card.shard_id,
+            "pgid": pgid,
+            "after_deadline": sent_at >= deadline,
+        }
+    )
+    term_end = min(now_fn() + term_grace_s, kill_cutoff)
+    try:
+        while group_alive():
+            now = now_fn()
+            if now >= term_end:
+                break
+            sleep_fn(min(0.05, max(0.0, term_end - now)))
+        if not group_alive():
+            return
+    except OSError as exc:
+        card.group_probe_error = f"{type(exc).__name__}: {exc}"
+        card.group_cleanup = f"probe_error:{type(exc).__name__}: {exc}"
         return
+    sent_at = now_fn()
     try:
         group_signal_fn(pgid, _SIGKILL)
     except OSError as exc:
         card.group_cleanup = f"kill_error:{type(exc).__name__}:{exc}"
         return
+    if sent_at >= deadline:
+        card.group_deadline_breach = True
     card.group_cleanup = "killed"
-    events({"event": "descendant_kill_sent", "shard_id": card.shard_id, "pgid": pgid})
-    kill_end = min(now_fn() + kill_wait_s, hard_end)
-    while group_alive():
-        now = now_fn()
-        if now >= kill_end:
-            break
-        sleep_fn(min(0.05, max(0.0, kill_end - now)))
-    if group_alive():
-        card.group_cleanup = "survivors_after_kill"
-        events(
-            {"event": "descendants_unreaped", "shard_id": card.shard_id, "pgid": pgid}
-        )
+    events(
+        {
+            "event": "descendant_kill_sent",
+            "shard_id": card.shard_id,
+            "pgid": pgid,
+            "after_deadline": sent_at >= deadline,
+        }
+    )
+    # confirm_end (deadline + the outer kill wait) bounds ONLY this
+    # confirmation wait -- accounting AFTER the KILL was already sent.
+    kill_end = min(now_fn() + kill_wait_s, confirm_end)
+    try:
+        while group_alive():
+            now = now_fn()
+            if now >= kill_end:
+                break
+            sleep_fn(min(0.05, max(0.0, kill_end - now)))
+        if group_alive():
+            card.group_cleanup = "survivors_after_kill"
+            events(
+                {"event": "descendants_unreaped", "shard_id": card.shard_id, "pgid": pgid}
+            )
+    except OSError as exc:
+        card.group_probe_error = f"{type(exc).__name__}: {exc}"
+        card.group_cleanup = f"probe_error:{type(exc).__name__}: {exc}"
+        return
 
 
 def launch(
@@ -1159,10 +1247,13 @@ def launch(
 
     # 8b. drain leftover members of the process groups WE created (POSIX).
     # Runs only after EVERY parent is reaped (or honestly recorded as
-    # unreaped), so peer supervision is never delayed; every drain wait is
-    # capped by the same hard bound, so the common deadline budget does not
-    # move. On platforms without process groups this records the degradation.
-    hard_end = deadline + cfg.kill_wait_s
+    # unreaped), so peer supervision is never delayed. Descendant SIGNALS
+    # (settle/TERM/KILL) are scheduled inside the ORIGINAL common deadline;
+    # deadline + kill_wait_s bounds ONLY the post-KILL confirmation wait --
+    # accounting after termination was already sent, never an extra grace
+    # that lets descendants run past the deadline. On platforms without
+    # process groups this records the degradation.
+    confirm_end = deadline + cfg.kill_wait_s
     for shard in (0, 1):
         _drain_card_group(
             cards[shard],
@@ -1172,7 +1263,8 @@ def launch(
             settle_s=cfg.descendant_settle_s,
             term_grace_s=cfg.descendant_term_grace_s,
             kill_wait_s=cfg.descendant_kill_wait_s,
-            hard_end=hard_end,
+            deadline=deadline,
+            confirm_end=confirm_end,
             events=events,
         )
 
@@ -1196,6 +1288,8 @@ def launch(
             and cards[s].spawn_error is None
             and cards[s].record_error is None
             and not cards[s].leftover_descendants
+            and not cards[s].group_deadline_breach
+            and cards[s].group_probe_error is None
             for s in (0, 1)
         )
         and launch_record_error is None
@@ -1231,11 +1325,22 @@ def launch(
                 "record_error": cards[s].record_error,
                 "leftover_descendants": cards[s].leftover_descendants,
                 "group_cleanup": cards[s].group_cleanup,
+                "group_deadline_breach": cards[s].group_deadline_breach,
+                "group_probe_error": cards[s].group_probe_error,
             }
             for s in (0, 1)
         },
         "status": "ok" if ok else "failed",
     }
+    # The final controller_exit event is REQUIRED completion evidence, so it
+    # is appended BEFORE the exit record is persisted: if even this last
+    # event write fails, the failure is folded into the SAME record the
+    # function returns and the disk keeps -- the run can never return ok with
+    # an event error, and the persisted JSON never hides one.
+    events({"event": "controller_exit", "status": exit_record["status"]})
+    exit_record["event_log_errors"] = list(event_errors)
+    if event_errors:
+        exit_record["status"] = "failed"
     try:
         _atomic_write_text(
             run_root / EXIT_RECORD_NAME, json.dumps(exit_record, indent=2, sort_keys=True) + "\n"
@@ -1248,7 +1353,6 @@ def launch(
             "all children were reaped and their real exits recorded where the "
             "disk allowed, but this run is NOT ok"
         ) from exc
-    events({"event": "controller_exit", "status": exit_record["status"]})
     return exit_record
 
 

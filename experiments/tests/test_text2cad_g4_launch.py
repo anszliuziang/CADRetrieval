@@ -34,14 +34,31 @@ CPU: no model, no BERT, no NPU, no network. Covers:
     Popen no longer orphans the live children, never writes a fake exit,
     reaps both real exit codes, writes controller_exit.json and ends
     "failed"; event-log / final-Git / exit-record failures are likewise
-    contained (children reaped first, non-zero honest outcome);
-  * PROCESS-GROUP LIFECYCLE (R1): deadline TERM/KILL addresses the child's
+    contained (children reaped first, non-zero honest outcome); R2 adds the
+    Root repro where ONLY the final controller_exit event append fails --
+    the returned AND persisted status must both be "failed" with the error
+    visible in both;
+  * PROCESS-GROUP LIFECYCLE (R1/R2): deadline TERM/KILL addresses the child's
     whole process group (pgid == pid, injected POSIX-semantics mock on this
     Windows host -- NOT claimed as Linux evidence) and the post-exit drain
     terminates surviving group members; REAL parent+descendant trees run
-    both the normal-parent-exit and deadline paths, asserting real group
-    cleanup on POSIX and the recorded PID-only degradation on Windows (the
-    Windows tests clean up their own leaked descendants themselves);
+    both the normal-parent-exit and deadline paths, and the REAL group /
+    descendant PID liveness (live vs zombie distinguished) is collected and
+    asserted AT controller return, BEFORE the test's own finally cleanup --
+    the cleanup can never launder the controller's drain evidence; POSIX
+    asserts real group cleanup, Windows asserts the recorded PID-only
+    degradation (and that the leaked descendant is really still alive at
+    controller return, i.e. the degradation is not vacuous);
+  * DESCENDANT DRAIN vs COMMON DEADLINE (R2, Root repro): drain settle /
+    TERM / KILL are scheduled INSIDE the original common deadline -- a
+    parent reaped at deadline-1 gets its group TERM'd at deadline-1, not at
+    deadline+9; the settle window shrinks/skips near the deadline; a drain
+    starting past the deadline signals immediately and records the breach
+    (failed); deadline+kill_wait bounds only the post-KILL confirmation
+    wait; a non-ESRCH group-probe fault is recorded as probe_error (failed)
+    instead of being claimed empty; launch-level fake-clock integration
+    pins the near-deadline parent exit, the early-exit/peer-alive case and
+    the probe-error case;
   * the common-deadline arithmetic with a deterministic fake clock: the
     staggered second card does NOT extend the wall clock, TERM/KILL grace
     sits inside the budget, per-card exits are reaped with their real codes;
@@ -1133,6 +1150,53 @@ class PostSpawnFaultTest(unittest.TestCase):
             )
         self.assertFalse((self.run_root / g4.EXIT_RECORD_NAME).exists())
 
+    def test_final_event_write_failure_fails_honestly(self):
+        """R2 Root repro: two REAL CPU children exit 0 and ONLY the final
+        controller_exit event append fails. Old code computed ok and persisted
+        controller_exit.json BEFORE that append: it returned ok with the error
+        in memory and persisted ok with an EMPTY error list. Fixed: the final
+        event is appended before the record is finalized, so the returned AND
+        persisted status are both "failed" and BOTH error lists carry the
+        failure; the real exits and fail-if-exists semantics are unchanged."""
+        scripts = {0: "import sys; sys.exit(0)", 1: "import sys; sys.exit(0)"}
+        procs = []
+        original = g4._append_event
+
+        def faulty(root, record):
+            if record.get("event") == "controller_exit":
+                raise OSError("injected final controller_exit event failure")
+            return original(root, record)
+
+        cfg = _launch_cfg(self.work, self.origin_url, self.code_sha, self.rt)
+        with mock.patch.object(g4, "_append_event", side_effect=faulty):
+            record = g4.launch(
+                cfg, popen_fn=self._factory(scripts, procs),
+                preflight_fn=FAKE_PREFLIGHT, free_bytes_fn=FAKE_FREE_BYTES,
+            )
+        # returned state: honest failure with the error visible
+        self.assertEqual(record["status"], "failed")
+        self.assertTrue(record["event_log_errors"])
+        self.assertIn("final controller_exit event failure", record["event_log_errors"][-1])
+        # persisted state: the SAME honest failure, error NOT hidden
+        persisted = json.loads((self.run_root / g4.EXIT_RECORD_NAME).read_text())
+        self.assertEqual(persisted["status"], "failed")
+        self.assertEqual(persisted["event_log_errors"], record["event_log_errors"])
+        # real exits reaped and recorded; no fake success anywhere
+        for shard in (0, 1):
+            self.assertEqual(record["cards"][str(shard)]["exit_code"], 0)
+            self.assertEqual(
+                (self.run_root / f"card{shard}.exit_code.txt").read_text().strip(), "0"
+            )
+        self.assertTrue(all(p.poll() is not None for p in procs))
+        self.assertEqual(len(procs), 2)
+        # the failed final event never landed in the log; every earlier event did
+        events = [
+            json.loads(ln)
+            for ln in (self.run_root / g4.EVENTS_LOG_NAME).read_text().splitlines()
+        ]
+        self.assertNotIn("controller_exit", [e["event"] for e in events])
+        self.assertEqual([e["event"] for e in events].count("card_exit"), 2)
+
 
 # ---------------------------------------------------------------------------
 # R1 Important 2: process-group signaling + descendant drain
@@ -1162,16 +1226,78 @@ def _parent_descendant_scripts(base: Path, mode: str):
     return parent, marker, pid_file
 
 
+def _pid_state(pid: int) -> str:
+    """Best-effort REAL liveness of a pid the TEST created: "live" / "zombie"
+    / "gone" / "unknown:<why>". POSIX probes with kill(pid, 0) -- a ZOMBIE
+    still answers signal 0, so /proc classifies it when present (a zombie is
+    dead and must never be counted as a live leftover). Windows uses a
+    read-only OpenProcess probe (os.kill(pid, 0) is not a safe probe there);
+    Windows has no user-visible zombie state."""
+    if os.name == "posix":
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return "gone"
+        except PermissionError:
+            return "unknown:perm"
+        if Path("/proc").is_dir():
+            try:
+                rest = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+                return "zombie" if rest[0] == "Z" else "live"
+            except (OSError, IndexError):
+                return "gone"  # died between the probe and the read
+        return "live"  # POSIX without /proc: cannot distinguish a zombie
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return "live"
+            return "gone"
+        except Exception as exc:  # noqa: BLE001 -- evidence probe, never fatal
+            return f"unknown:{type(exc).__name__}"
+    return "unknown:platform"
+
+
+def _group_members_posix(pgid: int):
+    """REAL members of a process group with live/zombie state via /proc
+    (Linux). Returns None when /proc is unavailable -- the killpg probe is
+    then the only evidence and the limitation is recorded, not hidden."""
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return None
+    members = []
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            rest = (entry / "stat").read_text().rsplit(")", 1)[1].split()
+            state, pgrp = rest[0], int(rest[2])
+        except (OSError, IndexError, ValueError):
+            continue  # raced with an exit -- simply not a confirmed member
+        if pgrp == pgid:
+            members.append((int(entry.name), "zombie" if state == "Z" else "live"))
+    return members
+
+
 @unittest.skipUnless(GIT_AVAILABLE, "git executable required")
 class ProcessGroupTest(unittest.TestCase):
     """The controller must not leave any member of the process groups IT
     created running after it returns -- on either the deadline path or the
     normal parent-exit path. REAL parent+descendant trees run on any
-    platform: POSIX asserts the real group cleanup (the server-side POSIX
-    witness runs the same file); Windows asserts the recorded PID-only
-    degradation and the TEST reaps its own leaked descendant. An injected
-    POSIX-semantics mock separately pins the exact pgid/signal sequence --
-    mock evidence is never claimed as real Linux evidence."""
+    platform, and the REAL group/descendant liveness is COLLECTED AND
+    ASSERTED AT CONTROLLER RETURN, before the test's own finally cleanup
+    runs: the cleanup reaps only test-created PIDs and can never launder the
+    controller's own drain evidence. POSIX asserts the real group cleanup
+    (live vs zombie distinguished via /proc; the server-side POSIX witness
+    runs the same file); Windows asserts the recorded PID-only degradation
+    AND that the leaked descendant is really still alive at controller
+    return -- the degradation is evidence, not a vacuous claim; the test
+    then reaps its own leaked descendant itself. An injected POSIX-semantics
+    mock separately pins the exact pgid/signal sequence -- mock evidence is
+    never claimed as real Linux evidence."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -1210,6 +1336,52 @@ class ProcessGroupTest(unittest.TestCase):
         )
         return record
 
+    def _observe_tree_state(self, record, pid_file: Path) -> dict:
+        """Collect the REAL group/descendant state AT controller return. This
+        MUST run before the finally cleanup: only evidence gathered here can
+        be attributed to the controller's own drain; anything measured after
+        the test killed its own leaked PIDs would be laundered."""
+        card0 = record["cards"]["0"]
+        observed: dict = {"card0_pid": card0["pid"]}
+        if g4._PROCESS_GROUP_SUPPORTED:
+            pgid = card0["pid"]
+            try:
+                os.killpg(pgid, 0)
+                observed["group_probe"] = "members_present"
+            except ProcessLookupError:
+                observed["group_probe"] = "empty"
+            except OSError as exc:
+                observed["group_probe"] = f"unknown:{type(exc).__name__}"
+            observed["group_members"] = _group_members_posix(pgid)
+        if pid_file.exists():
+            try:
+                desc_pid = int(pid_file.read_text().strip())
+            except ValueError:
+                desc_pid = None
+            if desc_pid is not None:
+                observed["descendant_pid"] = desc_pid
+                observed["descendant_state"] = _pid_state(desc_pid)
+        return observed
+
+    def _assert_no_live_tree_at_return(self, observed: dict):
+        """POSIX: at controller return the group it created has NO LIVE
+        member and the descendant is not alive (a transient zombie awaiting
+        init's reap is dead, not a leak; it is recorded, not claimed live)."""
+        members = observed.get("group_members")
+        if members is not None:
+            live = [pid for pid, state in members if state == "live"]
+            self.assertEqual(live, [], f"controller returned with live group members: {observed}")
+        else:
+            # no /proc to classify: the killpg probe is the only evidence
+            self.assertEqual(
+                observed.get("group_probe"), "empty",
+                f"cannot classify group members (no /proc) and probe is not empty: {observed}",
+            )
+        self.assertIn(
+            observed.get("descendant_state"), ("gone", "zombie"),
+            f"descendant still alive at controller return: {observed}",
+        )
+
     def test_deadline_terminates_parent_and_descendant(self):
         parent0, marker, pid_file = _parent_descendant_scripts(self.base, "deadline")
         scripts = {0: parent0, 1: "import time; time.sleep(60)"}
@@ -1221,7 +1393,22 @@ class ProcessGroupTest(unittest.TestCase):
                 descendant_settle_s=0.3, descendant_term_grace_s=0.3,
                 descendant_kill_wait_s=0.5,
             )
+            # BEFORE any test cleanup: the controller's own end state.
+            observed = self._observe_tree_state(record, pid_file)
+            if g4._PROCESS_GROUP_SUPPORTED:
+                # REAL POSIX witness, measured at controller return.
+                self._assert_no_live_tree_at_return(observed)
+            else:
+                # Windows degradation is REAL: the leaked descendant is still
+                # alive at controller return -- the controller did NOT (and
+                # honestly never claimed to) clean the group.
+                self.assertEqual(
+                    observed.get("descendant_state"), "live",
+                    f"expected the leaked descendant alive at return (degradation): {observed}",
+                )
         finally:
+            # The TEST reaps only the PIDs it created; this is never claimed
+            # as controller cleanup and runs AFTER the assertions above.
             self._kill_own_descendant(pid_file)
         card0 = record["cards"]["0"]
         self.assertEqual(record["status"], "failed")
@@ -1231,11 +1418,9 @@ class ProcessGroupTest(unittest.TestCase):
         self.assertLess(used, 10.0)  # nothing lingers for the 60 s sleeps
         self.assertFalse(marker.exists())
         if g4._PROCESS_GROUP_SUPPORTED:
-            # REAL POSIX witness: TERM reached the whole group at the
-            # deadline; the descendant died with its parent before the
-            # controller returned.
-            with self.assertRaises(ProcessLookupError):
-                os.killpg(card0["pid"], 0)
+            # TERM reached the whole group at the deadline; the descendant
+            # died with its parent before the controller returned (asserted
+            # above from pre-cleanup evidence).
             self.assertFalse(card0["leftover_descendants"])
             self.assertIn(card0["group_cleanup"], ("empty", "drained_within_grace"))
         else:
@@ -1263,6 +1448,15 @@ class ProcessGroupTest(unittest.TestCase):
                 descendant_settle_s=0.3, descendant_term_grace_s=0.4,
                 descendant_kill_wait_s=0.5,
             )
+            # BEFORE any test cleanup: the controller's own end state.
+            observed = self._observe_tree_state(record, pid_file)
+            if g4._PROCESS_GROUP_SUPPORTED:
+                self._assert_no_live_tree_at_return(observed)
+            else:
+                self.assertEqual(
+                    observed.get("descendant_state"), "live",
+                    f"expected the leaked descendant alive at return (degradation): {observed}",
+                )
         finally:
             self._kill_own_descendant(pid_file)
         card0 = record["cards"]["0"]
@@ -1275,8 +1469,6 @@ class ProcessGroupTest(unittest.TestCase):
             self.assertTrue(card0["leftover_descendants"])
             self.assertEqual(card0["group_cleanup"], "terminated")
             self.assertEqual(record["status"], "failed")
-            with self.assertRaises(ProcessLookupError):
-                os.killpg(card0["pid"], 0)
             used = record["ended_epoch"] - record["common_start_epoch"]
             self.assertLess(used, 10.0)
         else:
@@ -1331,6 +1523,329 @@ class ProcessGroupTest(unittest.TestCase):
         self.assertEqual(card0["group_cleanup"], "terminated")
         self.assertEqual(calls, [(6101, g4._SIGTERM)])  # TERM sufficed, no KILL
         self.assertEqual(record["cards"]["1"]["group_cleanup"], "empty")
+
+
+# ---------------------------------------------------------------------------
+# R2 Important 1: descendant drain signals stay INSIDE the common deadline
+# ---------------------------------------------------------------------------
+
+
+@unittest.skipUnless(GIT_AVAILABLE, "git executable required")
+class DescendantDeadlineTest(unittest.TestCase):
+    """R2 (Root late-parent repro + boundaries): the post-exit descendant
+    drain must schedule settle/TERM/KILL INSIDE the original common deadline
+    -- deadline+kill_wait_s bounds ONLY the post-KILL confirmation wait. All
+    fake-clock; the group signal is an injected POSIX-semantics MOCK (never
+    claimed as real Linux evidence). Covers: parent reaped at deadline-1
+    (Root repro), near-deadline settle skip with compressed TERM/KILL grace,
+    normal-timing full settle, a drain STARTING past the deadline (signals
+    immediately + breach recorded, never re-scheduled), survivors after KILL,
+    and a non-ESRCH probe fault (recorded, failed, never claimed empty)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+        self.work, self.origin_url, self.code_sha = _build_dual_version_repo(self.base)
+        self.rt = _make_runtime(self.base)
+
+    @staticmethod
+    def _card(pid=31415):
+        return g4._CardState(shard_id=0, argv=[], env={}, proc=object(), pid=pid, exit_code=0)
+
+    def _drain(self, card, sig, clock, *, settle=10.0, grace=5.0, wait=5.0,
+               deadline=1600.0, confirm=1630.0):
+        g4._drain_card_group(
+            card, group_signal_fn=sig, now_fn=clock.now, sleep_fn=clock.sleep,
+            settle_s=settle, term_grace_s=grace, kill_wait_s=wait,
+            deadline=deadline, confirm_end=confirm, events=lambda x: None,
+        )
+
+    def test_late_parent_drain_term_inside_deadline(self):
+        """ROOT REPRO (regression): parent reaped at 1599, deadline 1600. Old
+        code passed hard_end=deadline+30 and TERMed the real group at 1609 --
+        9 s past the common deadline. Fixed: settle is skipped (its cutoff
+        deadline-(grace+wait)=1590 already passed) and TERM goes out at 1599,
+        INSIDE the deadline; the +30 is not a grace for running descendants."""
+        clock = _FakeClock(1599.0)
+        alive = [True]
+        calls = []
+
+        def sig(pgid, s):
+            if s == 0:
+                return alive[0]
+            calls.append({"signal": s, "at": clock.now()})
+            alive[0] = False
+            return True
+
+        card = self._card()
+        self._drain(card, sig, clock)
+        self.assertEqual(calls, [{"signal": g4._SIGTERM, "at": 1599.0}])
+        self.assertLessEqual(calls[0]["at"], 1600.0)  # NEVER deadline+9 again
+        self.assertEqual(card.group_cleanup, "terminated")
+        self.assertTrue(card.leftover_descendants)
+        self.assertFalse(card.group_deadline_breach)  # 1599 < deadline: inside
+        self.assertIsNone(card.group_probe_error)
+
+    def test_drain_near_deadline_settle_skipped_kill_bounded(self):
+        """Parent reaped at deadline-6 with a TERM-ignoring group: the settle
+        window is SKIPPED (not scheduled to now+10), TERM goes immediately,
+        its grace is compressed to the kill cutoff (deadline-5), and KILL is
+        sent there -- every signal inside the original deadline."""
+        clock = _FakeClock(1594.0)  # deadline 1600; settle cutoff 1590 passed
+        alive = [True]
+        calls = []
+
+        def sig(pgid, s):
+            if s == 0:
+                return alive[0]
+            calls.append({"signal": s, "at": clock.now()})
+            if s == g4._SIGKILL:
+                alive[0] = False
+            return True
+
+        card = self._card()
+        self._drain(card, sig, clock)
+        self.assertEqual(
+            calls,
+            [{"signal": g4._SIGTERM, "at": 1594.0}, {"signal": g4._SIGKILL, "at": 1595.0}],
+        )
+        self.assertTrue(all(c["at"] <= 1600.0 for c in calls))
+        self.assertEqual(card.group_cleanup, "killed")
+        self.assertFalse(card.group_deadline_breach)
+
+    def test_drain_normal_timing_full_grace_drained(self):
+        """Far from the deadline the full settle window applies and a group
+        draining on its own inside it is NOT an anomaly (unchanged R1
+        semantics: drained_within_grace, no signals, no leftover)."""
+        clock = _FakeClock(1500.0)
+        alive = [True]
+        calls = []
+
+        def sig(pgid, s):
+            if s == 0:
+                return alive[0] and clock.now() < 1504.0
+            calls.append({"signal": s, "at": clock.now()})
+            return True
+
+        card = self._card()
+        self._drain(card, sig, clock)
+        self.assertEqual(calls, [])
+        self.assertEqual(card.group_cleanup, "drained_within_grace")
+        self.assertFalse(card.leftover_descendants)
+        self.assertFalse(card.group_deadline_breach)
+
+    def test_drain_starting_after_deadline_signals_immediately_breach(self):
+        """Pathological late start (e.g. a parent reaped only at the hard
+        accounting bound): the remaining TERM/KILL go out IMMEDIATELY
+        back-to-back -- never re-scheduled further out -- the cleanup still
+        happens (a live job is never abandoned for a prettier log), and every
+        post-deadline signal is recorded as a breach so the run can never
+        claim the common budget held."""
+        clock = _FakeClock(1631.0)  # deadline 1600, confirm_end 1630 passed
+        alive = [True]
+        calls = []
+
+        def sig(pgid, s):
+            if s == 0:
+                return alive[0]
+            calls.append({"signal": s, "at": clock.now()})
+            if s == g4._SIGKILL:
+                alive[0] = False
+            return True
+
+        card = self._card()
+        self._drain(card, sig, clock)
+        self.assertEqual(
+            calls,
+            [{"signal": g4._SIGTERM, "at": 1631.0}, {"signal": g4._SIGKILL, "at": 1631.0}],
+        )
+        self.assertEqual(card.group_cleanup, "killed")
+        self.assertTrue(card.leftover_descendants)
+        self.assertTrue(card.group_deadline_breach)  # honest: budget did NOT hold
+
+    def test_drain_after_deadline_survivors_recorded(self):
+        """Even an unkillable (e.g. D-state) group past the deadline is
+        signaled immediately and the survivor state is recorded honestly --
+        the controller never hangs and never claims empty."""
+        clock = _FakeClock(1631.0)
+        calls = []
+
+        def sig(pgid, s):
+            if s == 0:
+                return True  # never dies
+            calls.append({"signal": s, "at": clock.now()})
+            return True
+
+        card = self._card()
+        self._drain(card, sig, clock)
+        self.assertEqual(
+            calls,
+            [{"signal": g4._SIGTERM, "at": 1631.0}, {"signal": g4._SIGKILL, "at": 1631.0}],
+        )
+        self.assertEqual(card.group_cleanup, "survivors_after_kill")
+        self.assertTrue(card.group_deadline_breach)
+
+    def test_drain_probe_error_recorded_not_empty(self):
+        """Minor (R2): a non-ESRCH probe fault (EPERM) is recorded as a probe
+        error -- the group is NOT claimed empty, no signals are sent on an
+        unconfirmable group, and the card carries the error for ok=False."""
+        clock = _FakeClock(1500.0)
+
+        def sig(pgid, s):
+            if s == 0:
+                raise PermissionError("operation not permitted")
+            raise AssertionError("must never signal an unconfirmable group")
+
+        card = self._card()
+        self._drain(card, sig, clock)
+        self.assertIsNotNone(card.group_probe_error)
+        self.assertIn("PermissionError", card.group_probe_error)
+        self.assertTrue(card.group_cleanup.startswith("probe_error:"))
+        self.assertNotEqual(card.group_cleanup, "empty")
+        self.assertFalse(card.leftover_descendants)
+
+    def _launch_with_residue(self, card0_exit_at, card1_exit_at, clock,
+                             *, wall=100.0, term_grace=0.4, kill_wait=0.4,
+                             settle=10.0, grace=5.0, wait=5.0):
+        """launch() with fake clock/procs; card0's GROUP keeps one surviving
+        member until the drain TERMs it; card1's group mirrors its own proc."""
+        procs = {
+            0: _FakeProc(clock, pid=4201, exit_at=card0_exit_at, exit_code=0),
+            1: _FakeProc(clock, pid=4202, exit_at=card1_exit_at, exit_code=0),
+        }
+        residue_alive = [True]
+        calls = []
+
+        def gsig(pgid, sig):
+            if pgid == 4201:
+                if sig == 0:
+                    return residue_alive[0]
+                calls.append((pgid, sig, clock.now()))
+                if sig == g4._SIGTERM:
+                    residue_alive[0] = False
+                return True
+            if sig == 0:
+                return procs[1].poll() is None
+            return True
+
+        def fake_popen(argv, **kwargs):
+            return procs[int(argv[argv.index("--shard-id") + 1])]
+
+        cfg = _launch_cfg(
+            self.work, self.origin_url, self.code_sha, self.rt,
+            wall_budget_s=wall, stagger_s=0.0, poll_interval_s=0.5,
+            term_grace_s=term_grace, kill_wait_s=kill_wait,
+            descendant_settle_s=settle, descendant_term_grace_s=grace,
+            descendant_kill_wait_s=wait,
+        )
+        record = g4.launch(
+            cfg, now_fn=clock.now, sleep_fn=clock.sleep,
+            popen_fn=fake_popen, preflight_fn=FAKE_PREFLIGHT,
+            free_bytes_fn=FAKE_FREE_BYTES, group_signal_fn=gsig,
+        )
+        return record, calls
+
+    def test_end_to_end_parent_reaped_at_deadline_minus_1(self):
+        """Launch-level Root scenario: BOTH parents exit naturally at
+        deadline-2/deadline-1 and the last-reaped card's group has residue.
+        The drain TERMs it at deadline-1 -- inside the budget -- and the run
+        fails honestly (leftover), without deadline enforcement on the
+        parents and without any breach."""
+        clock = _FakeClock(1000.0)  # deadline 1100; term_at 1099.2, kill_at 1099.6
+        record, calls = self._launch_with_residue(1099.0, 1098.5, clock)
+        card0, card1 = record["cards"]["0"], record["cards"]["1"]
+        self.assertEqual((card0["exit_code"], card1["exit_code"]), (0, 0))
+        self.assertFalse(card0["deadline_enforced"] or card1["deadline_enforced"])
+        self.assertEqual(calls, [(4201, g4._SIGTERM, 1099.0)])
+        self.assertLessEqual(calls[0][2], record["common_deadline_epoch"])
+        self.assertTrue(card0["leftover_descendants"])
+        self.assertFalse(card0["group_deadline_breach"])
+        self.assertEqual(card0["group_cleanup"], "terminated")
+        self.assertEqual(record["status"], "failed")
+        self.assertLessEqual(record["ended_epoch"], record["common_deadline_epoch"] + 0.4)
+        events = [
+            json.loads(ln)
+            for ln in (self.rt / "runs" / g4.G4_RUN_ID / g4.EVENTS_LOG_NAME)
+            .read_text().splitlines()
+        ]
+        term_events = [e for e in events if e["event"] == "descendant_term_sent"]
+        self.assertEqual(len(term_events), 1)
+        self.assertLessEqual(term_events[0]["time_epoch"], record["common_deadline_epoch"])
+        self.assertFalse(term_events[0]["after_deadline"])
+
+    def test_end_to_end_early_exit_peer_alive_not_delayed(self):
+        """Card0 exits EARLY (t=1050) leaving residue while card1 keeps its
+        authorized run to t=1089: card1's reap/supervision is never delayed
+        by card0's leftover (drain runs only after every parent is reaped),
+        and the delayed drain still TERMs the residue inside the deadline."""
+        clock = _FakeClock(1000.0)  # deadline 1100; drain settle capped at 1090
+        record, calls = self._launch_with_residue(
+            1050.0, 1089.0, clock, term_grace=6.0, kill_wait=4.0,
+        )
+        card0, card1 = record["cards"]["0"], record["cards"]["1"]
+        self.assertEqual(card0["exit_epoch"], 1050.0)  # recorded immediately
+        self.assertEqual(card1["exit_epoch"], 1089.0)  # peer reap NOT delayed
+        self.assertFalse(card1["deadline_enforced"])
+        self.assertEqual(calls, [(4201, g4._SIGTERM, 1090.0)])
+        self.assertLessEqual(calls[0][2], record["common_deadline_epoch"])
+        self.assertTrue(card0["leftover_descendants"])
+        self.assertFalse(card0["group_deadline_breach"])
+        self.assertEqual(record["status"], "failed")
+        events = [
+            json.loads(ln)
+            for ln in (self.rt / "runs" / g4.G4_RUN_ID / g4.EVENTS_LOG_NAME)
+            .read_text().splitlines()
+        ]
+        kinds = [e["event"] for e in events]
+        exits = [i for i, e in enumerate(events) if e["event"] == "card_exit"]
+        self.assertEqual(events[exits[0]]["shard_id"], 0)
+        self.assertEqual(events[exits[1]]["shard_id"], 1)
+        # the drain happened only AFTER both parents were reaped
+        self.assertLess(exits[1], kinds.index("descendants_detected"))
+
+    def test_end_to_end_probe_error_fails_run(self):
+        """Launch-level Minor: a non-ESRCH group-probe fault on card0 is
+        recorded per card, persists into controller_exit.json and fails the
+        run -- never misreported as an empty group."""
+        clock = _FakeClock(4000.0)
+        procs = {
+            0: _FakeProc(clock, pid=6101, exit_at=4002.0, exit_code=0),
+            1: _FakeProc(clock, pid=6102, exit_at=4003.0, exit_code=0),
+        }
+
+        def gsig(pgid, sig):
+            if pgid == 6101:
+                if sig == 0:
+                    raise PermissionError("operation not permitted")
+                raise AssertionError("must never signal an unconfirmable group")
+            if sig == 0:
+                return procs[1].poll() is None
+            return True
+
+        def fake_popen(argv, **kwargs):
+            return procs[int(argv[argv.index("--shard-id") + 1])]
+
+        cfg = _launch_cfg(
+            self.work, self.origin_url, self.code_sha, self.rt,
+            wall_budget_s=600.0, stagger_s=0.0, poll_interval_s=0.5,
+        )
+        record = g4.launch(
+            cfg, now_fn=clock.now, sleep_fn=clock.sleep,
+            popen_fn=fake_popen, preflight_fn=FAKE_PREFLIGHT,
+            free_bytes_fn=FAKE_FREE_BYTES, group_signal_fn=gsig,
+        )
+        card0, card1 = record["cards"]["0"], record["cards"]["1"]
+        self.assertEqual(record["status"], "failed")
+        self.assertIn("PermissionError", card0["group_probe_error"])
+        self.assertTrue(card0["group_cleanup"].startswith("probe_error:"))
+        self.assertFalse(card0["leftover_descendants"])
+        self.assertEqual(card1["group_cleanup"], "empty")
+        persisted = json.loads(
+            (self.rt / "runs" / g4.G4_RUN_ID / g4.EXIT_RECORD_NAME).read_text()
+        )
+        self.assertEqual(persisted["status"], "failed")
+        self.assertIn("PermissionError", persisted["cards"]["0"]["group_probe_error"])
 
 
 # ---------------------------------------------------------------------------
