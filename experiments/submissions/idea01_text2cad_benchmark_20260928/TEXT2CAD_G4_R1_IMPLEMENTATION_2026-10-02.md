@@ -131,4 +131,4 @@ Codex 复审重点建议：`launch()` 的 spawn try/except/else 分界、`_signa
 
 ## 11. 状态与回填
 
-**review_required**。实现提交 `226c4108f57e332ebfe967df24980ccc35c0595b`（git status 干净、未 push）；本报告提交 SHA：`PENDING_REPORT_SHA`（本行为 SHA 回填，单独提交）。
+**review_required**。实现提交 `226c4108f57e332ebfe967df24980ccc35c0595b`（git status 干净、未 push）；本报告提交 SHA：`6fd8407e1db1170eaab4a094588bcad7b9a908cc`（本行为 SHA 回填，单独提交）。
