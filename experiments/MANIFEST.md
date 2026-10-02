@@ -23,3 +23,5 @@
 | 2026-10-02 | /analyze-results | experiments/reviews/IDEA01_M1C_G3_CODEX_RESULTS_REVIEW_2026-10-02.md | review | 804600完整原始行、3219147独立检查、130本地与OBS SHA，G3准入通过 |
 | 2026-10-02 | /experiment-plan | experiments/plans/IDEA01_M1C_G4_FULL_MATRIX_2026-10-02.md | implementation | 全29319624精确评分、固定七天预算、最小本地启动控制与独立评价合同 |
 | 2026-10-02 | /experiment-plan | experiments/plans/IDEA01_M1C_EXECUTION_TRACKER_2026-10-02.md | implementation | 原版Text2CAD逐阶段证据与状态；实际授权仍由ACTIVE定义 |
+| 2026-10-02 | /requesting-code-review | experiments/reviews/IDEA01_M1C_G4_CODEX_CODE_REVIEW_R1_2026-10-02.md | review_required | full契约/52+6 CPU通过，两生命周期Important真实CPU复现，拒绝正式G4 |
+| 2026-10-02 | /systematic-debugging | experiments/plans/IDEA01_M1C_G4_R1_LIFECYCLE_FIX_2026-10-02.md | implementation | 仅新增启动控制的异常收尾/自有进程组修复与必要CPU证据，GPU0 |
