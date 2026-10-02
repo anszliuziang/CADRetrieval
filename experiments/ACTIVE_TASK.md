@@ -4,10 +4,10 @@
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G3_EXECUTION_2026-10-02.md`（上位G3完整图库probe、R1/R2证据准入合同继续有效）
-- `phase`: R2实现98ba9f41/报告回填487d02b9已通过Root10项针对测试及26项独立核验、只读reviewer10项与拒绝见证；预算绑定与同卡串行窗口缺口关闭。允许Git部署以下SHA后两卡各一次fresh G3，仅100唯一文本×完整8046图库，不做额外前向或自动重试
+- `phase`: G3已按批准SHA真实启动，两卡后台运行中；launch提交33fffa97c3f644bba33e194045de22b02e75640e。2026-10-02 08:08Z Root只读确认NPU0/PID3294246、NPU1/PID3294325，完成26/50和25/50完整chunk/timing、总扣账417770，尚无exit/summary；Git干净、无新错误。仅监控，不重复调用评分/改checkout/重启/自动重试
 - `latest_review`: `experiments/reviews/IDEA01_M1C_G3_CODEX_CODE_REVIEW_R3_APPROVAL_2026-10-02.md`
 - `approved_sha`: `487d02b9ac92f5e2338718e45b1f023c308dd332`
-- `last_run_sha`: `08a0183c86afc7198eed1c798d289d4b6f0c4a42`；run `idea01_text2cad_g2_b16_20261002`，两卡exit0/finalized，实际16200对。独立26254项通过/99组窗口最低0.992359；全量保守ETA38.28394小时，仍须G3复核
+- `last_run_sha`: `487d02b9ac92f5e2338718e45b1f023c308dd332`；run `idea01_text2cad_g3_probe_20261002`，invocations 20261002T075359Z-4037ac89/20261002T075359Z-09217532，start UTC07:53:51/54Z，运行中未完成。前置G2的08a0183双卡16200对/26254核验通过，99窗口最低0.992359、保守38.28394小时保留，仍须真实G3结果复核
 - `gpu_budget`: 12（两卡合计卡小时上限43200卡秒，单次timeout21600秒；6小时墙钟上限，不复用G1/G2账本）
 - `max_scored_pairs`: 804600（402300/片；每片50文本×8046 CAD、25150批，包含全部实际前向；无额外warmup）
 - `run_id`: `idea01_text2cad_g3_probe_20261002`（runtime run/card0、card1；两次fresh scorer，不覆盖已有目录或重启评分）
