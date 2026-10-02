@@ -32,6 +32,14 @@ data / fake models and NO model or BERT forward:
     caps/card-seconds), timing<->invocation binding, the FINAL shared ledger
     (missing/extra/failed/drifted ledgers refuse), fresh-run-only accounting,
     and a legitimate pending-peer snapshot accepted;
+  * the R2 bindings: authorization.card_hours*3600 == the card's ledger
+    snapshot cap == the FINAL ledger cap, both cards authorized equally
+    (0.1 h against a 43,200 s cap, a 3,001 s final cap against 43,200 s
+    snapshots, and cross-card disagreement all refuse), and the same-card
+    SERIAL query timeline in production text_index order (all-50-equal
+    starts, adjacent overlap and reversed windows refuse; back-to-back and
+    legally spaced large-duration timelines with matching ledger intervals
+    pass);
   * the runner resume gate: fresh run refuses an existing sidecar; orphan /
     foreign / duplicate / invalid sidecar lines refuse BEFORE any forward;
     sidecar<->chunk one-to-one correspondence;
@@ -1196,6 +1204,7 @@ class G3ProducerReaderEndToEndTest(_ProbeChunkMixin, unittest.TestCase):
             final_ledger, approved_sha=FULL_SHA, host=next(iter(hosts)),
             expected_invocations=expected_invocations,
             expected_pairs_per_card=self.PAIRS_PER_CARD,
+            expected_max_card_seconds=3600.0,
             expected_max_pairs=self.MAX_PAIRS,
             path_label="final ledger",
         )
@@ -1209,6 +1218,31 @@ class G3ProducerReaderEndToEndTest(_ProbeChunkMixin, unittest.TestCase):
                 expected_pair_manifest_sha256=MANIFEST_SHA,
                 expected_max_pairs=self.MAX_PAIRS,
                 require_hbm=True, path_label="card0 summary",
+            )
+
+    def test_budget_evidence_binds_authorization_to_the_ledger_cap(self):
+        # R2: the REAL produced summary (authorization 1.0 card-hours, ledger
+        # cap 3,600 s) passes and reports the bound authorized seconds...
+        self.assertEqual(self._budget_info(0)["authorized_card_seconds"], 3600.0)
+        self.assertEqual(self._budget_info(1)["authorized_card_seconds"], 3600.0)
+        # ...while an authorization that disagrees with the ledger cap it was
+        # charged under refuses, even though every other fact is untouched
+        import copy
+
+        summary = copy.deepcopy(self.summaries[0])
+        summary["authorization"].update(card_hours=0.5)  # 1,800 s != 3,600 s cap
+        with self.assertRaisesRegex(RunnerError, "must equal the ledger cap"):
+            verify_probe_budget_evidence(
+                summary, shard_id=0, expected_pairs_per_card=self.PAIRS_PER_CARD,
+                expected_max_pairs=self.MAX_PAIRS, path_label="mutated summary",
+            )
+        # a missing/non-numeric authorization cannot bind at all
+        summary = copy.deepcopy(self.summaries[0])
+        summary["authorization"].pop("card_hours")
+        with self.assertRaisesRegex(RunnerError, "card_hours"):
+            verify_probe_budget_evidence(
+                summary, shard_id=0, expected_pairs_per_card=self.PAIRS_PER_CARD,
+                expected_max_pairs=self.MAX_PAIRS, path_label="mutated summary",
             )
 
     def test_reader_refuses_corrupted_produced_artifacts(self):
@@ -1280,6 +1314,7 @@ class G3ProducerReaderEndToEndTest(_ProbeChunkMixin, unittest.TestCase):
                 final_ledger, approved_sha=FULL_SHA, host=next(iter(hosts)),
                 expected_invocations=expected_invocations,
                 expected_pairs_per_card=self.PAIRS_PER_CARD,
+                expected_max_card_seconds=3600.0,
                 expected_max_pairs=self.MAX_PAIRS,
                 path_label="drifted ledger",
             )
@@ -1739,18 +1774,21 @@ class G3ETATest(unittest.TestCase):
     def test_over_card_budget_refused(self):
         base = _evidence(self.selection)
 
-        # Root case: spent 99999 vs cap 1 (and inconsistent accounting)
+        # Root case: spent 99999 vs cap 1 (and inconsistent accounting); the
+        # authorization follows the cap so the refusal is the spend itself
         import copy
 
         evidence = copy.deepcopy(base)
         evidence["npu:0"]["summary"]["budget"].update(
             card_seconds_spent=99999.0, max_card_seconds=1.0
         )
+        evidence["npu:0"]["summary"]["authorization"].update(card_hours=1.0 / 3600.0)
         with self.assertRaisesRegex(RunnerError, "card_seconds_spent|exceeds"):
             self._estimate(evidence)
         # consistent but over the approved cap: cap below the spent seconds
         evidence = copy.deepcopy(base)
         evidence["npu:0"]["summary"]["budget"].update(max_card_seconds=1000.0)
+        evidence["npu:0"]["summary"]["authorization"].update(card_hours=1000.0 / 3600.0)
         with self.assertRaisesRegex(RunnerError, "exceeds the approved cap"):
             self._estimate(evidence)
         # a cap beyond the approved 12 card-hours refuses even with room
@@ -1765,10 +1803,12 @@ class G3ETATest(unittest.TestCase):
         )
         with self.assertRaisesRegex(RunnerError, "card_seconds_spent"):
             self._estimate(base, final_ledger=final)
+        # R2 reviewer case: a final cap of 3,001 s against the two 43,200 s
+        # snapshots is contradictory evidence and refuses at the binding
         final = _final_ledger(
-            [base["npu:0"]["summary"], base["npu:1"]["summary"]], max_card_seconds=2000.0
+            [base["npu:0"]["summary"], base["npu:1"]["summary"]], max_card_seconds=3001.0
         )
-        with self.assertRaisesRegex(RunnerError, "beyond the approved"):
+        with self.assertRaisesRegex(RunnerError, "SAME approved"):
             self._estimate(base, final_ledger=final)
 
     def test_timing_invocation_binding(self):
@@ -1957,6 +1997,96 @@ class G3ETATest(unittest.TestCase):
             task_state="implementation"), "pilot_authorized")
         refused(lambda e: e["npu:0"]["summary"]["authorization"].update(actual_sha="0" * 40),
                 "approved commit")
+
+    # -- R2: card-time authorization bound to the ledger caps ----------------
+
+    def test_authorization_snapshot_cap_binding(self):
+        import copy
+
+        base = _evidence(self.selection)
+        # R2 reviewer witness: BOTH authorizations shrunk to 0.1 card-hours
+        # (360 s) while the snapshots keep the 43,200 s cap and the real
+        # 3,000 s spend -- contradictory evidence, must refuse now
+        evidence = copy.deepcopy(base)
+        for device in ("npu:0", "npu:1"):
+            evidence[device]["summary"]["authorization"].update(card_hours=0.1)
+        with self.assertRaisesRegex(RunnerError, "must equal the ledger cap"):
+            self._estimate(evidence)
+        # one card's authorization alone disagreeing with its snapshot refuses
+        evidence = copy.deepcopy(base)
+        evidence["npu:0"]["summary"]["authorization"].update(card_hours=11.0)
+        with self.assertRaisesRegex(RunnerError, "must equal the ledger cap"):
+            self._estimate(evidence)
+        # the two cards authorized differently (each consistently charged
+        # under its own snapshot cap) refuse the shared-budget evidence
+        evidence = copy.deepcopy(base)
+        evidence["npu:1"]["summary"]["authorization"].update(card_hours=11.0)
+        evidence["npu:1"]["summary"]["budget"].update(max_card_seconds=39600.0)
+        with self.assertRaisesRegex(RunnerError, "different card-second caps"):
+            self._estimate(evidence)
+        # the final ledger cap disagreeing with the snapshots refuses, both
+        # below and above the snapshot cap (3,001 s is the reviewer case)
+        for bad_cap in (3001.0, 43199.0):
+            final = _final_ledger(
+                [base["npu:0"]["summary"], base["npu:1"]["summary"]],
+                max_card_seconds=bad_cap,
+            )
+            with self.assertRaisesRegex(RunnerError, "SAME approved"):
+                self._estimate(base, final_ledger=final)
+        # the unmutated evidence remains legal under the binding
+        self.assertTrue(self._estimate(copy.deepcopy(base))["passes_seven_day_gate"])
+
+    # -- R2: same-card serial query timeline in production order --------------
+
+    def test_same_card_serial_timeline_required(self):
+        import copy
+
+        base = _evidence(self.selection)
+        # R2 reviewer witness: all 50 query starts identical, e2e preserved
+        evidence = copy.deepcopy(base)
+        for record in evidence["npu:0"]["timing_records"]:
+            e2e = record["e2e_s"]
+            record["window"] = {"start_epoch": 1000.0, "end_epoch": 1000.0 + e2e}
+        with self.assertRaisesRegex(RunnerError, "serial"):
+            self._estimate(evidence)
+        # an adjacent overlap refuses (record 1 starts inside record 0)
+        evidence = copy.deepcopy(base)
+        records = evidence["npu:0"]["timing_records"]
+        start = records[0]["window"]["start_epoch"] + 1.0
+        e2e = records[1]["e2e_s"]
+        records[1]["window"] = {"start_epoch": start, "end_epoch": start + e2e}
+        with self.assertRaisesRegex(RunnerError, "serial"):
+            self._estimate(evidence)
+        # reversed windows refuse: production order is ascending text_index,
+        # never re-sorted by time (window+e2e swapped together to keep every
+        # record internally consistent)
+        evidence = copy.deepcopy(base)
+        records = evidence["npu:0"]["timing_records"]
+        windows = [dict(r["window"]) for r in records]
+        for record, window in zip(records, reversed(windows)):
+            record["window"] = window
+            record["e2e_s"] = window["end_epoch"] - window["start_epoch"]
+        with self.assertRaisesRegex(RunnerError, "serial"):
+            self._estimate(evidence)
+        # a legal back-to-back timeline (next start == previous end) passes
+        evidence = _evidence(self.selection, step=8.0,
+                             e2e0=lambda facts, k: 8.0, e2e1=lambda facts, k: 8.0)
+        estimate = self._estimate(evidence)
+        self.assertTrue(estimate["passes_seven_day_gate"])
+        # a legal large-duration timeline passes too: the spacing is serial
+        # with gaps and the ledger invocation interval / card-seconds are
+        # rebuilt to match (both cards: 20,900 s each, 41,800 s <= the
+        # 43,200 s shared cap); the ETA math itself is unchanged
+        evidence = _evidence(
+            self.selection, step=400.0, started=500.0, ended=21400.0,
+            started__1=500.0, ended__1=21400.0,
+            e2e0=lambda facts, k: 300.0, e2e1=lambda facts, k: 300.0,
+        )
+        estimate = self._estimate(evidence)
+        for device in ("npu:0", "npu:1"):
+            self.assertAlmostEqual(
+                estimate["per_card"][device]["compute_seconds"], 300.0 * 1822
+            )
 
 
 # ---------------------------------------------------------------------------

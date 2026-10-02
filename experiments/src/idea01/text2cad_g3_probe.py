@@ -66,6 +66,25 @@ R1 hardening (2026-10-02, plans/IDEA01_M1C_G3_R1_FIX_2026-10-02.md):
     audited worker length index, totals cross-checked against the timing
     record) -- never an existence check, and the card directory must hold
     exactly the timed chunks, no more.
+
+R2 hardening (2026-10-02, plans/IDEA01_M1C_G3_R2_BINDING_FIX_2026-10-02.md):
+
+  * the approved card-time budget is bound end to end: each card's
+    ``authorization.card_hours * 3600`` must equal ITS ledger snapshot
+    ``max_card_seconds``, the two cards' authorizations must be identical,
+    and the FINAL shared ledger's ``max_card_seconds`` must equal the two
+    snapshot caps -- a smaller/larger authorization against the ledger cap,
+    or a final ledger cap that disagrees with the snapshots, is
+    contradictory evidence and refuses (the SharedBudgetLedger accounting
+    algorithm itself is unchanged; a legitimate pending peer is still
+    accepted);
+  * each card's query timeline must be SERIAL in production order: sorted
+    by ascending global text_index, every query window must start no
+    earlier than the previous query's end -- equal starts, overlaps and
+    out-of-order windows cannot come from the single-process production
+    loop and refuse (the per-record E2E/epoch bindings, the invocation
+    containment and the cross-card >=80% concurrency gate are unchanged;
+    windows are never re-sorted by time to force compliance).
 """
 
 from __future__ import annotations
@@ -932,6 +951,11 @@ def verify_probe_budget_evidence(
     same-shard invocations refuse (this round is fresh-run-only). Returns
     the own invocation's identity and time interval for the timing/window
     binding and the final-ledger cross-check.
+
+    R2: the approved card-time authorization must equal the ledger cap it
+    was charged under -- ``authorization.card_hours * 3600`` must equal this
+    snapshot's ``max_card_seconds``; a smaller authorization against a
+    larger cap (or vice versa) is contradictory evidence and refuses.
     """
     budget = summary.get("budget") or {}
     invocation_id = summary.get("invocation_id")
@@ -950,6 +974,25 @@ def verify_probe_budget_evidence(
         raise RunnerError(
             f"{path_label}: approved card-second cap {cap_seconds} exceeds the G3 "
             f"budget of at most {max_card_seconds_cap} s ({G3_APPROVED_MAX_CARD_HOURS} card-hours)"
+        )
+    card_hours = (summary.get("authorization") or {}).get("card_hours")
+    if (
+        isinstance(card_hours, bool)
+        or not isinstance(card_hours, (int, float))
+        or not math.isfinite(card_hours)
+        or card_hours <= 0
+    ):
+        raise RunnerError(
+            f"{path_label}: authorization card_hours {card_hours!r} is not a finite "
+            "positive number; the budget evidence cannot bind to its approval"
+        )
+    authorized_seconds = float(card_hours) * 3600.0
+    if not math.isclose(authorized_seconds, cap_seconds, rel_tol=1e-9, abs_tol=1e-6):
+        raise RunnerError(
+            f"{path_label}: authorization {card_hours} card-hours = "
+            f"{authorized_seconds} card-seconds != the ledger snapshot cap "
+            f"{cap_seconds}; the approved card-time budget must equal the ledger "
+            "cap it is charged under"
         )
     invocations = budget.get("invocations")
     if not isinstance(invocations, list) or not invocations:
@@ -1045,6 +1088,7 @@ def verify_probe_budget_evidence(
         "ended_epoch": ended,
         "card_seconds": card_seconds,
         "max_card_seconds": cap_seconds,
+        "authorized_card_seconds": authorized_seconds,
     }
 
 
@@ -1055,6 +1099,7 @@ def verify_final_probe_ledger(
     host: str,
     expected_invocations: dict[int, dict[str, Any]],
     expected_pairs_per_card: int,
+    expected_max_card_seconds: float,
     expected_max_pairs: int = G3_APPROVED_MAX_PAIRS,
     max_card_seconds_cap: float = G3_APPROVED_MAX_CARD_SECONDS,
     path_label: str,
@@ -1068,9 +1113,18 @@ def verify_final_probe_ledger(
     card's measured scoring window inside its invocation interval. A resume,
     an old/failed/extra invocation, or a disagreement with a card's own
     snapshot all refuse.
+
+    R2: ``expected_max_card_seconds`` (the two cards' snapshot cap, which
+    each card's authorization was bound to) is REQUIRED, and the final
+    ledger's ``max_card_seconds`` must equal it -- the authorization, the
+    per-card snapshots and the final ledger must carry the SAME approved
+    card-time cap.
     """
     if not isinstance(ledger, dict):
         raise RunnerError(f"{path_label}: final ledger is not a JSON object")
+    expected_cap = _require_finite_positive(
+        expected_max_card_seconds, f"{path_label} expected_max_card_seconds"
+    )
     if ledger.get("version") != 1:
         raise RunnerError(f"{path_label}: final ledger version {ledger.get('version')!r} != 1")
     if ledger.get("approved_sha") != approved_sha:
@@ -1086,6 +1140,13 @@ def verify_final_probe_ledger(
         raise RunnerError(
             f"{path_label}: final ledger card-second cap {cap_seconds} exceeds the G3 "
             f"budget of at most {max_card_seconds_cap} s"
+        )
+    if not math.isclose(cap_seconds, expected_cap, rel_tol=1e-9, abs_tol=1e-6):
+        raise RunnerError(
+            f"{path_label}: final ledger max_card_seconds {cap_seconds} != the two "
+            f"cards' snapshot cap {expected_cap}; the authorization, the per-card "
+            "snapshots and the final ledger must carry the SAME approved "
+            "card-time cap"
         )
     invocations = ledger.get("invocations")
     if not isinstance(invocations, list):
@@ -1286,6 +1347,12 @@ def verify_probe_timing_records(
     also name the card's contributing ledger invocation and lie inside that
     invocation's [started, ended] interval -- a timing line pointing at no
     ledger invocation, or measured outside the charged interval, refuses.
+
+    R2: the card's queries must form a SERIAL timeline in production order
+    (ascending global text_index): every query window starts no earlier than
+    the previous query's end. Equal starts, overlaps and out-of-order
+    windows are impossible for the single-process production loop and refuse
+    -- the windows are never re-sorted by time to force compliance.
     """
     n_cads = int(selection["counts"]["n_cads"])
     probe_facts = probe_facts_for_shard(selection, shard_id)
@@ -1335,7 +1402,24 @@ def verify_probe_timing_records(
             f"e.g. text_index {missing[:3]}; a probe chunk published without its "
             "timing line is unverifiable -- stop, do not fabricate times"
         )
-    return [seen[t] for t in sorted(seen)]
+    ordered = [seen[t] for t in sorted(seen)]
+    previous_index: Optional[int] = None
+    previous_end = 0.0
+    for record in ordered:
+        start = float(record["window"]["start_epoch"])
+        end = float(record["window"]["end_epoch"])
+        if previous_index is not None and start < previous_end:
+            raise RunnerError(
+                f"{path_label}: non-serial timeline: text_index "
+                f"{record['text_index']} starts at {start:.3f} before the previous "
+                f"production query text_index {previous_index} ended at "
+                f"{previous_end:.3f}; one card executes its probe queries serially "
+                "in ascending text_index order, so equal-start, overlapping or "
+                "out-of-order windows cannot come from the production loop"
+            )
+        previous_index = int(record["text_index"])
+        previous_end = end
+    return ordered
 
 
 # ---------------------------------------------------------------------------
@@ -1472,6 +1556,12 @@ def estimate_g3_probe_eta(
     804,600-pair charge and card-seconds within the approved cap. A first
     finisher's snapshot with a legitimately pending peer is accepted; the
     final ledger is the completeness arbiter.
+
+    R2: the approved card-time budget must be one consistent number
+    everywhere -- each card's ``authorization.card_hours * 3600`` equals its
+    snapshot cap (verified in ``verify_probe_budget_evidence``), the two
+    cards' authorizations must be identical, and the final ledger's
+    ``max_card_seconds`` must equal the two snapshot caps.
     """
     if (
         isinstance(safety_factor, bool)
@@ -1507,6 +1597,7 @@ def estimate_g3_probe_eta(
     hosts: set[str] = set()
     ledgers: set[str] = set()
     ledger_caps: set[float] = set()
+    authorized_seconds_set: set[float] = set()
     invocation_ids: set[str] = set()
     env_shared: dict[str, dict[str, Any]] = {}
     expected_invocations: dict[int, dict[str, Any]] = {}
@@ -1566,6 +1657,7 @@ def estimate_g3_probe_eta(
         hosts.add(budget_info["host"])
         ledgers.add(budget_info["budget_file"])
         ledger_caps.add(budget_info["max_card_seconds"])
+        authorized_seconds_set.add(budget_info["authorized_card_seconds"])
         invocation_ids.add(budget_info["invocation_id"])
         approved_sha = info["git_sha"]
         expected_invocations[shard] = {
@@ -1641,6 +1733,12 @@ def estimate_g3_probe_eta(
         raise RunnerError(
             f"the two cards were charged under different card-second caps {sorted(ledger_caps)}"
         )
+    if len(authorized_seconds_set) != 1:
+        raise RunnerError(
+            f"the two cards were authorized different card-seconds "
+            f"{sorted(authorized_seconds_set)}; both cards must run under the same "
+            "approved card-time budget"
+        )
     for field in _ETA_ENV_SHARED_FIELDS:
         values = [env_shared[d][field] for d in SHARD_BY_DEVICE]
         if not values[0] or values[0] != values[1]:
@@ -1654,6 +1752,7 @@ def estimate_g3_probe_eta(
         host=next(iter(hosts)),
         expected_invocations=expected_invocations,
         expected_pairs_per_card=expected_pairs_per_card,
+        expected_max_card_seconds=next(iter(ledger_caps)),
         path_label="final ledger",
     )
 
