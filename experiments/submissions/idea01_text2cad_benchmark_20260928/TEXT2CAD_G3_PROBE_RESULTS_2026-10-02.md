@@ -134,4 +134,4 @@ env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ma-user/work/CADRetrieval/experim
 
 ---
 
-回填：本报告首次提交 SHA 见下文（仅含本文件；回填为第二次 doc 提交，两者均未 push）。
+回填：本报告首次提交 SHA `de02bb4aa248dc37c3f4077b70193d5681d2e807`（仅含本文件；本回填为第二次 doc 提交，两者均未 push）。
