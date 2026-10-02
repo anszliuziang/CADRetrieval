@@ -4,7 +4,7 @@
 
 - 起点 HEAD：`6d8445e`。R1 实现 `7f650d22` / R1 报告回填 `da476b23` 保留未动；本阶段未 SSH、未 push、未下载/安装依赖、未做真实模型/BERT 前向或任何 NPU 操作、未读 qrels/UID 映射/原 CSV/旧模型分数；全部工作为本地 CPU（`D:\miniconda\python.exe`，Python 3.13.5，torch CPU，pytest 9.1.1）。
 - 固定选择配置 SHA 复核不变：`experiments/configs/text2cad_g3_probe_selection_20261002.json` = `f8521598b1bf517f21491bf8185cdd23cae39a34a7019389d4a05c6fcbdd4985`（`test_committed_config_is_lf_and_regeneration_is_byte_identical` 通过）。score/shift/mask/FP32/full272/b16/尾14/无 cache trim/8046 原图库/ETA 数学均未触碰。
-- 本报告完整实现 SHA：**见文末"提交回填"**（提交前为空）。
+- 本报告完整实现 SHA：**`98ba9f41c8106e87c2e925677f09fe23f0992411`**（提交回填见文末）。
 
 ## 1. 改动文件（仅两个，+233/-4）
 
@@ -79,6 +79,7 @@ CPU ETA 仍必须 `--final-ledger "$RUN/final_ledger.json"`（缺失 exit 2）�
 
 ## 7. 提交回填
 
-- 实现提交 SHA：**待提交后回填**
+- 实现提交 SHA：**`98ba9f41c8106e87c2e925677f09fe23f0992411`**（`Bind Text2CAD G3 card-hour authorization to ledger caps and serial timeline (R2)`；含两个源码/测试文件与本报告占位版本）。第 4 节全部测试即在该源码状态下运行通过。
+- 本 SHA 回填为单独小提交，不改任何代码；回填提交 SHA 由 `git log` 最新一条可查。
 - 提交内容：仅 `experiments/src/idea01/text2cad_g3_probe.py`、`experiments/tests/test_text2cad_g3_probe.py` 及本报告；未 push；未占 Git index 中任何 Codex 文件。
 - 提交后状态：`review_required`，等待 Codex 复审新两门及合法路径；G3 pilot 授权（完整 approved SHA/804600 对/最多 12 卡小时/6 小时墙钟）由 Codex 另行发布。
