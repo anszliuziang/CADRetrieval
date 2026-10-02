@@ -1,0 +1,19 @@
+# Text2CAD G4 R2代码准入：只批准零NPU Linux见证
+
+2026-10-02。代码e8ef0cdd0349f255d8a299ae1b32fbf3fcdd1263；报告ef12ba143eb91264ea7511ece4d2d745fe4b3de2及回填56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719。后两提交只有Kimi自己的新报告，代码相同。CLI session64259已exit0，报告review_required已交接。
+
+## 本次结论
+
+R2两Important已关闭：后代drain区分原deadline与post-KILL确认界，临界压缩/迟到立即收尾并标breach；末次必需事件写结果先进入最终状态及JSON。非ESRCH probe错误诚实记为未知/failed。树测试先观察断言，再测试finally清理，区分live/zombie/gone。
+
+Root独立针对24项exit0、29.42秒；唯一复用fresh reviewer针对27 passed/45 deselected、exit0、27.86秒。原post-spawn监管/full argv/七评分核心AST不变，旧score和固定资源没有修改。无剩余Critical/Important。没有重做G1/G2/G3，Kimi自行跑72项两套件日志不作为追加全套的要求。
+
+**仅允许按IDEA01_M1C_G4_POSIX_CPU_WITNESS_2026-10-02.md，以完整56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719经Git部署，执行零模型/BERT/NPU Linux短CPU见证。此审查不批准G4评分。** Linux真实生命周期未执行，Windows实测/POSIX mock不能替代。
+
+## 原始证据及限制
+
+Root命令与原始log/JSON在checkout外g4_r2_codex_review_20261002及本地/OBS run m1c_g4_cpu_review_r3_20261002，2文件manifest e56c2afbbe3bdda93e55ea92f4a64c73ba557691bd9edc63460b256bac4e375b，本地/OBS逐SHA及OBS exit0通过。Kimi5文件本地/OBS run m1c_g4_r2_cpu_witness_20261002，manifest eaf351f322f8318d787f2e2babc8514a03d0533106b7a75eb261d71d2d9eb650；Root本地5项重算/OBS sha256sum -c exit0通过。
+
+唯一reviewer没有SSH/模型/NPU，也未把当时尚未交接的报告当Linux实证。Root已读报告及原始witness：声明Windows降级真实、所有POSIX值仍mock正确；“零网络”同时归档OBS的措辞不严格，应理解为没有模型/代码下载或远端checkout操作。pgid复用、D态不可杀等限制保留；不能声称普遍不可能触及其他作业。
+
+Linux通过后仍须单独记录实际CPU退出/组状态、干净Git及原始本地/OBS SHA，再更新正式pilot_authorized/完整SHA和固定预算。若CPU失败，先保存真实证据判根因，不将测试清理计作controller收尾或擅自修改服务器源码。
