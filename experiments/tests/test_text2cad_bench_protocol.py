@@ -834,6 +834,49 @@ class SyncBarrierTest(unittest.TestCase):
         with self.assertRaisesRegex(RunnerError, "rerun|exists"):
             self._barrier("npu:0").arrive("p", {})
 
+    def test_default_poll_interval_is_sub_skew_resolution(self):
+        # Contract IDEA01_M1C_G2_B16_2026-10-02: the default poll interval is
+        # 0.001 s so a realistic arrival skew (0.03 s) is resolved well inside
+        # a short (0.10 s) measured rep window. The old 0.2 s default let one
+        # card sleep through the whole window (CPU witness overlap = 0).
+        barrier = self.proto.SyncBarrier(
+            self.sync_dir, "grp", "npu:0", self.binding, timeout_s=2.0
+        )
+        self.assertEqual(barrier.poll_interval_s, 0.001)
+
+    def test_default_poll_short_window_real_overlap(self):
+        # Real-thread regression of the 2026-10-02 CPU witness geometry:
+        # 0.03 s injected arrival skew, 0.10 s measured window, DEFAULT poll
+        # interval (no override). The sync wait stays outside the window;
+        # overlap of the two windows must pass the existing >=80% gate.
+        import threading
+
+        skew_s, window_s = 0.03, 0.10
+        windows: dict[str, dict[str, float]] = {}
+        errors: list[Exception] = []
+
+        def run(device, delay):
+            try:
+                barrier = self.proto.SyncBarrier(
+                    self.sync_dir, "grp", device, self.binding, timeout_s=10.0
+                )
+                if delay:
+                    time.sleep(delay)
+                barrier.arrive("t16_tt0_d0_r0", {})
+                start = time.time()
+                time.sleep(window_s)
+                windows[device] = {"start_epoch": start, "end_epoch": time.time()}
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        ta = threading.Thread(target=run, args=("npu:0", 0.0))
+        tb = threading.Thread(target=run, args=("npu:1", skew_s))
+        ta.start(); tb.start(); ta.join(); tb.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(set(windows), {"npu:0", "npu:1"})
+        overlap = self.proto.window_overlap_fraction(windows["npu:0"], windows["npu:1"])
+        self.assertGreaterEqual(overlap, self.proto.MIN_WINDOW_OVERLAP_FRACTION)
+
 
 class RepWindowOverlapTest(unittest.TestCase):
     def setUp(self) -> None:

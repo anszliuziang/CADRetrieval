@@ -775,7 +775,7 @@ class SyncBarrier:
         binding: dict[str, Any],
         *,
         timeout_s: float = SYNC_TIMEOUT_SECONDS,
-        poll_interval_s: float = 0.2,
+        poll_interval_s: float = 0.001,
         now_fn=time.time,
         sleep_fn=time.sleep,
     ) -> None:
