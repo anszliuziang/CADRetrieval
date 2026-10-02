@@ -99,7 +99,7 @@ env PYTHONDONTWRITEBYTECODE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS
 ## 7. Git 交付
 
 - 暂存仅本轮：`experiments/src/idea01/text2cad_bench_protocol.py`、`experiments/tests/test_text2cad_bench_protocol.py`、本报告。
-- 实现提交完整 SHA：**（提交后回填，见下行）**
-- SHA 回填：实现提交为 `IMPLEMENTATION_SHA_PLACEHOLDER`（随后一个仅本文档的回填提交记录该 SHA；均未 push，等 Codex 审核）。
+- 实现提交完整 SHA：`4a22261399e84eeed6656ea3a17f8e2a6b8b84d6`（含本报告占位版本）。
+- SHA 回填：本行由紧随其后一个仅本文档的回填提交写入；两提交均未 push，等 Codex 审核。
 
 review_required
