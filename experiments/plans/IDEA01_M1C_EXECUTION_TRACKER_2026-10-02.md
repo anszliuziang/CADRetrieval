@@ -8,7 +8,7 @@
 | G1 | idea01_text2cad_g1_profile_20261001 | b16通过，b32六logit元素失败保留 | 已结束；不重试b32 |
 | G2 | idea01_text2cad_g2_b16_20261002 | 双卡16200对，26254独立检查/415 OBS SHA，38.28394小时ETA | 通过 |
 | G3 | idea01_text2cad_g3_probe_20261002 | 双卡804600对；3219147独立检查/130本地及OBS SHA；28.85179小时ETA | 通过；Kimi报告de02bb4a/2b006501已核 |
-| G4 | idea01_text2cad_g4_full_20261002 | 计划完整29319624对；保守取38.28394小时，硬七天双卡墙钟 | R2 Root24/fresh27通过、两Important关闭；R3只批准指定SHA Linux CPU见证/GPU0，正式仍未授权 |
+| G4 | idea01_text2cad_g4_full_20261002 | 计划完整29319624对；保守取38.28394小时，硬七天双卡墙钟 | Root24/fresh27及Linux22通过；正式批准56ac0f8/29319624对/336卡时/共同七天，待真实启动交接 |
 | G5 | 完整原始矩阵审核→独立CPU评价 | 恢复7934查询，UID R@K/MedR/重复上限/基线与CI | 待G4；不看test改方法 |
 
 Codex结果准入/代码审查都在reviews/，Kimi新实现/运行/结果报告在submissions/；原始结果本地与共享OBS，Git不含运行产物。正常作业每30分钟只读监控，真实阻塞讨论，不扩预算或重复评分。

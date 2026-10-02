@@ -1,25 +1,22 @@
-# 当前实验任务：Text2CAD G4 Linux CPU见证（零模型/NPU）
+# 当前实验任务：Text2CAD G4完整精确矩阵（正式授权）
 
-- `state`: `implementation`
+- `state`: `pilot_authorized`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
-- `active_subplan`: `experiments/plans/IDEA01_M1C_G4_POSIX_CPU_WITNESS_2026-10-02.md`
-- `phase`: R2代码e8ef0cd及报告ef12ba1/56ac0f8交接完成，session64259已exit0。Root24/fresh27针对CPU通过、两Important关闭。只授权指定Git SHA的Linux短CPU lifecycle见证，无正式controller/scorer/模型/BERT/NPU
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_CODE_REVIEW_R3_CPU_APPROVAL_2026-10-02.md`
-- `approved_sha`: `none`（正式G4评分未授权；CPU SHA另列，不得当NPU授权）
-- `last_run_sha`: `487d02b9ac92f5e2338718e45b1f023c308dd332`；G3 run `idea01_text2cad_g3_probe_20261002`已结束，完整804600行/3219147独立检查/130本地及OBS SHA通过，真实G3 ETA28.8517907小时，G2保守38.2839355小时；正式估计取两者较大值
-- `cpu_approved_sha`: `56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719`；CPU墙钟上限600秒，源码e8ef0cd未变
-- `gpu_budget`: 0（仅本地CPU实现与测试）
-- `max_scored_pairs`: 0（禁止任何新模型/BERT/NPU前向）
-- `max_download_gb`: 0（资产全部已固定，不装包/换环境）
-- `run_id`: `m1c_g4_posix_cpu_20261002`（独立CPU证据；不创建正式G4产物/账本）
-- `data`: 官方Text2CAD v1.0冻结worker四文件，8046 CAD/3644唯一strip文本；正式评价恢复7934原查询。worker本地 D:/projects/IdeaSpark/CADRetrievalIdea1_runtime/pair_manifest_v4_worker/。评分/启动控制不得读qrels/UID映射/原CSV/旧分数或使用probe选择；CPU测试使用临时目录/stub
-- `model`: 现有原版Text2CAD固定checkpoint/BERT及已审原生score，FP32/full272/batch16尾14/无trim-cache；不改任何既有scorer/loader/math/ledger/worker/config/env
-- `server`: yunnan-share2既有spec10c18c17环境；允许先记录干净Git/NPU，再fetch origin并detached CPU完整56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719；仅运行激活计划固定诊断程序，所有源码只Git部署，无安装/模型/NPU，cvteam14仅OBS
-- `required_output`: 22项标准库targeted tests的真实exit/全日志、清理前实际组/descPID live-zombie记录、源SHA/命令/CPU环境/Git/NPU前后；完整证据本地及OBS逐SHA。失败先保留证据判根因，不自动重试
-- `ownership`: 本轮只诊断/归档，不改源代码、配置或Kimi旧报告。Codex独立审核Linux原始证据后才更新正式pilot_authorized和完整SHA/固定预算
-- `stop_conditions`: API失败/额度/上下文中断、必须改评分数学/环境/固定资产、无法确保共同deadline或full路径、未知旧文件、远端脏Git或资源冲突；保存证据停下交流，不擅自换模型、重试真实评分或扩大预算
+- `active_subplan`: `experiments/plans/IDEA01_M1C_G4_EXECUTION_2026-10-02.md`
+- `phase`: G2/G3保守七天门、G4源码及实际Linux22项CPU见证已通过；允许固定两卡各一次fresh正式评分，先提交真实启动交接。无预热/重试/空查询，不生成远端启动源码
+- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_FULL_APPROVAL_2026-10-02.md`
+- `approved_sha`: `56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719`
+- `gpu_budget`: 336 卡小时（双卡合计1209600卡秒；共同604800秒墙钟，TERM/KILL宽限在预算内）
+- `max_scored_pairs`: 29319624（完整3644×8046，不含额外验证/预热/重试/空查询）
+- `max_download_gb`: 0（固定资产齐备，不装包/换环境）
+- `run_id`: `idea01_text2cad_g4_full_20261002`
+- `last_run_sha`: G3 `487d02b9ac92f5e2338718e45b1f023c308dd332`；CPU见证已在56ac0f8干净detached完成22项、exit0/无torch，16原始+9独立记录本地和OBS逐SHA通过
+- `data`: 官方Text2CAD v1.0冻结worker四文件，8046 CAD/3644唯一strip文本；正式评价后续恢复7934原查询，评分/控制不得读UID/qrels/原CSV/旧分数或probe选择
+- `model`: 原版Text2CAD固定checkpoint/BERT/cadzip及既有two_head_factorized_logprob_sum；FP32/full272/b16尾14/trim none/无缓存，旧七核心AST不变。不是纯MLE或CAD几何精确NLL
+- `server`: 仅yunnan-share2两卡npu:0/1，checkout /home/ma-user/work/CADRetrieval；RT /home/ma-user/work/CADRetrieval_runtime；既有spec10c18c17环境warm reuse。先干净Git/fetch核最新origin/master授权，运行只detached本完整SHA；cvteam14只OBS，避/data/data_dev
+- `required_output`: 两次fresh的controller/两scorer真实PID与完整argv、共同start/deadline、ledger恰两invocation/cap29319624及1209600、两卡首chunk/timing/健康日志/干净Git；自己的新TEXT2CAD_G4_FULL_LAUNCH_2026-10-02.md及完整报告SHA。随后只读监控，完成矩阵/实际预算/退出及归档审核后另CPU评价
+- `ownership`: 当前Kimi只按已审Git控制器启动及写自己的新LAUNCH报告，不改任何源码/config/env/Codex文档或旧报告；exact stage自己的新报告，commit及SHA回填后停止交接，不push。运行中远端checkout不fetch/detach/编辑，不重启/重复评分
+- `stop_conditions`: 脏Git/未知旧run或ledger/资源冲突、API/连接/数值/数据/代码资产指纹/七天或实际预算失败；保存证据停下交流，不换模型、改阈值/预算、删旧产物或重试评分。正常已授权作业保持controller监管，不能因本地API中断误杀健康作业
 
-未来正式合同：全3644×8046=29319624对，每片1822 chunk/14659812对/916466批；仅两次fresh scorer，无预热/重试/空查询，hard共同604800秒墙钟/336双卡合计卡小时。这里只给实现需求，不是当前NPU授权。完整SHA审核和ACTIVE正式授权前，真实评分额度始终0。
-
-所有源码、配置、脚本、文档只本地编辑，经Git推送；远端仅干净detached批准完整SHA运行。重要原始证据留本地与OBS逐SHA核验，UID评价物理分离；100-query/短名单不能替代全量，不将双头label smoothing模型的分数称为CAD几何精确NLL。
+正式全3644×8046=29319624对，shard0 [0,1822)、shard1 [1822,3644)，各1822chunk/14659812对/916466批。主score sum，mean只诊断；100-query/短名单不能代全量。控制器import前PYTHONDONTWRITEBYTECODE=1，全部cache/tmp/output在checkout外。所有源码/config/script/doc本地编辑Git同步；服务器仅干净批准SHA运行。
