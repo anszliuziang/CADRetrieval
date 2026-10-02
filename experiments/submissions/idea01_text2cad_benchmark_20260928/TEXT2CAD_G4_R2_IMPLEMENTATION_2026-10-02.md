@@ -125,4 +125,4 @@ Codex 复审重点建议：`_drain_card_group` 的 deadline/confirm_end 两界�
 
 ## 12. 状态与回填
 
-**review_required**。实现提交 `e8ef0cdd0349f255d8a299ae1b32fbf3fcdd1263`（git status 干净、未 push）；本报告提交 SHA：`PENDING_BACKFILL`（本行为 SHA 回填，单独提交）。
+**review_required**。实现提交 `e8ef0cdd0349f255d8a299ae1b32fbf3fcdd1263`（git status 干净、未 push）；本报告提交 SHA：`ef12ba143eb91264ea7511ece4d2d745fe4b3de2`（本行为 SHA 回填，单独提交）。
