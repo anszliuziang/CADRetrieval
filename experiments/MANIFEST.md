@@ -25,3 +25,5 @@
 | 2026-10-02 | /experiment-plan | experiments/plans/IDEA01_M1C_EXECUTION_TRACKER_2026-10-02.md | implementation | 原版Text2CAD逐阶段证据与状态；实际授权仍由ACTIVE定义 |
 | 2026-10-02 | /requesting-code-review | experiments/reviews/IDEA01_M1C_G4_CODEX_CODE_REVIEW_R1_2026-10-02.md | review_required | full契约/52+6 CPU通过，两生命周期Important真实CPU复现，拒绝正式G4 |
 | 2026-10-02 | /systematic-debugging | experiments/plans/IDEA01_M1C_G4_R1_LIFECYCLE_FIX_2026-10-02.md | implementation | 仅新增启动控制的异常收尾/自有进程组修复与必要CPU证据，GPU0 |
+| 2026-10-02 | /requesting-code-review | experiments/reviews/IDEA01_M1C_G4_CODEX_CODE_REVIEW_R2_2026-10-02.md | review_required | Root18/fresh23针对CPU；两个新反例deadline/末事件及Linux先观察后清理要求 |
+| 2026-10-02 | /systematic-debugging | experiments/plans/IDEA01_M1C_G4_R2_COMPLETION_FIX_2026-10-02.md | implementation | 新控制器共同deadline与完成状态最小修复、可靠POSIX测试，GPU0 |
