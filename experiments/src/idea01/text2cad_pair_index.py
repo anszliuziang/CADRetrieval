@@ -563,6 +563,7 @@ def verify_chunk_records(
     t0: int,
     t1: int,
     expected_binding: dict[str, Any],
+    extra_binding_fields: Sequence[str] = (),
 ) -> list[str]:
     """Verify a completed chunk file for resume; returns problems ([] = OK).
 
@@ -571,6 +572,11 @@ def verify_chunk_records(
     file name, followed by EXACTLY the dense ascending pair_index sequence of
     the chunk, each with a finite complete score. A rejected or incomplete
     row cannot stand in for one of the required exact matrix scores.
+
+    ``extra_binding_fields`` are ADDITIONAL header keys that must equal
+    ``expected_binding.get(field)`` -- even when that expected value is None
+    (a scoped run, e.g. a probe selection, refuses chunks from the unscoped
+    full matrix and vice versa). The default keeps the historical behavior.
     """
     problems: list[str] = []
     expected_pairs = pair_space.chunk_pair_indices(t0, t1)
@@ -592,6 +598,11 @@ def verify_chunk_records(
         if field in expected_binding and header.get(field) != expected_binding[field]:
             problems.append(
                 f"header binding {field}: {header.get(field)!r} != {expected_binding[field]!r}"
+            )
+    for field in extra_binding_fields:
+        if header.get(field) != expected_binding.get(field):
+            problems.append(
+                f"header scope {field}: {header.get(field)!r} != {expected_binding.get(field)!r}"
             )
     body = records[1:]
     if len(body) != len(expected_pairs):

@@ -70,6 +70,27 @@ full-length per-pair reference on the real device (G1 modes in
 ``text2cad_speed_bench.py``) within the pre-registered tolerances; this
 runner records the flags in every chunk header so a binding drift on resume
 is a hard mismatch.
+
+PROBE SCOPE (G3, 2026-10-02; default OFF)
+-----------------------------------------
+``--probe-selection`` scopes a scoring run to the committed reviewed G3
+probe (experiments/plans/IDEA01_M1C_G3_FULL_GALLERY_PROBE_2026-10-02.md): the
+path must be exactly the in-repo committed config, which is re-derived from
+the live verified artifacts and bound to the actual token audit and the
+frozen G2 config before any load. The PairSpace, global text/pair indices,
+gallery order and adjacent-CAD batches are UNCHANGED -- the scope only
+filters this shard's single-text chunks to the probed queries, each still
+scoring the complete gallery. Probe chunks carry ``probe_selection_sha256``
+in their headers; chunk verification checks that scope field in BOTH
+directions, so full-matrix and probe outputs can never verify under each
+other's resume. A per-query timing sidecar (``timing_s{SS}.jsonl``) is
+appended AFTER each chunk's atomic publish (true start/end epochs, E2E =
+score + serialization + disk, real pair/batch/valid counts); a completed
+chunk without its timing line refuses the resume. Probe runs are fixed to
+batch 16 (+honest tail), texts_per_chunk=1; the summary additionally records
+cold start, per-device peak HBM, the timing sidecar name and all scope
+fingerprints. Without ``--probe-selection`` every output is byte-identical
+to the pre-G3 runner.
 """
 
 from __future__ import annotations
@@ -103,6 +124,22 @@ from .cadmium_runner import (  # audited authorization gate (M1b, 2026-09-30)
     authorize_run,
 )
 from .p1_runner import AUTHORIZATION_REF  # audited ref constant
+from .text2cad_g3_probe import (  # G3 probe scope (pure-CPU module, no forward)
+    G3_BATCH_SIZE,
+    G3_PROBE_SELECTION_REL,
+    G3_TEXTS_PER_CHUNK,
+    PROBE_SCOPE_FIELD,
+    append_timing_record,
+    build_query_timing_record,
+    probe_facts_for_shard,
+    probe_texts_for_shard,
+    read_timing_records,
+    timing_sidecar_name,
+    verified_sidecar_text_set,
+    verify_g3_g2_config_binding,
+    verify_g3_probe_selection_against_manifest,
+    verify_g3_token_audit,
+)
 from .text2cad_pair_index import (
     CAD_SEQ_ZIP_SHA256,
     CHUNK_BINDING_FIELDS,
@@ -113,6 +150,7 @@ from .text2cad_pair_index import (
     load_cad_store,
     load_pair_manifest,
     load_texts,
+    sha256_file,
     verify_chunk_records,
     verify_zip_members,
 )
@@ -877,6 +915,10 @@ def plan_chunks(
     cfg: RunnerConfig,
     binding: dict[str, Any],
     resume: bool,
+    *,
+    probe_text_indices: Optional[set[int]] = None,
+    extra_binding_fields: Sequence[str] = (),
+    timed_text_indices: Optional[set[int]] = None,
 ) -> tuple[list[tuple[int, int, int]], list[str]]:
     """Decide which chunks still need scoring; verify completed ones.
 
@@ -885,7 +927,23 @@ def plan_chunks(
     shard, parse as valid chunks, carry the current binding, and hold only
     final statuses; anything else is a loud refusal (never silently skipped
     or re-scored). Without ``resume`` any pre-existing chunk file refuses.
+
+    Probe scope (G3; defaults keep the full-matrix behavior EXACTLY):
+    ``probe_text_indices`` restricts the plan to the single-text chunks whose
+    global text index is probed (requires ``texts_per_chunk == 1``; a chunk
+    for any other text -- e.g. a full-matrix leftover -- is "outside this
+    shard's plan" and refuses); ``extra_binding_fields`` makes the scope
+    field part of chunk verification in BOTH directions (a full-matrix chunk
+    lacks the probe SHA, a probe chunk carries it, and the two never verify
+    under the other's binding); ``timed_text_indices`` is the set of query
+    text indices with a complete sidecar timing line -- a completed chunk
+    without one is unverifiable evidence and refuses (stop, never fabricate
+    times).
     """
+    if probe_text_indices is not None and cfg.texts_per_chunk != 1:
+        raise RunnerError(
+            f"probe filtering requires texts_per_chunk=1, got {cfg.texts_per_chunk}"
+        )
     out_dir = Path(out_dir)
     existing = sorted(p.name for p in out_dir.glob("chunk_s*_t*_*.jsonl")) if out_dir.is_dir() else []
     if existing and not resume:
@@ -900,6 +958,8 @@ def plan_chunks(
             cfg.n_shards, cfg.shard_id, cfg.texts_per_chunk
         )
     }
+    if probe_text_indices is not None:
+        planned = {name: value for name, value in planned.items() if value[0] in probe_text_indices}
     completed: list[str] = []
     problems: list[str] = []
     for name in existing:
@@ -917,9 +977,18 @@ def plan_chunks(
                 line = line.strip()
                 if line:
                     records.append(json.loads(line))
-        issues = verify_chunk_records(records, pair_space, cfg.shard_id, t0, t1, binding)
+        issues = verify_chunk_records(
+            records, pair_space, cfg.shard_id, t0, t1, binding,
+            extra_binding_fields=extra_binding_fields,
+        )
         if issues:
             problems.append(f"chunk {name} failed verification: {issues[:3]}")
+            continue
+        if timed_text_indices is not None and t0 not in timed_text_indices:
+            problems.append(
+                f"chunk {name} is complete but has no sidecar timing record; "
+                "the timing evidence is incomplete -- refusing to reuse it"
+            )
             continue
         completed.append(name)
     if problems:
@@ -997,6 +1066,22 @@ def git_sha_of(repo_root) -> str:
     if proc.returncode != 0:
         raise RunnerError(f"cannot read git HEAD of {repo_root}: {proc.stderr.strip()}")
     return proc.stdout.strip()
+
+
+def _peak_device_memory_bytes(device: str) -> Optional[int]:
+    """Peak HBM of the EXPLICIT device; None only on non-NPU (CPU test) hosts.
+
+    Mirrors the benchmark's helper (kept separate to avoid a circular import:
+    the bench imports this module, never the reverse).
+    """
+    if device.startswith("npu") and hasattr(torch, "npu"):
+        return int(torch.npu.max_memory_allocated(device))
+    return None
+
+
+def _reset_peak_device_memory(device: str) -> None:
+    if device.startswith("npu") and hasattr(torch, "npu"):
+        torch.npu.reset_peak_memory_stats(device)
 
 
 # ---------------------------------------------------------------------------
@@ -1091,6 +1176,10 @@ class FrozenMatrixScorer:
             "n_rejected": sum(1 for r in records if r["status"] == STATUS_REJECTED),
             **{field: self.binding.get(field) for field in CHUNK_BINDING_FIELDS},
         }
+        # Probe scope (G3): a scoped run stamps every chunk with the probe
+        # selection SHA; the unscoped full-matrix header is byte-unchanged.
+        if self.binding.get(PROBE_SCOPE_FIELD) is not None:
+            header[PROBE_SCOPE_FIELD] = self.binding[PROBE_SCOPE_FIELD]
         return [header, *records]
 
     def _record(
@@ -1377,6 +1466,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--text-cache", action="store_true",
                         help="gated experiment: unique-text BERT cache (default off)")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--probe-selection", default=None,
+                        help="G3 probe scope: must be the committed reviewed in-repo "
+                             "probe selection config; without it the full-matrix "
+                             "behavior is unchanged")
+    parser.add_argument("--token-audit", default=None,
+                        help="G3 probe scope: reviewed derived token-length audit JSON "
+                             "the committed probe selection is bound to")
     parser.add_argument("--scan-candidates", action="store_true",
                         help="dry-run: also re-validate all candidates (CPU, zero forward)")
     parser.add_argument("--repo-root", default=".")
@@ -1387,6 +1483,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         expected_pair_hashes = args.expected_pair_hashes
         if expected_pair_hashes is None:
             expected_pair_hashes = str(repo_root / EXPECTED_PAIR_HASHES_REL)
+        if args.probe_selection is not None and args.mode != "score":
+            raise RunnerError(
+                "--probe-selection scopes a scoring run; --mode dry-run never forwards"
+            )
+        if args.token_audit is not None and args.probe_selection is None:
+            raise RunnerError("--token-audit is only meaningful with --probe-selection")
         if args.mode == "score":
             canonical_hashes = (repo_root / EXPECTED_PAIR_HASHES_REL).resolve()
             if Path(expected_pair_hashes).resolve() != canonical_hashes:
@@ -1402,6 +1504,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
             if args.n_shards != 2 or args.shard_id not in (0, 1) or args.device != f"npu:{args.shard_id}":
                 raise RunnerError("two-card matrix requires shard 0 on npu:0 and shard 1 on npu:1")
+            if args.probe_selection is not None:
+                if args.texts_per_chunk != G3_TEXTS_PER_CHUNK:
+                    raise RunnerError(
+                        f"G3 probe keeps texts_per_chunk={G3_TEXTS_PER_CHUNK}, "
+                        f"got {args.texts_per_chunk}"
+                    )
+                if args.batch_size != G3_BATCH_SIZE:
+                    raise RunnerError(
+                        f"G3 probe is fixed to batch {G3_BATCH_SIZE} (plus the honest "
+                        f"tail), got {args.batch_size}"
+                    )
         fingerprints = _load_expected_pair_hashes(expected_pair_hashes)
 
         cfg = RunnerConfig(
@@ -1430,6 +1543,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         out_dir = Path(args.out_dir).resolve()
         ensure_outside_checkout(out_dir, repo_root, "out_dir")
+
+        # Gate 1b (G3 probe scope only): the probe selection must be the
+        # committed reviewed in-repo file, re-derived from the LIVE verified
+        # artifacts and bound to the actual token audit and the frozen G2
+        # config. Without --probe-selection nothing in this run changes.
+        probe_selection: Optional[dict[str, Any]] = None
+        probe_sha: Optional[str] = None
+        if args.probe_selection is not None:
+            canonical_probe = (repo_root / G3_PROBE_SELECTION_REL).resolve()
+            if Path(args.probe_selection).resolve() != canonical_probe:
+                raise RunnerError(
+                    f"probe scoring requires the committed reviewed probe selection "
+                    f"{canonical_probe}"
+                )
+            if not canonical_probe.is_file():
+                raise RunnerError(
+                    f"committed probe selection {canonical_probe} does not exist"
+                )
+            try:
+                probe_selection = json.loads(canonical_probe.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise RunnerError(
+                    f"committed probe selection {canonical_probe} is not valid JSON: {exc}"
+                ) from exc
+            verify_g3_probe_selection_against_manifest(probe_selection, cfg.pair_manifest_dir)
+            verify_g3_token_audit(probe_selection, args.token_audit, cfg.pair_manifest_dir)
+            verify_g3_g2_config_binding(probe_selection, repo_root)
+            probe_sha = sha256_file(canonical_probe)
 
         if args.mode == "dry-run":
             report = dry_run(
@@ -1478,7 +1619,55 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "score_name": SCORE_NAME,
             "spec_version": SCORE_SPEC_VERSION,
         }
-        todo, completed = plan_chunks(out_dir, pair_space, cfg, binding, resume=bool(args.resume))
+        if probe_sha is not None:
+            binding[PROBE_SCOPE_FIELD] = probe_sha
+        # Resume timing completeness (probe scope): a previously completed
+        # chunk must already have its sidecar timing line -- a chunk without
+        # one is unverifiable and stops the run (never re-scored silently,
+        # never re-timed by fabrication).
+        timed_texts: Optional[set[int]] = None
+        if probe_selection is not None and args.resume:
+            scope = {
+                PROBE_SCOPE_FIELD: probe_sha,
+                "git_sha": authorization.approved_sha,
+                "pair_manifest_sha256": fingerprints.get(PAIR_MANIFEST_FILE),
+                "checkpoint_sha256": PINNED_CHECKPOINT_SHA256,
+                "score_name": SCORE_NAME,
+                "spec_version": SCORE_SPEC_VERSION,
+                "device": cfg.device,
+            }
+            sidecar = out_dir / timing_sidecar_name(cfg.shard_id)
+            timed_texts = (
+                verified_sidecar_text_set(
+                    read_timing_records(sidecar),
+                    shard_id=cfg.shard_id,
+                    scope=scope,
+                    path_label=str(sidecar),
+                )
+                if sidecar.exists()
+                else set()
+            )
+        todo, completed = plan_chunks(
+            out_dir,
+            pair_space,
+            cfg,
+            binding,
+            resume=bool(args.resume),
+            probe_text_indices=(
+                set(probe_texts_for_shard(probe_selection, cfg.shard_id))
+                if probe_selection is not None
+                else None
+            ),
+            extra_binding_fields=(PROBE_SCOPE_FIELD,),
+            timed_text_indices=timed_texts,
+        )
+        if probe_selection is not None:
+            n_probe = len(probe_texts_for_shard(probe_selection, cfg.shard_id))
+            if len(todo) + len(completed) != n_probe:
+                raise RunnerError(
+                    f"probe plan covers {len(todo) + len(completed)} chunks, expected "
+                    f"exactly the shard's {n_probe} probe queries"
+                )
         planned_pairs = sum((t1 - t0) * pair_space.n_cads for t0, t1, _ in todo)
         if planned_pairs > ledger.remaining_pairs():
             raise RunnerError(
@@ -1491,13 +1680,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # Gate 5: strict load (all SHA/key/shape/zero/numeric gates; the
         # manifest is REQUIRED and pinned to the committed file above).
         stale_finalized = ledger.begin_invocation(invocation_id, cfg.shard_id, args.cards_used)
+        cold_start_s: Optional[float] = None
         try:
+            load_t0 = time.perf_counter()
             model, load_report, store, preload_report = load_gated_model_and_store(cfg, members)
+            if probe_selection is not None:
+                # G3: model + candidate load cold start, then a clean HBM
+                # baseline for the scoring phase (formal path untouched).
+                cold_start_s = time.perf_counter() - load_t0
+                _reset_peak_device_memory(cfg.device)
         except Exception:
             ledger.finalize_invocation(invocation_id, exit_code=2, note="model_or_candidate_load_failed")
             raise
         scorer = FrozenMatrixScorer(
             cfg, model, texts, store, pair_space, ledger, invocation_id, binding
+        )
+        probe_facts = (
+            probe_facts_for_shard(probe_selection, cfg.shard_id)
+            if probe_selection is not None
+            else None
+        )
+        timing_path = (
+            out_dir / timing_sidecar_name(cfg.shard_id)
+            if probe_selection is not None
+            else None
         )
         exit_code = 0
         note = "ok"
@@ -1505,11 +1711,44 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         published = 0
         try:
             for t0, t1, _pair_start in todo:
+                # G3 probe: the per-query measured window starts at the real
+                # scoring start and ends only AFTER the chunk's atomic publish
+                # completed (score + serialization + disk). No warmup query is
+                # added; the formal path takes no timestamps.
+                query_start_epoch = time.time() if probe_selection is not None else None
+                batches_before = scorer.stats["batches"]
                 chunk_records = scorer.score_chunk(t0, t1)
+                chunk_name = chunk_file_name(cfg.shard_id, t0, t1)
                 atomic_publish(
-                    out_dir / chunk_file_name(cfg.shard_id, t0, t1),
+                    out_dir / chunk_name,
                     [json.dumps(r, ensure_ascii=False) for r in chunk_records],
                 )
+                if probe_selection is not None:
+                    query_end_epoch = time.time()
+                    header = chunk_records[0]
+                    append_timing_record(
+                        timing_path,
+                        build_query_timing_record(
+                            invocation_id=invocation_id,
+                            shard_id=cfg.shard_id,
+                            device=cfg.device,
+                            text_index=t0,
+                            probe_facts=probe_facts[t0],
+                            start_epoch=query_start_epoch,
+                            end_epoch=query_end_epoch,
+                            n_pairs=header["n_pairs"],
+                            n_batches=scorer.stats["batches"] - batches_before,
+                            n_scored=header["n_scored"],
+                            n_rejected=header["n_rejected"],
+                            n_valid_total=sum(
+                                int(r["n_valid_total"])
+                                for r in chunk_records[1:]
+                                if r["status"] == STATUS_SCORED
+                            ),
+                            chunk_file=chunk_name,
+                            scope=binding,
+                        ),
+                    )
                 published += 1
         except Exception as exc:  # noqa: BLE001 -- ledger finalize must record ANY abort
             exit_code = 2
@@ -1518,23 +1757,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         finally:
             ledger.finalize_invocation(invocation_id, exit_code=exit_code, note=note)
 
-        summary = environment_record(
-            cfg,
-            {
-                "invocation_id": invocation_id,
-                "authorization": authorization.to_dict(),
-                "chunks_completed_now": published,
-                "chunks_previously_completed": len(completed),
-                "pairs_planned": planned_pairs,
-                "stats": scorer.stats,
-                "load_report": load_report,
-                "candidate_preload": preload_report,
-                "budget": ledger.to_dict(),
-                "stale_invocations_auto_finalized": stale_finalized,
-                "status": "failed" if failure else "ok",
-                "failure": failure,
-            },
-        )
+        summary_extra: dict[str, Any] = {
+            "invocation_id": invocation_id,
+            "authorization": authorization.to_dict(),
+            "chunks_completed_now": published,
+            "chunks_previously_completed": len(completed),
+            "pairs_planned": planned_pairs,
+            "stats": scorer.stats,
+            "load_report": load_report,
+            "candidate_preload": preload_report,
+            "budget": ledger.to_dict(),
+            "stale_invocations_auto_finalized": stale_finalized,
+            "status": "failed" if failure else "ok",
+            "failure": failure,
+        }
+        if probe_selection is not None:
+            summary_extra.update(
+                {
+                    "git_sha": authorization.approved_sha,
+                    "pair_manifest_sha256": fingerprints.get(PAIR_MANIFEST_FILE),
+                    PROBE_SCOPE_FIELD: probe_sha,
+                    "timing_file": timing_sidecar_name(cfg.shard_id),
+                    "cold_start_s": cold_start_s,
+                    "peak_device_memory_bytes": _peak_device_memory_bytes(cfg.device),
+                    "hbm_device": cfg.device,
+                    "probe_queries_total": published + len(completed),
+                }
+            )
+        summary = environment_record(cfg, summary_extra)
         atomic_publish(
             out_dir / f"summary_{invocation_id}.json",
             [json.dumps(summary, indent=2, sort_keys=True)],

@@ -1118,7 +1118,8 @@ class SourceHygieneTest(unittest.TestCase):
             walk(tree)
             return tokens
 
-        for module in ("text2cad_frozen_runner.py", "text2cad_speed_bench.py"):
+        for module in ("text2cad_frozen_runner.py", "text2cad_speed_bench.py",
+                       "text2cad_g3_probe.py"):
             tokens = live_tokens(REPO_ROOT / "experiments/src/idea01" / module)
             for token in tokens:
                 self.assertNotIn("qrels", token, f"{module}: {token[:80]!r}")
