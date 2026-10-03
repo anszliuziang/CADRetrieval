@@ -4,11 +4,11 @@
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
-- `phase`: 已通过独立审查，执行固定双条件真实OBS小文件诊断，零NPU。prepared实际双端exit及SHA通过后另写full模式授权；工程故障自主诊断修复，不重评分
+- `phase`: 旧diagnostic在SSH banner未认证超时/零远端操作，原控制目录保留。已独立复审8bc4eea，由cvteam6共享OBS存储入口执行新v2双条件诊断；prepared真实退出/SHA后另写full授权，零NPU
 - `latest_review`: `experiments/reviews/IDEA01_M1C_G4_OBS_DIAGNOSTIC_CODE_REVIEW_2026-10-03.md`
 - `approved_diagnostic_plan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
-- `approved_sha`: `dd14d4ca7abbda4eb47e27a47e19cd1bd5661ca9`
+- `approved_sha`: `8bc4eeabea57f416982a286add9b65ba35f57ed1`
 - `archive_mode`: `diagnostic`
 - `diagnostic_max_bytes`: 16777216（两个预定义条件各一次；当前约2MiB+清单）
 - `gpu_budget`: 0 卡小时
@@ -18,7 +18,7 @@
 - `last_run_sha`: `56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719`；历史授权ref67e89a20eb6fc3b35d27c3ba2363da4311d9113c，两invocation20261002T131158Z-c3812433/20261002T131159Z-6ce644de均exit0/finalized，controller status=ok/组empty，119885.30卡秒/60019.4233067秒墙钟
 - `data`: 8046CAD/3644唯一strip文本完整矩阵；物理分离UID映射留到后续评价恢复7934原查询，本阶段不能读qrels调方法
 - `model`: 既有two_head_factorized_logprob_sum/spec text2cad-vector-score-v1；FP32/full272/b16/无trim-cache，不能称纯MLE或CAD几何NLL；不做任何真实模型/BERT/NPU前向
-- `server`: yunnan-share2只读原干净detached56ac0f8，不fetch/detach/改源码/装包；RT /home/ma-user/work/CADRetrieval_runtime，既有spec10c18c17。cvteam14仅OBS，避/data/data_dev
+- `server`: yunnan-share2只读原干净detached56ac0f8，不fetch/detach/改源码/装包；RT /home/ma-user/work/CADRetrieval_runtime，既有spec10c18c17。cvteam6仅共享OBS存储入口（cvteam14 SSH banner超时），无GPU；避/data/data_dev
 - `required_output`: 全3644chunks/two summaries/final ledger/controller与两实际exit/全日志/实际命令/环境与输入SHA；LF SHA256SUMS，云脑、本地experiments/runs/<run_id>及新OBS recovery完整逐SHA真实exit0；8路双方实际退出、独立OBS覆盖witness、CODEX完整结果报告/最终矩阵review。Kimi草稿保留，不再要求Kimi交付；矩阵门后另激活CPU评价
 - `ownership`: 用户已授权Codex接手本地实现、运输、报告及CPU评价；保留Kimi草稿，以CODEX_新报告交接。新增代码仍独立审查。零NPU、不重启/重复评分/续跑
 - `stop_conditions`: 工程故障保留真实证据，依据根因修复、审查后继续，无需重复许可；源资产/实验数值/研究协议或预算问题保留证据讨论，不换模型/放宽门/扩NPU预算/删除覆盖未知资产，不重试已完成评分

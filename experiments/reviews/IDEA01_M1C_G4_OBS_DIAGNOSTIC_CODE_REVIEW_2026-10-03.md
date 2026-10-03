@@ -15,3 +15,11 @@
 ## 执行后门
 
 真实diagnostic退出、16个pipeline的双方状态、各条件字节SHA/覆盖均须核对。prepared通过后才另写full授权，目标新`_recovery_v2_20261003`；完整3666payload/14858752230字节独立OBS审核与已有全量数值hash连接通过后才最终matrix批准/G5。真实挂载行为及外层后台监管留到执行审核，不以本地toy替代。
+
+## 存储入口恢复复审
+
+第一次controller21036在09:13:12Z启动，20秒后SSH banner timeout/255；诊断root命令未认证执行、payload没有发送。`g4_obs_receiver_diag_20261003`真实state=failed/controller_exit1与stderr保留，不复用；这不是OBS写入失败，不能推断父目录假设。
+
+Root随后只读cvteam14重连同样banner timeout。cvteam6 findmnt同路径fuse.obsfs成功，既有26证据包SHA256SUMS实测2532bfd68cee4978faa30edec31178f9c208d2f2d60e91292a20f54675c04227，与共享OBS既有pin一致，新diag v2/full v2目标都不存在；原始证据在同code_review目录cvteam6_shared_obs_preflight.log/exit0。
+
+唯一新增存储路由实现`8bc4eeabea57f416982a286add9b65ba35f57ed1`由同一独立reviewer只读复审通过，Critical/Important/Minor无新增；Root11针对CPU exit0，代码字节等Git blob。SSH和destination记录统一cvteam6，本地/远端diagnostic用新v2独占目录，full读取同新目录且同批准SHA。仅零NPU存储，无计算/评分/协议变化。此节批准8bc4eea的diagnostic，旧dd14d4c批准不再用于重启旧诊断。

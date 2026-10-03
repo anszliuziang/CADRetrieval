@@ -89,3 +89,5 @@ Codex 会在正式 pilot 前审查你的代码，也会在结果提交后复核�
 在 `experiments/submissions/<task_id>/RESULTS.md` 回填**事实、解释、建议分开**的详细报告：每个 run 的本地及 OBS 路径、原始文件哈希、命令与 SHA、实际样本和预算、完整指标与置信区间、失败比例、与预设停止线的关系、反例/可疑捷径、你认为应当如何修改下一轮。不能自行把建议当成下一轮授权；Codex 复核代码与结果后在 `experiments/reviews/` 记结论并更新 `ACTIVE_TASK.md`。
 
 当前入口见 `experiments/ACTIVE_TASK.md`。如果它仍是 `idle`，先等待 Codex 发布具体首轮计划。
+
+2026-10-03约17:18北京时间恢复：第一诊断SSH banner timeout，未远端建目录/发payload，真实失败日志保留；cvteam6只读共享OBS挂载/旧证据manifest通过，故仅改存储入口到cvteam6、不用其GPU。新8bc4eeabea57f416982a286add9b65ba35f57ed1代码独立复审通过，ACTIVE pilot_authorized/diagnostic/零NPU，新diag v2根及控制目录；precreated真实SHA通过后另授权full v2。工程持续授权有效，无需问用户。
