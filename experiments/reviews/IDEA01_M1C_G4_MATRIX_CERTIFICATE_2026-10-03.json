@@ -1,0 +1,126 @@
+{
+  "schema": "text2cad-g4-final-matrix-certificate-v1",
+  "created_utc": "2026-10-03T14:33:03.883008+00:00",
+  "full_matrix_approved": true,
+  "run_id": "idea01_text2cad_g4_full_20261002",
+  "score_source_sha": "56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719",
+  "manifest_sha256": "97f9cbb60b0de449914ef1bdb2e388ddf0b2bcdae3686c73ceea511e764d3733",
+  "payload_files": 3666,
+  "payload_bytes": 14858752230,
+  "text_count": 3644,
+  "cad_count": 8046,
+  "full_score_rows_audited": 29319624,
+  "raw_row_checks": 117289444,
+  "local_binding_checks": 11054,
+  "final_join_checks": 7359,
+  "final_ledger_sha256": "375f4023de484fb67e812b5f28dbdf8effdc3b3186bfec41fad27a7bddd5b8e2",
+  "card_seconds": 119885.3,
+  "wall_seconds": 60019.42330670357,
+  "obs_target": "/data/obs_data_liuza/CADRetrieval/runs/idea01_text2cad_g4_full_20261002_recovery_v2_20261003",
+  "obs_independent_witness_sha256": "43db1b90be46f346cdf6a9bddf83717a7b5d777814631e9d70172f1b654a1323",
+  "evidence": {
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_results_codex_20261003\\source_hash_stdout.json": {
+      "sha256": "6e2174601d7e457219394c1315a0b4b67beaed07a9e54012299cd2340b9400fc",
+      "bytes": 447
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_results_codex_20261003\\source_hash_exit.json": {
+      "sha256": "302c5fcf0227d427ee240abdbd2a948557ea7ab09699f9c3bdeb0f98b67375ce",
+      "bytes": 18
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_obs_independent_audit_v2_20261003\\stdout.json": {
+      "sha256": "51db21f658b4aa58b763539e75c4609064c30a5f4545c25b6036f059e30b9c68",
+      "bytes": 462
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_obs_independent_audit_v2_20261003\\exit.json": {
+      "sha256": "9b2cc2d4bee9ffc781e92eeaef745a59949d5123c731164b334d6a9636a362a8",
+      "bytes": 69
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_obs_independent_audit_v2_20261003\\state.json": {
+      "sha256": "0f472ada43258b5b272a665aa5ef8a4db79415bd1a5beb96949a794f5471b4ab",
+      "bytes": 626
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_results_codex_20261003\\CODEX_G4_LOCAL_ROW_HASH_BINDING_20261003.json": {
+      "sha256": "dfee77debf3070e48938774e5dab57902a2dbf925e72e049d33b20f72f0da167",
+      "bytes": 699
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_results_codex_20261003\\CODEX_G4_SHARD0_RAW_AUDIT_20261003.json": {
+      "sha256": "ef8383d8666913ea9ecba0def70722d4b8fabf682ecee107b01dc0c6a3a1961e",
+      "bytes": 402540
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_results_codex_20261003\\shard0_exit.json": {
+      "sha256": "124fd50cb6d223cdd18fedc166d00af7254199b6e6dedf9be82f71db87af6d01",
+      "bytes": 16
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_results_codex_20261003\\CODEX_G4_SHARD1_RAW_AUDIT_20261003.json": {
+      "sha256": "20a6b4d119b903dd97be8ec225ac6cd641bee4943cbe04db4e6ca7de8c1f3fe4",
+      "bytes": 402292
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_results_codex_20261003\\shard1_exit.json": {
+      "sha256": "124fd50cb6d223cdd18fedc166d00af7254199b6e6dedf9be82f71db87af6d01",
+      "bytes": 16
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\transport_result.json": {
+      "sha256": "fd1f04d5b7e25da8c5c7d42ee397c1323fbcf4e99f14d7b23de6a1d928b06ded",
+      "bytes": 7150
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\stream0_exit.json": {
+      "sha256": "1039ff56f63e3b3dd6e181cffa34cd29b24156fa95352cbaa7e8fe37fd812a4b",
+      "bytes": 770
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\stream1_exit.json": {
+      "sha256": "ac6d0efa98f35debabbb17138c98cce42ed9e9d0ece5c77b90b073dcaae6af1f",
+      "bytes": 770
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\stream2_exit.json": {
+      "sha256": "164b4b8b1d59a8e7d6e7d728d4aa8421c74c3080e5e379e636f4066d570ab914",
+      "bytes": 771
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\stream3_exit.json": {
+      "sha256": "31f52686957ae530706dfa021ab325be3f1f210070b6c1fdaa1fbc982ef838a3",
+      "bytes": 771
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\stream4_exit.json": {
+      "sha256": "91a2e60815205462d34b92160eae510932bb501d81ce2916af700dc59c5f997e",
+      "bytes": 768
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\stream5_exit.json": {
+      "sha256": "248f2d0279ed0c89dfac6fb1bebb759f665f74a54d641789c1a81b87297b716a",
+      "bytes": 770
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\stream6_exit.json": {
+      "sha256": "31d254d6a32765bda739de9f75dbef7042be109dcb0db923cb103f05a358c322",
+      "bytes": 770
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\stream7_exit.json": {
+      "sha256": "f23d8b8e313ddd573574b8f8730f1da039794c198488a38306263fb3712e1bdc",
+      "bytes": 770
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\controller_exit.json": {
+      "sha256": "9bc28fb920494de75d3bf852a2dafb360752e47d89ea7522735907863c8d1ad5",
+      "bytes": 97
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g4_archive_recovery_v2_20261003\\remote_sha256_exit.json": {
+      "sha256": "d22a748debe93791b3abbf80e69724ba56996c953e6f06bd1d484227726437d3",
+      "bytes": 55
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1\\experiments\\runs\\idea01_text2cad_g4_full_20261002\\final_ledger.json": {
+      "sha256": "375f4023de484fb67e812b5f28dbdf8effdc3b3186bfec41fad27a7bddd5b8e2",
+      "bytes": 1174
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1\\experiments\\runs\\idea01_text2cad_g4_full_20261002\\controller_exit.json": {
+      "sha256": "8d8b6f3360a384657498bd60b08c132406a4846fae6e11f12202367d015b5f16",
+      "bytes": 1548
+    }
+  },
+  "score_spec": "text2cad-vector-score-v1",
+  "primary_score": "score_total",
+  "no_retrieval_metrics_computed": true,
+  "scoring_rerun": false,
+  "known_limits": [
+    "Exact UID retrieval has no semantic-equivalence annotations.",
+    "Native two-head training used label smoothing; not pure MLE or geometric likelihood.",
+    "Full scorer has no G3 per-query timing/cold-start/peak fields.",
+    "Original archive SHA log has replacement characters in localized status text; actual exit0 and independent byte hashes establish success."
+  ],
+  "handoff": "Human authorized Codex takeover; original unfinished Kimi draft preserved."
+}
