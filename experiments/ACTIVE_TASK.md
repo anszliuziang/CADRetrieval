@@ -1,14 +1,16 @@
 # 当前实验任务：Codex 接手 G4 完整归档
 
-- `state`: `implementation`
+- `state`: `pilot_authorized`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
-- `phase`: 用户持续授权工程故障诊断/修复/验证后自主恢复。实施<=16MB零NPU真实OBS接收双条件诊断及最小本地修复，代码审查和完整SHA后执行；失败现场保留，不重评分/G5，工程问题不再停等用户
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_ARCHIVE_RUNTIME_FAILURE_2026-10-03.md`
+- `phase`: 已通过独立审查，执行固定双条件真实OBS小文件诊断，零NPU。prepared实际双端exit及SHA通过后另写full模式授权；工程故障自主诊断修复，不重评分
+- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_OBS_DIAGNOSTIC_CODE_REVIEW_2026-10-03.md`
 - `approved_diagnostic_plan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
-- `approved_sha`: `none`（新归档真实失败已停止；不复用f9c149f授权重试；零NPU；历史评分SHA不变）
+- `approved_sha`: `dd14d4ca7abbda4eb47e27a47e19cd1bd5661ca9`
+- `archive_mode`: `diagnostic`
+- `diagnostic_max_bytes`: 16777216（两个预定义条件各一次；当前约2MiB+清单）
 - `gpu_budget`: 0 卡小时
 - `max_scored_pairs`: 0
 - `max_download_gb`: 0（不新增模型/数据；允许运输既有14.8587GB原始评分文件与运行证据）

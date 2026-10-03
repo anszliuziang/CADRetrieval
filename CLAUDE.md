@@ -10,7 +10,7 @@
 
 当前恢复合同：`experiments/plans/IDEA01_M1C_G4_CODEX_TAKEOVER_2026-10-03.md`。原归档恢复提案已获用户继续授权，旧部分 OBS 目录保留；独立后台运输至新目录，持久保存启动、PID、两端真实退出和完整 SHA 核验。成功后另激活 G5 CPU 评价。当前状态始终以 ACTIVE_TASK 为准；下文 07:50Z 等待决定段为历史记录。
 
-2026-10-03约16:39北京时间新增量：Codex新归档source全部3666 SHA通过，但真实OBS八路接收有5路首payload报ENOENT，已按真实失败停止合同终止自身controller26168及tar/ssh，remote tar已无进程；不读取旧state.json的running就重启/重复运输。operator_stop与原始错误日志保留，原因优先调查首次父目录创建/并发可见性，尚未隔离证明。ACTIVE review_required/approved none/GPU0，待用户确认OBS_RECEIVER_DIAGNOSTIC_PROPOSAL（最多16MB小型真实接收诊断，修复审码后新v2目录归档）；本地/云脑原件安全、G5未执行、没有R@K。Codex已接手身份不变。
+2026-10-03约17:05北京时间新增量：用户已持续授权工程故障自主处理，ACTIVE implementation/approved none/GPU0，真实OBS双条件接收诊断计划已user_authorized，无需重复确认。Codex新增预建所有manifest父目录、diagnostic/full模式授权绑定和<=16MB诊断，10项本地CPU测试通过，代码cd843820ed5e503aead05bebefdc65ab2b5ed986正独立审查，真实诊断尚未执行。OBS挂载已由findmnt核为fuse.obsfs；此前5路首payload ENOENT原因仍需实测隔离。旧失败controller26168已停、原state running仅历史，两个旧部分OBS目录保留。本地/云脑原件安全、G5尚无R@K。审查通过后按新完整SHA执行诊断，再新v2独占目标归档。
 
 ## 1. 你是谁、项目要回答什么
 
