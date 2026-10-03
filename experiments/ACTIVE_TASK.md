@@ -1,14 +1,14 @@
-# 当前实验任务：G5 预注册 CPU 评价实现
+# 当前实验任务：G5 预注册 CPU 评价正式执行
 
-- `state`: `review_required`
+- `state`: `pilot_authorized`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G5_CPU_EVALUATION_2026-10-03.md`
-- `phase`: G5本地纯numpy/stdlib实现完成；21针对测试/真实输入连接通过，独立代码审查中；当前不授权计算真实检索指标
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_FINAL_MATRIX_REVIEW_2026-10-03.md`
+- `phase`: G5独立代码审核通过；只授权批准SHA干净本地detached checkout执行一次7934原query CPU评价、5000文本组bootstrap及结果归档；无新评分
+- `latest_review`: `experiments/reviews/IDEA01_M1C_G5_CODEX_CODE_APPROVAL_2026-10-03.md`
 - `approved_diagnostic_plan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
-- `approved_sha`: `none`（G5新增代码须独立审核后另授权一次正式CPU评价）
+- `approved_sha`: `e2d823aa284c800906ed37c0a2d0272e052de96b`
 - `last_archive_sha`: `8bc4eeabea57f416982a286add9b65ba35f57ed1`
 - `full_matrix_approved`: true
 - `matrix_certificate`: `experiments/reviews/IDEA01_M1C_G4_MATRIX_CERTIFICATE_2026-10-03.json`
@@ -19,7 +19,9 @@
 - `gpu_budget`: 0 卡小时
 - `max_scored_pairs`: 0
 - `max_download_gb`: 0（不新增模型/数据；允许运输既有14.8587GB原始评分文件与运行证据）
-- `run_id`: `idea01_text2cad_g4_full_20261002`
+- `run_id`: `idea01_text2cad_g5_cpu_20261003`
+- `source_run_id`: `idea01_text2cad_g4_full_20261002`
+- `cpu_evaluation_invocations`: 1（新独占输出目录；健康作业只读监控，不重复运行或调方法）
 - `last_run_sha`: `56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719`；历史授权ref67e89a20eb6fc3b35d27c3ba2363da4311d9113c，两invocation20261002T131158Z-c3812433/20261002T131159Z-6ce644de均exit0/finalized，controller status=ok/组empty，119885.30卡秒/60019.4233067秒墙钟
 - `data`: 8046CAD/3644唯一strip文本完整矩阵；CPU评价恢复7934原查询，query/gallery/qrels/evalmap以G5预注册pins连接，不调方法
 - `model`: 既有two_head_factorized_logprob_sum/spec text2cad-vector-score-v1；FP32/full272/b16/无trim-cache，不能称纯MLE或CAD几何NLL；不做任何真实模型/BERT/NPU前向

@@ -1,6 +1,6 @@
 # G5 固定 CPU 评价实现交接
 
-状态：review_required；真实检索指标尚未执行。执行者 Codex，用户已明确授权接手。完整 G4 证书 SHA `afad9371cc846ad7e636c4ae4b76740ea1b74f787d002602bb677e9bb834bfc6` 为前置门。
+代码完整 SHA `e2d823aa284c800906ed37c0a2d0272e052de96b` 已独立审核通过；真实检索指标尚未执行，正式授权以新 ACTIVE 提交为准。执行者 Codex，用户已明确授权接手。完整 G4 证书 SHA `afad9371cc846ad7e636c4ae4b76740ea1b74f787d002602bb677e9bb834bfc6` 为前置门。
 
 ## 文件与协议
 
