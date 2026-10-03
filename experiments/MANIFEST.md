@@ -34,3 +34,5 @@
 | 2026-10-02 | /monitor-experiment | experiments/reviews/IDEA01_M1C_G4_CODEX_LAUNCH_REVIEW_2026-10-02.md | pilot_authorized | 两卡正式全量启动；独立PID/预算/首16092行96593检查及9权威本地OBS SHA，full计时口径更正 |
 | 2026-10-03 | /monitor-experiment | experiments/reviews/IDEA01_M1C_G4_CODEX_COMPLETION_PREFLIGHT_2026-10-03.md | review_required | 全29319624评分正常结束，3644header及17完成元数据通过，待全行数值和完整归档 |
 | 2026-10-03 | /experiment-plan | experiments/plans/IDEA01_M1C_G4_RESULTS_COLLECTION_2026-10-03.md | review_required | 零NPU原始收集、稳定final ledger、三处完整SHA与独立矩阵审核后再CPU评价 |
+| 2026-10-03 | /monitor-experiment | experiments/reviews/IDEA01_M1C_G4_ARCHIVE_INTERRUPTION_REVIEW_2026-10-03.md | review_required | 全行及源端/本地SHA已过，收集CLI/OBS运输中断，保留现场等待恢复讨论 |
+| 2026-10-03 | /experiment-plan | experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md | pending_user_decision | 保留旧部分OBS目录、以固定原件新目录完整归档，零NPU；未授权实施 |

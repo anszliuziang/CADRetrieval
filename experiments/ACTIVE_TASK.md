@@ -4,8 +4,9 @@
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G4_RESULTS_COLLECTION_2026-10-03.md`
-- `phase`: 全29319624对评分正常结束；3644发布header与17项完成元数据通过，尚未全行数值/全量本地OBS SHA审核。当前仅CPU收集报告，不计算检索指标，不启动新评分
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_COMPLETION_PREFLIGHT_2026-10-03.md`
+- `phase`: 全29319624对评分正常结束；全行117289444检查、源端/本地3666项SHA及11054连接检查通过。Kimi CLI和OBS运输已中断，OBS仅1129个chunk文件名，未完整核验；停止推进、等待用户讨论恢复方案。只读诊断，不派发Kimi/运输/评分或G5
+- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_ARCHIVE_INTERRUPTION_REVIEW_2026-10-03.md`
+- `pending_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（待用户决定，不是执行授权）
 - `approved_sha`: `none`（当前零NPU；历史G4运行SHA保持原件不变）
 - `gpu_budget`: 0 卡小时
 - `max_scored_pairs`: 0
