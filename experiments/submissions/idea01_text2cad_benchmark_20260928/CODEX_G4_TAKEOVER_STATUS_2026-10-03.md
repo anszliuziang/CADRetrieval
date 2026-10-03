@@ -1,5 +1,7 @@
 # Codex 接手 G4 归档：运行交接
 
+**最新增量：新8路接收发生5个真实ENOENT，已停止PID26168及自身tar/ssh子进程，remote tar已无进程；下文运行中内容为历史。全部source SHA通过，但OBS仍未完整，见IDEA01_M1C_G4_CODEX_ARCHIVE_RUNTIME_FAILURE及OBS_RECEIVER_DIAGNOSTIC_PROPOSAL。没有自动重试/G5。**
+
 2026-10-03，北京时间。**本报告为归档运行中交接，不是完整 OBS 或检索指标通过报告。** 用户已明确要求 Codex 接手继续；原 Kimi `TEXT2CAD_G4_FULL_RESULTS_2026-10-03.md` 未完成草稿保留、不覆写。执行者和审核责任更新于 CLAUDE/ACTIVE；不再依赖 Kimi CLI/API。
 
 ## 已完成

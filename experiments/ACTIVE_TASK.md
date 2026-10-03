@@ -1,13 +1,14 @@
 # 当前实验任务：Codex 接手 G4 完整归档
 
-- `state`: `pilot_authorized`
+- `state`: `review_required`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G4_CODEX_TAKEOVER_2026-10-03.md`
-- `phase`: Codex持久归档已真实启动一次，PID26168；本地全部3666原件SHA/数量/字节已重新通过，新目标独占mkdir成功，8路实际transport运行中。只读状态/双端退出，不重启重复运输；OBS完整后另激活G5
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_ARCHIVE_CODE_REVIEW_2026-10-03.md`
+- `phase`: 新8路归档5路接收端首payload出现ENOENT，已停止本控制器及自身子进程；本地/云脑完整评分原件安全。保留两个部分OBS目录及原错误日志，不重试运输/G5；等待用户讨论小型真实OBS接收诊断/本地修复后新目标归档方案
+- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_ARCHIVE_RUNTIME_FAILURE_2026-10-03.md`
+- `pending_proposal`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
-- `approved_sha`: `f9c149fe1a8d616680d778b585f16ede2dc7a5d7`（仅新归档Git blob；零NPU；历史评分SHA不变）
+- `approved_sha`: `none`（新归档真实失败已停止；不复用f9c149f授权重试；零NPU；历史评分SHA不变）
 - `gpu_budget`: 0 卡小时
 - `max_scored_pairs`: 0
 - `max_download_gb`: 0（不新增模型/数据；允许运输既有14.8587GB原始评分文件与运行证据）

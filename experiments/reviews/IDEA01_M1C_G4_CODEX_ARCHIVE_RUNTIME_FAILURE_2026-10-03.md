@@ -1,0 +1,19 @@
+# 新归档真实OBS接收故障：停止与原件保全
+
+2026-10-03约16:39北京时间。不是模型/API/评分失败；Codex新增归档实现未覆盖真实OBS并发首次创建父目录的路径。用户此前要求真实问题停下来交流，当前恢复合同也禁止失败后自动重试。
+
+## 已核事实
+
+批准归档SHA f9c149fe1a8d616680d778b585f16ede2dc7a5d7，controller PID26168，本地source全部3666 SHA/固定字节通过；remote独占mkdir exit0。八个stream真实启动记录均完整。
+
+接收端stream0/2/4/5/7各报告首个payload无法open、ENOENT：分别card0/chunk_s00_t01565_01566.jsonl，card1/chunk_s01_t02723_02724.jsonl、t02544_02545、t03319_03320、t02235_02236。原日志在runtime/g4_archive_recovery_20261003/streamN_receiver_stderr.log，不能把83字节错误当作SSH告警。发送端stderr当时空；源文件均已逐SHA通过，不能称源缺失。
+
+Root只终止本控制器记录的自身PID和16个tar/ssh子PID，逐PID核实exe身份后TerminateProcess；未杀其他作业或NPU。请求的本地终止码143不是捕获的实际双方exit，不伪造stream_exit/controller_exit。controller state.json留下原running历史快照，必须结合operator_stop辨识最终状态。再次独立检查本地这些PID消失；remote Python/proc只读exit0，相关tar receivers为空，新target仅card0=118/card1=394文件名、outer_launch缺失，不能当完整文件/SHA通过。旧OBS部分目录和本地/云脑原件未改。
+
+## 原因边界与改进方案（未执行重试）
+
+错误集中于多路第一项、发生在远端新空目录，而本地Windows八路toy通过；当前helper只有独占创建根目录，tar清单含文件、不含显式父目录headers，多个GNU tar同时隐式建立card0/card1父目录。证据支持“首次父目录创建/可见性与并发接收”作为优先假设，但尚无真实OBS隔离复现，不能把假设写成已证明的OBS故障或tar bug。
+
+建议新增获准的零NPU诊断：单独小型OBS诊断目录，标准库/系统工具验证显式预建manifest全部父目录、等待可见后再进行8路小payload接收；记录真实两端exit与全SHA。若通过，本地Git最小修复，增加父目录准备和测试并独立审查，再使用新目标 `_recovery_v2_20261003` 归档既有原件；两个已有部分目标均保留，不覆盖。停止不是研究失败；没有R@K、G5仍未激活。
+
+证据：runtime/g4_archive_recovery_operator_stop_20261003.json、g4_archive_recovery_failure_remote_20261003.json、g4_archive_transport_launch_snapshot_20261003.json、所有stream launch/日志及原始state。首个只读shell诊断exit1是远端rg未安装，后续标准库proc诊断真实exit0；不能混称SSH失败。
