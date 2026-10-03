@@ -1,22 +1,22 @@
-# 当前实验任务：Text2CAD G4完整精确矩阵（运行中）
+# 当前实验任务：Text2CAD G4完成后原始收集
 
-- `state`: `pilot_authorized`
+- `state`: `review_required`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
-- `active_subplan`: `experiments/plans/IDEA01_M1C_G4_EXECUTION_2026-10-02.md`
-- `phase`: 正式全量已于2026-10-02T13:11:51Z启动且交接审核通过；仅只读监控当前两invocation，不启动新评分。13:18Z两卡各10已发布chunk，首16092条/96593项独立核验通过；全量与指标未完成
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_LAUNCH_REVIEW_2026-10-02.md`
-- `approved_sha`: `56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719`
-- `gpu_budget`: 336 卡小时（双卡合计1209600卡秒；共同604800秒墙钟，TERM/KILL宽限在预算内）
-- `max_scored_pairs`: 29319624（完整3644×8046，不含额外验证/预热/重试/空查询）
-- `max_download_gb`: 0（固定资产齐备，不装包/换环境）
+- `active_subplan`: `experiments/plans/IDEA01_M1C_G4_RESULTS_COLLECTION_2026-10-03.md`
+- `phase`: 全29319624对评分正常结束；3644发布header与17项完成元数据通过，尚未全行数值/全量本地OBS SHA审核。当前仅CPU收集报告，不计算检索指标，不启动新评分
+- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_COMPLETION_PREFLIGHT_2026-10-03.md`
+- `approved_sha`: `none`（当前零NPU；历史G4运行SHA保持原件不变）
+- `gpu_budget`: 0 卡小时
+- `max_scored_pairs`: 0
+- `max_download_gb`: 0（不新增模型/数据；允许运输既有14.8587GB原始评分文件与运行证据）
 - `run_id`: `idea01_text2cad_g4_full_20261002`
-- `last_run_sha`: G4运行`56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719`；controller3682036、scorer3682124/3682194，invocations20261002T131158Z-c3812433/20261002T131159Z-6ce644de，共同deadline2026-10-09T13:11:51.702770Z。G3及Linux22项证据沿用
-- `data`: 官方Text2CAD v1.0冻结worker四文件，8046 CAD/3644唯一strip文本；正式评价后续恢复7934原查询，评分/控制不得读UID/qrels/原CSV/旧分数或probe选择
-- `model`: 原版Text2CAD固定checkpoint/BERT/cadzip及既有two_head_factorized_logprob_sum；FP32/full272/b16尾14/trim none/无缓存，旧七核心AST不变。不是纯MLE或CAD几何精确NLL
-- `server`: 仅yunnan-share2两卡npu:0/1，checkout /home/ma-user/work/CADRetrieval；RT /home/ma-user/work/CADRetrieval_runtime；既有spec10c18c17环境warm reuse。启动前已核干净Git和origin/master授权，运行中仅只读detached本完整SHA，不fetch/detach；cvteam14只OBS，避/data/data_dev
-- `required_output`: Kimi LAUNCH报告9dd46182/回填c9e499b6及独立启动审核已完成，9权威证据本地/OBS逐SHA通过。继续完整29319624矩阵/两summary/最终ledger/真实退出/实际预算与环境资产及全量SHA；审核后另CPU评价。full路径无G3逐query计时sidecar，mtime只供进度，真实总耗时核账本及退出
-- `ownership`: Kimi启动CLI session46405已exit0，当前Codex只读监控，不重复派发启动、不改当前运行源码/config/env或Kimi旧报告。运行中远端checkout不fetch/detach/编辑，不重启/重复评分
-- `stop_conditions`: 脏Git/未知旧run或ledger/资源冲突、API/连接/数值/数据/代码资产指纹/七天或实际预算失败；保存证据停下交流，不换模型、改阈值/预算、删旧产物或重试评分。正常已授权作业保持controller监管，不能因本地API中断误杀健康作业
+- `last_run_sha`: `56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719`；历史授权ref67e89a20eb6fc3b35d27c3ba2363da4311d9113c，两invocation20261002T131158Z-c3812433/20261002T131159Z-6ce644de均exit0/finalized，controller status=ok/组empty，119885.30卡秒/60019.4233067秒墙钟
+- `data`: 8046CAD/3644唯一strip文本完整矩阵；物理分离UID映射留到后续评价恢复7934原查询，本阶段不能读qrels调方法
+- `model`: 既有two_head_factorized_logprob_sum/spec text2cad-vector-score-v1；FP32/full272/b16/无trim-cache，不能称纯MLE或CAD几何NLL；不做任何真实模型/BERT/NPU前向
+- `server`: yunnan-share2只读原干净detached56ac0f8，不fetch/detach/改源码/装包；RT /home/ma-user/work/CADRetrieval_runtime，既有spec10c18c17。cvteam14仅OBS，避/data/data_dev
+- `required_output`: 全3644chunks/two summaries/final ledger/controller与两实际exit/全日志/实际命令/环境与输入SHA；LF SHA256SUMS，云脑、本地experiments/runs/<run_id>及共享OBS完整逐SHA真实exit0；Kimi新TEXT2CAD_G4_FULL_RESULTS_2026-10-03.md与完整报告提交SHA。Codex全行审核后另激活CPU评价
+- `ownership`: Kimi仅CPU收集新submission，exact stage/commit自己的报告，不push，不改Codex文档/src/config/tests。Codex审核原件；提交交接前不争用index，不重启/重复评分/续跑
+- `stop_conditions`: API/连接/资源/原件或资产指纹/退出/数值/完整性失败保存证据停下交流，不换API/模型、不改阈值/预算、不删除覆盖未知产物、不重试评分
 
-正式全3644×8046=29319624对，shard0 [0,1822)、shard1 [1822,3644)，各1822chunk/14659812对/916466批。主score sum，mean只诊断；100-query/短名单不能代全量。控制器import前PYTHONDONTWRITEBYTECODE=1，全部cache/tmp/output在checkout外。所有源码/config/script/doc本地编辑Git同步；服务器仅干净批准SHA运行。
+full无G3逐query计时sidecar/cold_start/peak字段；mtime仅进度，不补造测量。两summary是真实时点快照，card1合法peer pending保持原样；稳定final ledger另取副本。仅从本run归档，禁止父目录递归混入CPU fixtures。源码/config/script/doc始终本地Git，服务器不编辑源码；当前仅原始资产运输。

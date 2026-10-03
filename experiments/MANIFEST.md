@@ -32,3 +32,5 @@
 | 2026-10-02 | /requesting-code-review | experiments/reviews/IDEA01_M1C_G4_CODEX_FULL_APPROVAL_2026-10-02.md | pilot_authorized | 真实Linux22/清理前状态及16+9本地OBS SHA通过，正式全量完整SHA准入 |
 | 2026-10-02 | /experiment-plan | experiments/plans/IDEA01_M1C_G4_EXECUTION_2026-10-02.md | pilot_authorized | 全29319624对、仅两fresh/336卡时/共同七天，已审Git启动与交接合同 |
 | 2026-10-02 | /monitor-experiment | experiments/reviews/IDEA01_M1C_G4_CODEX_LAUNCH_REVIEW_2026-10-02.md | pilot_authorized | 两卡正式全量启动；独立PID/预算/首16092行96593检查及9权威本地OBS SHA，full计时口径更正 |
+| 2026-10-03 | /monitor-experiment | experiments/reviews/IDEA01_M1C_G4_CODEX_COMPLETION_PREFLIGHT_2026-10-03.md | review_required | 全29319624评分正常结束，3644header及17完成元数据通过，待全行数值和完整归档 |
+| 2026-10-03 | /experiment-plan | experiments/plans/IDEA01_M1C_G4_RESULTS_COLLECTION_2026-10-03.md | review_required | 零NPU原始收集、稳定final ledger、三处完整SHA与独立矩阵审核后再CPU评价 |
