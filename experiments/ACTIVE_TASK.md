@@ -10,7 +10,10 @@
 - `evaluation_certificate`: `experiments/reviews/IDEA01_M1C_G5_EVALUATION_CERTIFICATE_2026-10-03.json`
 - `evaluation_certificate_sha256`: `6421e331aa574a8337779982a39d812ddd340d94a8729deb5c533749684a097b`
 - `g5_obs_manifest_sha256`: `0adec648178550648b36dfd6c372b9f1f3a1d08c3d6cfc373b0be9f446c09125`（70payload/24521948bytes；全部transport/SHA/byte/controller实际0）
-- `finalproof_transport_authorized`: false（新Git胶合脚本复用已审transport，等待唯一独立代码审查；仅小型报告/退出证明）
+- `finalproof_transport_authorized`: true（唯一fresh审码Ready/无Critical或Important，Root5针对本地预检通过；仅一次新小型报告/实际退出/审查trace补充证明包）
+- `approved_finalproof_sha`: `078eb3f58be67ad894a72becb99f621d1d98e3c0`
+- `finalproof_script_sha256`: `90073542265e5b804822e18c2173461a14d18c224a4e32df780c5e3497fde649`
+- `finalproof_target`: `cvteam6:/data/obs_data_liuza/CADRetrieval/runs/m1c_g5_final_delivery_proof_20261003`（独占；本地runtime/g5_final_delivery_proof_bundle_20261003及control_20261003）
 - `approved_archive_sha`: `a6525797506ab7d4e9012bdb623d4c52931b8351`
 - `archive_script_sha256`: `4210ebebef08ce7a5a253f1202925d78a84b49a4d06dc2edd895bb11dedfb1e0`
 - `archive_recovery`: 首次仅本地准备因review目录中已知pytest_toy未列入proof清单而拒绝，actual exit1且未SSH/建远端目录/运输；失败现场保留。新代码只复制固定10份proof与manifest，显式排除且保留pytest_toy，其他extra仍拒绝。11针对CPU及唯一archive reviewer通过；授权新独占本地v2 bundle/control一次归档

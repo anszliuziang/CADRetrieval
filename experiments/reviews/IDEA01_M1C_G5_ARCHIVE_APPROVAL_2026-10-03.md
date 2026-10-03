@@ -13,3 +13,11 @@ Root 8 项针对CPU见证全部通过，包括receiver-missing、sender/receiver
 新`copy_review_proof`固定原review manifest SHA `369621fd59cdfdd35716dc23544de40c081a97d076db4027f0602b7be5833e0b`，只复制声明的10份proof与manifest；唯一可排除项是非symlink的`pytest_toy`目录，保留源目录并输出`code_review_scope.json`。其他缺失/extra/foreign manifest仍拒绝，formal及independent audit的严格flat全SHA门不变。新3项CPU验证已知fixture排除并保留、unknown extra拒绝、foreign manifest拒绝；原8项边界测试按新byte SHA再次通过，合计11项。唯一archive reviewer复审Ready，无Critical/Important/Minor。
 
 新独占OBS目标 `cvteam6:/data/obs_data_liuza/CADRetrieval/runs/idea01_text2cad_g5_cpu_20261003`，本地control `g5_complete_archive_control_v2_20261003`，bundle `g5_complete_archive_bundle_v2_20261003`。远端目标仍要求不存在，首次失败未触及该目标。范围为已完成formal15payload、independent audit12payload、固定八输入、批准执行代码、review/toy证据与协议；不递归父runtime、不重新运输G4矩阵、不混CPUfixtures。显式预建所有父目录；真实两端退出0、完整remote SHA0、独立只读Py3.8 byte/覆盖/无extra全部通过后才最终交付批准。
+
+## 完成状态与最后小型补充包授权
+
+上述70payload/24521948bytes已全部运输/SHA/独立byte覆盖/controller实际退出0，无extra；manifest0adec648178550648b36dfd6c372b9f1f3a1d08c3d6cfc373b0be9f446c09125。该完整包不得重复运输。
+
+最终Git报告、certificate、完整claim trace、真实归档退出/launcher及首本地失败现场另以小型独占补充包归档。新胶合脚本`archive_text2cad_final_proof_20261003.py`批准完整SHA `078eb3f58be67ad894a72becb99f621d1d98e3c0`/byte `90073542265e5b804822e18c2173461a14d18c224a4e32df780c5e3497fde649`。复用8bc4eea已审generic transport而不调用G4 main，新bundle/control/OBS均独占，复制逐SHA，显式父目录，所有流双端退出/remoteSHA/固定a22d785只读witness byte覆盖及controller全真实0后完成。Root5本地copy/拒绝/复用Git pin/实际平坦路径预检通过；唯一archive reviewer只读Ready，无Critical/Important。
+
+仅授权一次该小型证明包至`runs/m1c_g5_final_delivery_proof_20261003`；零NPU、零新评价/评分，不重新运G4矩阵。CPU工作树已归档可恢复，执行代码原件已在完整OBS包。最后补充包通过后更新reviewed、保留全部失败证据和Kimi草稿、删除Text2CAD监控。
