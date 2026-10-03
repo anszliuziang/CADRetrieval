@@ -3,13 +3,13 @@
 - `state`: `pilot_authorized`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
-- `active_subplan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
-- `phase`: 旧diagnostic在SSH banner未认证超时/零远端操作，原控制目录保留。已独立复审8bc4eea，由cvteam6共享OBS存储入口执行新v2双条件诊断；prepared真实退出/SHA后另写full授权，零NPU
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_OBS_DIAGNOSTIC_CODE_REVIEW_2026-10-03.md`
+- `active_subplan`: `experiments/plans/IDEA01_M1C_G4_OBS_ARCHIVE_V2_EXECUTION_2026-10-03.md`
+- `phase`: 真实OBS双条件已审：implicit4路ENOENT/prepared8路双端exit0且全16payload SHA/独立17文件覆盖通过。授权同8bc4eea full模式归档既有3666原件到新v2；零NPU/不重评分，完成后独立完整OBS门
+- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_OBS_RECEIVER_RESULTS_2026-10-03.md`
 - `approved_diagnostic_plan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
 - `approved_sha`: `8bc4eeabea57f416982a286add9b65ba35f57ed1`
-- `archive_mode`: `diagnostic`
+- `archive_mode`: `full`
 - `diagnostic_max_bytes`: 16777216（两个预定义条件各一次；当前约2MiB+清单）
 - `gpu_budget`: 0 卡小时
 - `max_scored_pairs`: 0
