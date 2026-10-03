@@ -1,13 +1,13 @@
 # 当前实验任务：Codex 接手 G4 完整归档
 
-- `state`: `implementation`
+- `state`: `pilot_authorized`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G4_CODEX_TAKEOVER_2026-10-03.md`
-- `phase`: 用户明确授权 Codex 接手继续；本地实现独立持久归档控制器、必要CPU测试与独立审码；完整SHA批准后运输；不等待Kimi/API，不重复评分。OBS完整后另激活G5
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_ARCHIVE_INTERRUPTION_REVIEW_2026-10-03.md`
+- `phase`: Codex本地持久归档控制器已独立审查并修复唯一Important，7项CPU测试通过；批准一次新OBS归档，最多8路持久记录双方退出；不等待Kimi/API、不重复评分。OBS完整后另激活G5
+- `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_ARCHIVE_CODE_REVIEW_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
-- `approved_sha`: `none`（当前零NPU；历史G4运行SHA保持原件不变）
+- `approved_sha`: `f9c149fe1a8d616680d778b585f16ede2dc7a5d7`（仅新归档Git blob；零NPU；历史评分SHA不变）
 - `gpu_budget`: 0 卡小时
 - `max_scored_pairs`: 0
 - `max_download_gb`: 0（不新增模型/数据；允许运输既有14.8587GB原始评分文件与运行证据）

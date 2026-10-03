@@ -21,4 +21,4 @@
 ## 执行记录
 
 - 初始 BASE ff12ea325659df261c20a14121583cd29c41af50；没有活跃 Kimi/旧运输。用户新授权取代历史等待决定和 Kimi 唯一实现者约束。
-- 尚未启动新运输；先实现、测试、审查、Git 提交，随后写完整 approved_sha。
+- 实现3ffd222、唯一Important启动证据缺口经真实反例RED→GREEN修复f9c149fe1a8d616680d778b585f16ede2dc7a5d7；7项针对CPU通过，独立reviewer八路Windows tar toy通过。Root批准一次零NPU归档，启动后核后台存活和完整真实退出；实现SHA与授权文档HEAD分别记录。
