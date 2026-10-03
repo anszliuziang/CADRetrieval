@@ -93,3 +93,5 @@ Codex 会在正式 pilot 前审查你的代码，也会在结果提交后复核�
 2026-10-03约17:18北京时间恢复：第一诊断SSH banner timeout，未远端建目录/发payload，真实失败日志保留；cvteam6只读共享OBS挂载/旧证据manifest通过，故仅改存储入口到cvteam6、不用其GPU。新8bc4eeabea57f416982a286add9b65ba35f57ed1代码独立复审通过，ACTIVE pilot_authorized/diagnostic/零NPU，新diag v2根及控制目录；precreated真实SHA通过后另授权full v2。工程持续授权有效，无需问用户。
 
 2026-10-03 09:20Z恢复：cvteam6真实OBS双条件已完成，implicit四路ENOENT、缺6payload；prepared全8路双端exit0、全部16payload SHA/独立17文件覆盖exit0。首次目录创建并发问题在真实挂载复现，显式预建解决本对照；内部obsfs竞态尚未追踪。ACTIVE同8bc4eea批准full模式，新g4_archive_recovery_v2_20261003控制及OBS recovery_v2独占目标，零NPU；未完成完整OBS3666 SHA及matrix最终review前无G5指标。
+
+2026-10-03 19:31北京时间增量：v2完整运输8路两端exit0/controller0/远端全3666 SHA0，原件恢复成功。ACTIVE review_required/approved none/零NPU/full_matrix_approved=false，独立只读OBS全byte覆盖witness运行（wrapper13956/ssh24728，runtime/g4_obs_independent_audit_v2_20261003），读取进度而不重启。当前尚无G5精度；独立门与旧数值/资产/预算绑定后才final matrix批准和G5。新CODEX_G4_OBS_V2_TRANSPORT_RESULTS报告保留事实，旧Kimi草稿不动。

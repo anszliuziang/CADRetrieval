@@ -1,14 +1,17 @@
 # 当前实验任务：Codex 接手 G4 完整归档
 
-- `state`: `pilot_authorized`
+- `state`: `review_required`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G4_OBS_ARCHIVE_V2_EXECUTION_2026-10-03.md`
-- `phase`: 真实OBS双条件已审：implicit4路ENOENT/prepared8路双端exit0且全16payload SHA/独立17文件覆盖通过。授权同8bc4eea full模式归档既有3666原件到新v2；零NPU/不重评分，完成后独立完整OBS门
+- `phase`: OBS v2完整运输8路双方exit0/3666远端SHA exit0/controller0已完成；独立只读全OBS byte/路径覆盖witness运行中（wrapper13956/ssh24728，runtime/g4_obs_independent_audit_v2_20261003）。仅仅读进度，不重复运输/审计；final matrix门后G5 CPU评价
 - `latest_review`: `experiments/reviews/IDEA01_M1C_G4_OBS_RECEIVER_RESULTS_2026-10-03.md`
 - `approved_diagnostic_plan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
-- `approved_sha`: `8bc4eeabea57f416982a286add9b65ba35f57ed1`
+- `approved_sha`: `none`（运输已完成，不重启）
+- `last_archive_sha`: `8bc4eeabea57f416982a286add9b65ba35f57ed1`
+- `full_matrix_approved`: false
+- `readonly_audit_witness_sha`: `43db1b90be46f346cdf6a9bddf83717a7b5d777814631e9d70172f1b654a1323`
 - `archive_mode`: `full`
 - `diagnostic_max_bytes`: 16777216（两个预定义条件各一次；当前约2MiB+清单）
 - `gpu_budget`: 0 卡小时

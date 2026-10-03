@@ -1,0 +1,15 @@
+# Codex G4 OBS v2 运输结果（独立覆盖审计待完成）
+
+2026-10-03 19:31（北京时间）。完整评分原件的恢复运输成功，尚不宣称最终矩阵审核完成或已取得检索精度。
+
+- source：本地experiments/runs/idea01_text2cad_g4_full_20261002，全部3666payload/14858752230bytes在运输前重新SHA通过；manifest97f9cbb60b0de449914ef1bdb2e388ddf0b2bcdae3686c73ceea511e764d3733。
+- 代码8bc4eeabea57f416982a286add9b65ba35f57ed1，授权ref4501fa01b0b3d9cf439daa2dbf409bd0bc20e62c；Windows隐藏controller29272。16个实际tar/ssh子进程有自己的argv/PID/真实退出记录，8路发送和接收全部exit0，stderr全空。
+- 新独占target：cvteam6:/data/obs_data_liuza/CADRetrieval/runs/idea01_text2cad_g4_full_20261002_recovery_v2_20261003。显式预建清单所有父目录后接收，旧两个部分OBS目标均未覆写。cvteam6仅共享OBS存储、无GPU。
+- 远端sha256sum -c SHA256SUMS真实exit0，3666条成功输出；controller_exit0/status=transport_and_sha_passed。日志及stream_exit/transport_result/state均在checkout外runtime/g4_archive_recovery_v2_20261003。
+- 首次目录并发故障诊断及SSH入口切换证据另见OBS_RECEIVER_RESULTS review；旧失败现场保留，原评分未重跑。
+
+## 继续门
+
+2026-10-03 19:29:27开始独立只读OBS witness（wrapper13956/ssh24728），校验器SHA43db1b90be46f346cdf6a9bddf83717a7b5d777814631e9d70172f1b654a1323，固定新v2 root/manifest。证据runtime/g4_obs_independent_audit_v2_20261003，真实exit/stdout/stderr持久。不能因生产者SHA通过就跳过其路径覆盖/无extra/逐byte独立门；正常运行仅读进度、不重复启动。
+
+已有全29319624行/117289444数值检查、11054字节连接和原source校验保留，不再无故重复。独立OBS门完成后连接原审计、资产与18直接元数据/退出/预算证据，最终full_matrix_approved=true才激活G5固定CPU检索评价。当前没有R@K，未读qrels调方法。
