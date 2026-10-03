@@ -157,14 +157,15 @@ def ssh(command):
     return ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', 'cvteam14', command]
 
 
-def logged_command(argv, control, label):
+def logged_command(argv, control, label, check=True):
     write_json(control / (label + '_command.json'), dict(argv=argv, started=time.time()))
     with (control / (label + '_stdout.log')).open('wb') as out, \
             (control / (label + '_stderr.log')).open('wb') as err:
         result = subprocess.run(argv, stdout=out, stderr=err)
     write_json(control / (label + '_exit.json'), dict(exit_code=result.returncode, ended=time.time()))
-    if result.returncode:
+    if check and result.returncode:
         raise RuntimeError(label + ' failed; see durable logs')
+    return result.returncode
 
 
 def verify_code_authorization(approved, mode):
@@ -209,8 +210,10 @@ def transport(source, entries, remote, control, precreate):
         exits = [f.result() for f in futures]
     result = dict(pipelines=exits, precreate=precreate, ok=all(e['ok'] for e in exits))
     if result['ok']:
-        logged_command(ssh('cd ' + shlex.quote(remote) + ' && sha256sum -c SHA256SUMS'), control, 'remote_sha256')
-        result['sha256_exit'] = 0
+        result['sha256_exit'] = logged_command(
+            ssh('cd ' + shlex.quote(remote) + ' && sha256sum -c SHA256SUMS'),
+            control, 'remote_sha256', check=False)
+        result['ok'] = result['sha256_exit'] == 0
     write_json(control / 'transport_result.json', result)
     return result
 

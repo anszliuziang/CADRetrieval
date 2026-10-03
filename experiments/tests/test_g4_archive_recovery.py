@@ -15,6 +15,29 @@ spec.loader.exec_module(m)
 
 
 class ArchiveRecoveryTests(unittest.TestCase):
+    def test_diagnostic_keeps_sha_failure_and_runs_prepared_case(self):
+        with tempfile.TemporaryDirectory() as d:
+            control = Path(d) / 'diagnostic'
+            def commands(argv, path, label, check=True):
+                rc = 9 if label == 'remote_sha256' and path.name == 'implicit_parents' else 0
+                m.write_json(path / (label + '_exit.json'), {'exit_code': rc})
+                if check and rc:
+                    raise RuntimeError('SHA command failed')
+                return rc
+            with patch.object(m, 'DIAG_CONTROL', control), \
+                    patch.object(m, 'verify_code_authorization', return_value={'approved_sha': 'a' * 40}), \
+                    patch.object(m, 'logged_command', side_effect=commands), \
+                    patch.object(m, 'run_pipeline', return_value={'ok': True, 'sender_exit': 0, 'receiver_exit': 0}), \
+                    patch.object(sys, 'argv', ['helper', '--approved-sha', 'a' * 40, '--mode', 'diagnostic']):
+                self.assertEqual(m.main(), 0)
+            conditions = json.loads((control / 'conditions.json').read_text())
+            self.assertFalse(conditions['implicit_parents']['ok'])
+            self.assertEqual(conditions['implicit_parents']['sha256_exit'], 9)
+            self.assertTrue(conditions['prepared_parents']['ok'])
+            self.assertEqual(conditions['prepared_parents']['sha256_exit'], 0)
+            persisted = json.loads((control / 'implicit_parents/transport_result.json').read_text())
+            self.assertEqual(persisted, conditions['implicit_parents'])
+
     def test_authorization_binds_diagnostic_or_full_mode(self):
         approved = 'a' * 40
         with tempfile.TemporaryDirectory() as d:
