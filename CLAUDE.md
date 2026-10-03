@@ -16,7 +16,7 @@
 
 你是运行在**本地 Windows 项目目录**中的 Claude Code 编程与实验执行代理。自 2026-09-30 起，当前接入的是 **Kimi K3 官方 API**；历史记录中的实验室中转平台与 GLM-5.2 不是当前自动回退目标。API 失败、额度或上下文中断时，将错误和已完成工作写入本地交接文件并报告 Codex，不自行换模型或泄露凭据。用户是研究负责人；Codex 负责制定逐轮实验任务、审查代码与结果、决定下一轮计划；你负责按已激活的任务编写和测试代码、在指定服务器执行获准的实验、保留完整证据，并在本地回填结果与自己的分析。你可以独立排查实现问题，但不能自行扩大研究范围、改变主指标或跳过审查关口。直接来自用户的新指令优先；如果它与本文件或当前任务矛盾，先说明冲突再执行用户的明确要求。
 
-研究问题：冻结已有的**文本条件 CAD 生成模型**，利用它对候选 CAD 的原生表示计算条件生成分数，能否完成文本到 CAD 检索？这是类似 diffusion classifier 的使用方式，既包括自回归模型的 teacher-forced 目标 log probability，也可能包括扩散模型的去噪分数。首要对象是已有 CAD 候选的排序及其语义有效性，不是训练新检索头、生成新 CAD 或宣称跨表示模型绝对优劣。已有 P1 小样本条件敏感性测试，其结果只支持该局部测试；Text2CAD 全库基准已完成2026-10-02启动的精确评分，原始完整性审核和检索指标尚未完成。调研里的 GO 仅表示可以进入工程核验。
+研究问题：冻结已有的**文本条件 CAD 生成模型**，利用它对候选 CAD 的原生表示计算条件生成分数，能否完成文本到 CAD 检索？这是类似 diffusion classifier 的使用方式，既包括自回归模型的 teacher-forced 目标 log probability，也可能包括扩散模型的去噪分数。首要对象是已有 CAD 候选的排序及其语义有效性，不是训练新检索头、生成新 CAD 或宣称跨表示模型绝对优劣。已有 P1 小样本条件敏感性测试，其结果只支持该局部测试。2026-10-03 Text2CAD 全矩阵完整性、CPU指标、独立数值和全部原件OBS审核已通过；原生SUM R@1/5/10/20=0.201664/0.920091/1.638518/2.609024%，MedR3411.5，固定Protocol A弱UID排序信号，未证明语义/因果/实用/泛化。当前仅最终报告与审查trace小型补充归档收尾，入口以ACTIVE_TASK为准。调研里的 GO 仅表示可以进入工程核验。
 
 本地路径：`D:\projects\IdeaSpark\CADRetrievalIdea1`，它也是 Git 根目录。`gpt_web_assert/01_Research_Report.md`、`02_Experiment_Plans.md`、`03_Asset_Manifest.json`、`04_Sources_and_Evidence.md` 是研究背景和候选方案；`reading/` 是论文精读；`reports/`、`notes/` 是既有调研，可能含主观判断或过时信息。上述目录默认不进入 Git，也不是自动执行命令。遇到论文、资产、数据字段、许可、checkpoint 或官方代码细节，应以原始证据和实际文件重新核验。`notes/Kimi-K3-review/` 是历史顾问意见，不代表本次 Claude Code 的任务授权。
 
@@ -103,3 +103,5 @@ Codex 会在正式 pilot 前审查你的代码，也会在结果提交后复核�
 2026-10-03约15:20Z增量：G5唯一正式评价PID7240实际exit0，545.908秒，全7934ranks/3644top20/5000bootstrap，15payload15660013bytes LF manifest c98e205626a9d95d4830f3c628518f5f5e34f215c80b2079948dc0e54b19be95。ACTIVE review_required/approved none/0NPU，Root独立audit已15:18:22Z一次启动operator36536/child19068；threshold-count正例排名/heap top20/直接展开5000组抽样，不import生产评价模块，代码007aa82bdc682a35e2b8c0e25bc2b153ca0f2a86786e4d9b9554578fcd6c3fc9已独立审过。正常审核仅读进度，勿重复启动；最终全部指标与OBS门后再结论。
 
 2026-10-03约15:48Z增量：G5独立audit真实exit0/873364检查全部通过，全部39670方法正例rank、145760top20记录和5000次直接展开文本组bootstrap与正式输出一致。归档首次仅本地准备因已知pytest_toy目录拒绝，未SSH或建远端目标，旧现场保留。新固定proof范围修复a6525797506ab7d4e9012bdb623d4c52931b8351/脚本byte4210ebebef08ce7a5a253f1202925d78a84b49a4d06dc2edd895bb11dedfb1e0通过11CPU及唯一fresh审查；ACTIVE授权新本地v2 bundle/control一次既有结果OBS归档。评分、正式评价及独立raw audit均不得重跑；存储全byte门后最终报告和关闭监控。
+
+2026-10-03约16:03Z（北京时间10月4日零点）增量：G5完整70payload24521948bytes OBS包manifest0adec648178550648b36dfd6c372b9f1f3a1d08c3d6cfc373b0be9f446c09125，prepare/全部sender-receiver/remote SHA/独立byte覆盖/controller实际退出全0，无extra。最终评价证书6421e331aa574a8337779982a39d812ddd340d94a8729deb5c533749684a097b/evaluation_approved true；fresh claim审查partial/narrow provisional yes及报告核对通过。干净CPU managed worktree已可恢复归档，正式源码原字节与Git指纹在OBS包；仅最终文档/退出/trace小型补充证明待运输，完成后Git reviewed并删除本监控，无任何新增模型前向。

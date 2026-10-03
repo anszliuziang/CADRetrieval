@@ -1,0 +1,347 @@
+{
+  "schema": "text2cad-g5-final-evaluation-certificate-v1",
+  "created_utc": "2026-10-03T15:57:05.512259+00:00",
+  "full_evaluation_approved": true,
+  "numeric_review_passed": true,
+  "local_and_obs_result_payload_passed": true,
+  "run_id": "idea01_text2cad_g5_cpu_20261003",
+  "cpu_code_sha": "e2d823aa284c800906ed37c0a2d0272e052de96b",
+  "cpu_authorization_ref": "4ad109025ea28557b47f8f467bfd8962882ccf34",
+  "formal_actual_exit": 0,
+  "independent_actual_exit": 0,
+  "formal_payload_files": 15,
+  "formal_payload_bytes": 15660013,
+  "formal_manifest_sha256": "c98e205626a9d95d4830f3c628518f5f5e34f215c80b2079948dc0e54b19be95",
+  "independent_payload_files": 12,
+  "independent_payload_bytes": 1261898,
+  "independent_manifest_sha256": "4b3927e2a56971c60ecc90ee892383ec7b3f707982470da90f7c71377a67a970",
+  "metrics_sha256": "6005aa72961c06cf4cf7d1fa9fc59f81e2e31f63b18fe8d94a9d8b6d60d3dec5",
+  "n_queries": 7934,
+  "n_text_groups": 3644,
+  "n_gallery": 8046,
+  "raw_rows_verified": 29319624,
+  "independent_checks": 873364,
+  "all_method_positive_ranks": 39670,
+  "top20_candidate_records": 145760,
+  "bootstrap_replicates": 5000,
+  "bootstrap_draw_counts_sha256": "634a14b7bc600ce5dd72a30b5c28bf16943c0f462835e917faa1def5b48a6cf6",
+  "primary": "sum",
+  "mean_diagnostic_only": true,
+  "tie_rule": "exact score then cad_index ascending",
+  "frozen_protocol_unchanged": true,
+  "score_forwards": 0,
+  "zero_npu": true,
+  "matrix_certificate_sha256": "afad9371cc846ad7e636c4ae4b76740ea1b74f787d002602bb677e9bb834bfc6",
+  "source_score_sha": "56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719",
+  "source_manifest_sha256": "97f9cbb60b0de449914ef1bdb2e388ddf0b2bcdae3686c73ceea511e764d3733",
+  "observed_metrics": {
+    "sum": {
+      "n": 7934,
+      "R@1": 0.00201663725737333,
+      "R@5": 0.009200907486765818,
+      "R@10": 0.016385177716158307,
+      "R@20": 0.026090244517267457,
+      "MedR": 3411.5,
+      "MeanR": 3412.5408369044617
+    },
+    "mean": {
+      "n": 7934,
+      "R@1": 0.001134358457272498,
+      "R@5": 0.006680110915049156,
+      "R@10": 0.010965465086967482,
+      "R@20": 0.017141416687673303,
+      "MedR": 2449.5,
+      "MeanR": 3145.7518275775146
+    },
+    "length_asc": {
+      "n": 7934,
+      "R@1": 0.00012603982858583313,
+      "R@5": 0.0006301991429291656,
+      "R@10": 0.0012603982858583312,
+      "R@20": 0.0025207965717166624,
+      "MedR": 4030.5,
+      "MeanR": 4021.9712629190826
+    },
+    "length_desc": {
+      "n": 7934,
+      "R@1": 0.00012603982858583313,
+      "R@5": 0.0006301991429291656,
+      "R@10": 0.001134358457272498,
+      "R@20": 0.0023947567431308295,
+      "MedR": 4016.5,
+      "MeanR": 4018.753214015629
+    },
+    "random": {
+      "n": 7934,
+      "R@1": 0.0,
+      "R@5": 0.0006301991429291656,
+      "R@10": 0.001008318628686665,
+      "R@20": 0.0023947567431308295,
+      "MedR": 3992.5,
+      "MeanR": 3997.5732291404083
+    }
+  },
+  "sum_ci95": {
+    "R@1": [
+      0.0010806754316282161,
+      0.0030864197530864196
+    ],
+    "R@5": [
+      0.007021879190747441,
+      0.011598107783822113
+    ],
+    "R@10": [
+      0.013068346437116681,
+      0.01999099182582381
+    ],
+    "R@20": [
+      0.02124615732675208,
+      0.03149204657338741
+    ],
+    "MedR": [
+      2851.475,
+      3797.0
+    ]
+  },
+  "paired_sum_gain_ci95": {
+    "length_asc": {
+      "R@1": [
+        0.0009084753344399294,
+        0.002975865396864051
+      ],
+      "R@5": [
+        0.00626466121026794,
+        0.01109674633992683
+      ],
+      "R@10": [
+        0.011656066450568395,
+        0.01892149130761522
+      ],
+      "R@20": [
+        0.018564850429090327,
+        0.029231236707638632
+      ]
+    },
+    "length_desc": {
+      "R@1": [
+        0.0009007326421367556,
+        0.0029782057299819766
+      ],
+      "R@5": [
+        0.006269522315427295,
+        0.01100262190446877
+      ],
+      "R@10": [
+        0.011867923785846687,
+        0.01891487867202574
+      ],
+      "R@20": [
+        0.018724362143888687,
+        0.029179747741839412
+      ]
+    },
+    "random": {
+      "R@1": [
+        0.0010806754316282161,
+        0.0030864197530864196
+      ],
+      "R@5": [
+        0.00628248973153015,
+        0.0110522280155983
+      ],
+      "R@10": [
+        0.011949579904633852,
+        0.01897399100098191
+      ],
+      "R@20": [
+        0.018710731740144607,
+        0.029069186752085443
+      ]
+    }
+  },
+  "archive_code_sha": "a6525797506ab7d4e9012bdb623d4c52931b8351",
+  "archive_script_sha256": "4210ebebef08ce7a5a253f1202925d78a84b49a4d06dc2edd895bb11dedfb1e0",
+  "archive_authorization_ref": "2e94ef4e2a00284b7537c7c37b92cf56f1265cde",
+  "obs_target": "/data/obs_data_liuza/CADRetrieval/runs/idea01_text2cad_g5_cpu_20261003",
+  "obs_payload_files": 70,
+  "obs_payload_bytes": 24521948,
+  "obs_manifest_sha256": "0adec648178550648b36dfd6c372b9f1f3a1d08c3d6cfc373b0be9f446c09125",
+  "obs_prepare_exit": 0,
+  "obs_sender_exit": 0,
+  "obs_receiver_exit": 0,
+  "obs_sha_exit": 0,
+  "obs_independent_byte_exit": 0,
+  "archive_controller_exit": 0,
+  "unknown_extra": [],
+  "scope": "Protocol A official exact UID; frozen native two-head label-smoothed checkpoint; not pure MLE or geometry NLL",
+  "semantic_review_independence": "same-family",
+  "semantic_acceptance_status": "provisional",
+  "broad_claim_supported": "partial",
+  "narrow_claim_supported": "yes provisionally",
+  "evidence": {
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1\\experiments\\runs\\idea01_text2cad_g5_cpu_20261003\\actual_child_exit.json": {
+      "sha256": "378e2ce82e9c5ede168577df91a0ae80c5aed7068a946a20694f5d21ffb6a6ee",
+      "bytes": 788
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1\\experiments\\runs\\idea01_text2cad_g5_cpu_20261003\\completion.json": {
+      "sha256": "aca460153e263df12eb09e6b3f225d8dc0a8edbe07cfabecf19c411e635abcac",
+      "bytes": 224
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1\\experiments\\runs\\idea01_text2cad_g5_cpu_20261003\\metrics.json": {
+      "sha256": "6005aa72961c06cf4cf7d1fa9fc59f81e2e31f63b18fe8d94a9d8b6d60d3dec5",
+      "bytes": 21043
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1\\experiments\\runs\\idea01_text2cad_g5_cpu_20261003\\SHA256SUMS": {
+      "sha256": "c98e205626a9d95d4830f3c628518f5f5e34f215c80b2079948dc0e54b19be95",
+      "bytes": 1256
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1\\experiments\\runs\\idea01_text2cad_g5_cpu_20261003\\startup.json": {
+      "sha256": "1655b8db6cd0305328fc50930bbd2f4b5369b2f5ff19b1ca49cd17ba6f3d0982",
+      "bytes": 1319
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\code_head_command.json": {
+      "sha256": "aa7110cb3d5ec91141848b652727381fedaa24036a9a2fbf2631c502958e3781",
+      "bytes": 163
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\code_head_exit.json": {
+      "sha256": "b166d8eb83a7715d83c4c806c2a3ad6c12cc4ba79da0500a01a7f75597625828",
+      "bytes": 28
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\code_head_stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\code_head_stdout.log": {
+      "sha256": "3084a424439b655c0cb1b4534bac25b8b17ac46a7f4c07dbe65de81aebc54124",
+      "bytes": 41
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\code_status_command.json": {
+      "sha256": "c3ea6645a822d852b90fc4d6f97326ec3508f30bb30da7343d64ed0c2c0a9889",
+      "bytes": 196
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\code_status_exit.json": {
+      "sha256": "b166d8eb83a7715d83c4c806c2a3ad6c12cc4ba79da0500a01a7f75597625828",
+      "bytes": 28
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\code_status_stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\code_status_stdout.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\completion.json": {
+      "sha256": "2e9d44026eeb4dceac96cf25ef2e4920ca310284a2a5177a37be78f9b2bd5eea",
+      "bytes": 190
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\controller_exit.json": {
+      "sha256": "a65ee8e8fa1ec4f5fc1db1e0303cea157cf42a46c7c30a9ee6f308121eaddb52",
+      "bytes": 79
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\independent_command.json": {
+      "sha256": "8e9bcfcf6a2d7ad0bdea3df42da324dbb379afe00ff61129907a91face28f05d",
+      "bytes": 282
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\independent_exit.json": {
+      "sha256": "b166d8eb83a7715d83c4c806c2a3ad6c12cc4ba79da0500a01a7f75597625828",
+      "bytes": 28
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\independent_readonly_witness.py": {
+      "sha256": "a22d785a6f66d620d31fc13446ebff659273b0c7ac9a75e576aa16ea619902d3",
+      "bytes": 685
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\independent_stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\independent_stdout.log": {
+      "sha256": "24635a9576abdb06b64c7cf181ce7b05bb486479696b35aa6c64d455414a4938",
+      "bytes": 178
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\pipeline_command.json": {
+      "sha256": "5de4e5ed364cbbd2c0ad03add4c082d0368e705270fa62e439905be5ae3144ce",
+      "bytes": 424
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\pipeline_exit.json": {
+      "sha256": "82fc299b5a027ed14353727780f4e299a58892f58d7a9c7102e40abc68e7c872",
+      "bytes": 568
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\prepare_command.json": {
+      "sha256": "df7fade0b2a2b97b3a7c8d6d79eed4b3e1e7f5f4dcd28d7456af4fa5f2d164b1",
+      "bytes": 141
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\prepare_exit.json": {
+      "sha256": "b166d8eb83a7715d83c4c806c2a3ad6c12cc4ba79da0500a01a7f75597625828",
+      "bytes": 28
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\prepare_stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\prepare_stdout.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\receiver_launch.json": {
+      "sha256": "a5b208ef28faeea5d369f234c72588813cd37636315e6b5229c3b773e636d46d",
+      "bytes": 235
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\receiver_stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\receiver_stdout.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\remote_sha_command.json": {
+      "sha256": "627b49a9ce52332b6a9189144dcb088acc900ccb7e680f47da2d618f7a7b2545",
+      "bytes": 243
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\remote_sha_exit.json": {
+      "sha256": "b166d8eb83a7715d83c4c806c2a3ad6c12cc4ba79da0500a01a7f75597625828",
+      "bytes": 28
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\remote_sha_stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\remote_sha_stdout.log": {
+      "sha256": "b2bcd36098cb2cb4a35103660c09e3fb7135ddc0765d3be6a4ee5e8e9629342e",
+      "bytes": 2827
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\sender_launch.json": {
+      "sha256": "b1dfbccb2748f4ba7419afbba0510705a9b515b9c0ebb3d7e18a29447ded178f",
+      "bytes": 208
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\sender_stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_control_v2_20261003\\source.json": {
+      "sha256": "fb15fc94953af61d7838a0d2234bb3f04a92a093cdaa4c2e98aa56c338a2881e",
+      "bytes": 234
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_complete_archive_v2_launcher_20261003.json": {
+      "sha256": "6525a73ca4005b79acce76213f1366e7ac4d1fecac559f4eb468dcba3d6dc7d7",
+      "bytes": 580
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_independent_results_audit_20261003\\actual_exit.json": {
+      "sha256": "649a1133a6e2c2bebc28a594340115ab9ee19a47c56451c0b3b6f349fb74f228",
+      "bytes": 197
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_independent_results_audit_20261003\\audit_result.json": {
+      "sha256": "ceead90951af705b267a03f98331dbd5e85c95ffd18f8fe67f1e8d7ab8a9bc2d",
+      "bytes": 5799
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_independent_results_audit_20261003\\formal_payload_verification.json": {
+      "sha256": "4d16d1739550295faf30fdc51f9216ba566302feaa51cd55ba40d111e466c263",
+      "bytes": 173
+    },
+    "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\g5_independent_results_audit_20261003\\SHA256SUMS": {
+      "sha256": "4b3927e2a56971c60ecc90ee892383ec7b3f707982470da90f7c71377a67a970",
+      "bytes": 1020
+    }
+  }
+}
