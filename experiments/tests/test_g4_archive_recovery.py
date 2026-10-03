@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 MODULE = Path(__file__).parents[1] / 'scripts/run_g4_archive_recovery.py'
 spec = importlib.util.spec_from_file_location('archive_recovery', MODULE)
@@ -14,6 +15,44 @@ spec.loader.exec_module(m)
 
 
 class ArchiveRecoveryTests(unittest.TestCase):
+    def test_authorization_binds_diagnostic_or_full_mode(self):
+        approved = 'a' * 40
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            (repo / 'experiments').mkdir()
+            active = repo / 'experiments/ACTIVE_TASK.md'
+            active.write_text('`approved_sha`: `' + approved + '`\n`state`: `pilot_authorized`\n'
+                              '`gpu_budget`: 0\n`max_scored_pairs`: 0\n`archive_mode`: `diagnostic`\n')
+            def git_output(argv):
+                if 'status' in argv:
+                    return b''
+                if 'show' in argv:
+                    return MODULE.read_bytes()
+                return (approved + '\n').encode()
+            with patch.object(m, 'REPO', repo), patch.object(m, '__file__', str(repo / 'helper.py')), \
+                    patch.object(m.subprocess, 'check_output', side_effect=git_output), \
+                    patch.object(m, 'digest', return_value='b' * 64), \
+                    patch.object(m.Path, 'read_bytes', return_value=MODULE.read_bytes()):
+                self.assertEqual(m.verify_code_authorization(approved, 'diagnostic')['authorized_mode'], 'diagnostic')
+                with self.assertRaises(ValueError):
+                    m.verify_code_authorization(approved, 'full')
+
+    def test_all_parent_directories_precede_receivers(self):
+        entries = [('card0/a', '0' * 64, 1), ('card1/b', '0' * 64, 1),
+                   ('outer_launch/deep/c', '0' * 64, 1), ('SHA256SUMS', '0' * 64, 1)]
+        commands = m.destination_commands('/tmp/new archive', entries, True)
+        self.assertEqual(commands[0], "mkdir -- '/tmp/new archive'")
+        self.assertIn("'/tmp/new archive/card0'", commands[1])
+        self.assertIn("'/tmp/new archive/card1'", commands[1])
+        self.assertIn("'/tmp/new archive/outer_launch/deep'", commands[1])
+        self.assertIn("test -d '/tmp/new archive/card0'", commands[2])
+        self.assertEqual(m.destination_commands('/tmp/new', entries, False), ['mkdir -- /tmp/new'])
+
+    def test_parent_preparation_rejects_escape(self):
+        for name in ('../outside/file', 'a/../../file', 'x\\bad/file', '/x/file', '-I/file'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                m.destination_commands('/tmp/new', [(name, '0' * 64, 1)], True)
+
     def fixture(self, root, names=('card0/a.jsonl', 'card1/b.jsonl')):
         lines = []
         for i, name in enumerate(names):
