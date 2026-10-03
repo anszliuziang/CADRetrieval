@@ -4,7 +4,7 @@
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G4_CODEX_TAKEOVER_2026-10-03.md`
-- `phase`: Codex本地持久归档控制器已独立审查并修复唯一Important，7项CPU测试通过；批准一次新OBS归档，最多8路持久记录双方退出；不等待Kimi/API、不重复评分。OBS完整后另激活G5
+- `phase`: Codex持久归档已真实启动一次，PID26168；本地全部3666原件SHA/数量/字节已重新通过，新目标独占mkdir成功，8路实际transport运行中。只读状态/双端退出，不重启重复运输；OBS完整后另激活G5
 - `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_ARCHIVE_CODE_REVIEW_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
 - `approved_sha`: `f9c149fe1a8d616680d778b585f16ede2dc7a5d7`（仅新归档Git blob；零NPU；历史评分SHA不变）
@@ -16,7 +16,7 @@
 - `data`: 8046CAD/3644唯一strip文本完整矩阵；物理分离UID映射留到后续评价恢复7934原查询，本阶段不能读qrels调方法
 - `model`: 既有two_head_factorized_logprob_sum/spec text2cad-vector-score-v1；FP32/full272/b16/无trim-cache，不能称纯MLE或CAD几何NLL；不做任何真实模型/BERT/NPU前向
 - `server`: yunnan-share2只读原干净detached56ac0f8，不fetch/detach/改源码/装包；RT /home/ma-user/work/CADRetrieval_runtime，既有spec10c18c17。cvteam14仅OBS，避/data/data_dev
-- `required_output`: 全3644chunks/two summaries/final ledger/controller与两实际exit/全日志/实际命令/环境与输入SHA；LF SHA256SUMS，云脑、本地experiments/runs/<run_id>及共享OBS完整逐SHA真实exit0；Kimi新TEXT2CAD_G4_FULL_RESULTS_2026-10-03.md与完整报告提交SHA。Codex全行审核后另激活CPU评价
+- `required_output`: 全3644chunks/two summaries/final ledger/controller与两实际exit/全日志/实际命令/环境与输入SHA；LF SHA256SUMS，云脑、本地experiments/runs/<run_id>及新OBS recovery完整逐SHA真实exit0；8路双方实际退出、独立OBS覆盖witness、CODEX完整结果报告/最终矩阵review。Kimi草稿保留，不再要求Kimi交付；矩阵门后另激活CPU评价
 - `ownership`: 用户已授权Codex接手本地实现、运输、报告及CPU评价；保留Kimi草稿，以CODEX_新报告交接。新增代码仍独立审查。零NPU、不重启/重复评分/续跑
 - `stop_conditions`: API/连接/资源/原件或资产指纹/退出/数值/完整性失败保存证据停下交流，不换API/模型、不改阈值/预算、不删除覆盖未知产物、不重试评分
 

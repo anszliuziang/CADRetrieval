@@ -16,6 +16,8 @@ Windows `Start-Process -WindowStyle Hidden` 独立后台控制器于2026-10-03T0
 
 运行目录：`D:/projects/IdeaSpark/CADRetrievalIdea1_runtime/g4_archive_recovery_20261003/`，state.json记录阶段，streamN_launch/exit及双侧stderr持久保留。最初 source_verify；观察记录g4_archive_recovery_observation_20261003.json确认265秒后进程健康、读取约11.72GB，说明原件校验持续前进，此I/O计数仅是进度诊断不是精确payload校验证书。
 
+增量实查：source_verify已全部通过，state verified_source_files=3666、固定byte总数正确；独占mkdir真实exit0，新阶段transport，8个streamN_launch.json均已发布实际sender/receiver PID。归档仍在运行，不能称OBS完整或SHA通过；持久状态按每30分钟监控继续。
+
 固定source `experiments/runs/idea01_text2cad_g4_full_20261002/`；3666payload/14858752230bytes/3644chunks，manifest97f9cbb60b0de449914ef1bdb2e388ddf0b2bcdae3686c73ceea511e764d3733。目标 `cvteam14:/data/obs_data_liuza/CADRetrieval/runs/idea01_text2cad_g4_full_20261002_recovery_20261003/`：独占mkdir，禁止复用/覆盖；原部分OBS现场保留。仅8路既有评分数据运输，零前向/模型下载/依赖安装/NPU。
 
 ## 尚未通过及下一步
