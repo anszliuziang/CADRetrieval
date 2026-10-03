@@ -8,3 +8,5 @@
 4. 独立完整OBS SHA/覆盖、原全量数值见证连接、最终矩阵review通过后才G5 CPU评价。G5已冻结规则和pins，不因运输失败重评分/改指标。
 
 资源：零模型/BERT/NPU、新模型下载或依赖安装；已有实验完成16.672小时不重跑；诊断总量<=16MB、两个预定义条件各一次，全部真实证据保留。若新证据证明需要另一实现方案，Codex在本地记录根因与最小修复、审核后继续；不得无依据循环补丁/全量复制或假称通过。
+
+2026-10-03 09:14Z工程增量：第一次diag controller21036在cvteam14 SSH banner阶段timeout/exit255，未认证、未发mkdir、未进行任何OBS payload写入；失败控制目录保留。第二次只读连接同样banner timeout。cvteam6只读SSH/findmnt成功，挂载同路径fuse.obsfs，既有26证据包manifest2532bfd68cee4978faa30edec31178f9c208d2f2d60e91292a20f54675c04227与cvteam14既有核验一致，新full v2及diag v2目标不存在。依据用户既有共享OBS说明和工程持续授权，仅将零NPU存储入口改为cvteam6，新diagnostic控制/目标都用v2，仍恰两个条件/原16MB预算；不使用cvteam6 GPU，不改评分/数据。新代码仍完整SHA独立复审，旧失败控制及两个部分OBS目标全部保留。

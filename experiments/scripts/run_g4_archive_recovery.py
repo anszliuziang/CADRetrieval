@@ -18,11 +18,12 @@ import time
 MANIFEST_SHA = '97f9cbb60b0de449914ef1bdb2e388ddf0b2bcdae3686c73ceea511e764d3733'
 RUN_ID = 'idea01_text2cad_g4_full_20261002'
 REMOTE = '/data/obs_data_liuza/CADRetrieval/runs/' + RUN_ID + '_recovery_v2_20261003'
-DIAG_REMOTE = '/data/obs_data_liuza/CADRetrieval/runs/m1c_g4_obs_receiver_diag_20261003'
+OBS_HOST = 'cvteam6'
+DIAG_REMOTE = '/data/obs_data_liuza/CADRetrieval/runs/m1c_g4_obs_receiver_diag_v2_20261003'
 REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / 'experiments/runs' / RUN_ID
 CONTROL = REPO.parent / (REPO.name + '_runtime') / 'g4_archive_recovery_v2_20261003'
-DIAG_CONTROL = REPO.parent / (REPO.name + '_runtime') / 'g4_obs_receiver_diag_20261003'
+DIAG_CONTROL = REPO.parent / (REPO.name + '_runtime') / 'g4_obs_receiver_diag_v2_20261003'
 
 
 def digest(path):
@@ -154,7 +155,7 @@ def run_pipeline(sender_argv, receiver_argv, control, label):
 
 
 def ssh(command):
-    return ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', 'cvteam14', command]
+    return ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', OBS_HOST, command]
 
 
 def logged_command(argv, control, label, check=True):
@@ -270,7 +271,7 @@ def main():
             if diagnostic['provenance']['approved_sha'] != args.approved_sha:
                 raise ValueError('diagnostic used different approved code')
             entries = read_manifest(SOURCE, MANIFEST_SHA, 3666, 14858752230)
-            result.update(phase='transport', source=str(SOURCE), destination='cvteam14:' + REMOTE,
+            result.update(phase='transport', source=str(SOURCE), destination=OBS_HOST + ':' + REMOTE,
                           manifest_sha256=MANIFEST_SHA, verified_source_files=len(entries))
             write_json(control / 'state.json', result)
             transfer = transport(SOURCE, entries, REMOTE, control, True)
