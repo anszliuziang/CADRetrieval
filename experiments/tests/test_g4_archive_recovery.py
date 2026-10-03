@@ -80,6 +80,22 @@ class ArchiveRecoveryTests(unittest.TestCase):
                 self.assertEqual(result['ok'], producer_rc == consumer_rc == 0)
                 self.assertEqual(json.loads((root / 's0_exit.json').read_text()), result)
 
+    def test_receiver_spawn_failure_preserves_sender_pid_and_argv(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sender = [sys.executable, '-c', 'import time; time.sleep(20)']
+            receiver = [str(root / 'nonexistent-receiver')]
+            result = m.run_pipeline(sender, receiver, root, 'fault')
+            self.assertFalse(result['ok'])
+            self.assertIsNotNone(result['sender_exit'])
+            self.assertIsNone(result['receiver_exit'])
+            launch = json.loads((root / 'fault_launch.json').read_text())
+            self.assertEqual(launch['sender_argv'], sender)
+            self.assertEqual(launch['receiver_argv'], receiver)
+            self.assertIsInstance(launch['sender_pid'], int)
+            self.assertIsNone(launch['receiver_pid'])
+            self.assertEqual(result['sender_pid'], launch['sender_pid'])
+
 
 if __name__ == '__main__':
     unittest.main()

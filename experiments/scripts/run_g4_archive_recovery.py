@@ -92,18 +92,22 @@ def run_pipeline(sender_argv, receiver_argv, control, label):
     started = time.time()
     sender = receiver = None
     errors = []
+    launch = dict(sender_argv=sender_argv, receiver_argv=receiver_argv,
+                  sender_pid=None, receiver_pid=None, started=started)
     try:
+        write_json(control / (label + '_launch.json'), launch)
         with (control / (label + '_sender_stderr.log')).open('wb') as sender_log, \
                 (control / (label + '_receiver_stderr.log')).open('wb') as receiver_log, \
                 (control / (label + '_receiver_stdout.log')).open('wb') as receiver_out:
             sender = subprocess.Popen(sender_argv, stdout=subprocess.PIPE, stderr=sender_log)
+            launch['sender_pid'] = sender.pid
+            write_json(control / (label + '_launch.json'), launch)
             try:
                 receiver = subprocess.Popen(receiver_argv, stdin=sender.stdout, stdout=receiver_out, stderr=receiver_log)
             finally:
                 sender.stdout.close()
-            write_json(control / (label + '_launch.json'), dict(
-                sender_argv=sender_argv, receiver_argv=receiver_argv,
-                sender_pid=sender.pid, receiver_pid=receiver.pid, started=started))
+            launch['receiver_pid'] = receiver.pid
+            write_json(control / (label + '_launch.json'), launch)
             receiver.wait()
             sender.wait()
     except BaseException as exc:
@@ -118,6 +122,9 @@ def run_pipeline(sender_argv, receiver_argv, control, label):
                     process.wait()
     result = dict(sender_exit=sender.returncode if sender else None,
                   receiver_exit=receiver.returncode if receiver else None,
+                  sender_pid=sender.pid if sender else None,
+                  receiver_pid=receiver.pid if receiver else None,
+                  sender_argv=sender_argv, receiver_argv=receiver_argv,
                   ok=not errors and sender is not None and receiver is not None and
                   sender.returncode == receiver.returncode == 0,
                   errors=errors, started=started, ended=time.time())
