@@ -10,4 +10,4 @@
 
 最终评价证书SHA `6421e331aa574a8337779982a39d812ddd340d94a8729deb5c533749684a097b`。全指标、区间、分层、原件路径和事实解释见新CODEX_TEXT2CAD_FULL_RETRIEVAL_RESULTS_2026-10-03.md。宽泛命题partial，收窄命题同家族fresh判定provisional yes；绝对UID命中仍低、长度差异大，无因果文本控制/等价多正例/同图库强基线，不宣称实用、语义、SOTA或泛化。
 
-剩余交付收尾仅为最终报告/审查trace和实际归档退出的小型补充证据归档、Git reviewed记录及结束监控；不授权任何新评分、评价或研究实验。
+最终报告/审查trace和实际归档退出的62payload补充包及closing receipt已完成OBS SHA/独立byte核验；原cvteam6读失败实际1与4-A6000备用共享挂载只读恢复实际0分别保留。完整交付记录见IDEA01_M1C_TEXT2CAD_FINAL_DELIVERY_2026-10-03.md。当前无新增评分、评价、运输或研究实验授权，结束本监控。

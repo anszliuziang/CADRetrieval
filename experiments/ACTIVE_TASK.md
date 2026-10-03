@@ -1,29 +1,35 @@
-# 当前实验任务：G5 CPU 评价结果独立审核
+# 当前实验任务：Text2CAD 全量研究已审核交付
 
-- `state`: `review_required`
+- `state`: `reviewed`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G5_CPU_EVALUATION_2026-10-03.md`
-- `phase`: G5正式评价及独立audit/873364检查通过；完整70payload OBS归档全部真实exit0/独立byte覆盖通过，最终证书已写。仅最终报告、审查trace与实际归档退出小型补充包待归档；不再评分/评价/raw audit
+- `phase`: G4完整矩阵、G5正式评价及独立audit、主要原件和最终报告/trace证明包全部审核交付。最后62payload经备用共享OBS入口完整byte核验；closing receipt独占归档及SHA/byte通过。无待运行任务，不再评分/评价/raw audit/运输
 - `archive_transport_authorized`: false（完整70payload已完成，不允许重复）
 - `evaluation_approved`: true
 - `evaluation_certificate`: `experiments/reviews/IDEA01_M1C_G5_EVALUATION_CERTIFICATE_2026-10-03.json`
 - `evaluation_certificate_sha256`: `6421e331aa574a8337779982a39d812ddd340d94a8729deb5c533749684a097b`
 - `g5_obs_manifest_sha256`: `0adec648178550648b36dfd6c372b9f1f3a1d08c3d6cfc373b0be9f446c09125`（70payload/24521948bytes；全部transport/SHA/byte/controller实际0）
-- `finalproof_transport_authorized`: true（唯一fresh审码Ready/无Critical或Important，Root5针对本地预检通过；仅一次新小型报告/实际退出/审查trace补充证明包）
-- `approved_finalproof_sha`: `078eb3f58be67ad894a72becb99f621d1d98e3c0`
+- `finalproof_transport_authorized`: false（已完成；原读失败与备用挂载恢复证据分别保留，不允许重复运输）
+- `closing_receipt_transport_authorized`: false（已完成一次独占普通系统资产上传，不允许重复）
+- `approved_finalproof_sha`: `none`
+- `last_finalproof_sha`: `078eb3f58be67ad894a72becb99f621d1d98e3c0`
 - `finalproof_script_sha256`: `90073542265e5b804822e18c2173461a14d18c224a4e32df780c5e3497fde649`
 - `finalproof_target`: `cvteam6:/data/obs_data_liuza/CADRetrieval/runs/m1c_g5_final_delivery_proof_20261003`（独占；本地runtime/g5_final_delivery_proof_bundle_20261003及control_20261003）
 - `finalproof_launch`: 2026-10-03T16:11:17Z一次hidden controller PID40276，launcher runtime/g5_final_delivery_proof_launcher_20261003.json；授权refe0a32ba5d180727b96dc5145bc736f3302e90699
 - `finalproof_manifest_sha256`: `b555cf47d3dad7ab465c616b2b19a3ca00d0735ac340c54dbf24c05c3bf21f1b`（62payload/108659bytes；本地全部SHA与报告/cert/原始trace绑定通过）
-- `finalproof_progress`: 8路双端全部actual0、remoteSHA0；独立byte witness仍在等OBS元数据，remote owned python PID522414/State S/wchan request_wait_answer，无archive stderr，未有completion/controller exit。不能重复启动或另读全部target，也不能据运输0冒称独立byte完成。仅进程读诊断Py3.8 Path.readlink失败已保留并用os.readlink修复，未影响/重启archive
-- `approved_archive_sha`: `a6525797506ab7d4e9012bdb623d4c52931b8351`
+- `finalproof_progress`: 原8路双端actual0/remoteSHA0；cvteam6独立read后来ENOENT、原controller实际1保留。4-A6000同共享fuse.obsfs对象及manifest pins匹配，使用原a22d785只读witness一次恢复：reader/controller实际0、62payload/108659bytes/全部SHA和byte/无extra。未重复运输，不把原失败改称0；内部obsfs原因未确定
+- `closing_receipt_target`: `4-A6000:/data/obs_data_liuza/CADRetrieval/runs/m1c_g5_final_closing_receipt_20261003`
+- `closing_receipt_sha256`: `11dfa50b87ed01c19cfdea3fcba4e046091dc45d3f8a609a609fb1aef4e8be76`（73977bytes，包含88份原退出/命令/launcher/失败/manifest原字节记录及SHA）
+- `closing_receipt_manifest_sha256`: `d8d307bcc47eaf6a39db51de0bf5fdb75beb145c4f667a1cecf0ed944d2c7640`（prepare/sender/receiver/remoteSHA/独立byte/controller全部实际0；1payload，无extra）
+- `approved_archive_sha`: `none`
+- `last_g5_archive_execution_sha`: `a6525797506ab7d4e9012bdb623d4c52931b8351`
 - `archive_script_sha256`: `4210ebebef08ce7a5a253f1202925d78a84b49a4d06dc2edd895bb11dedfb1e0`
 - `archive_recovery`: 首次仅本地准备因review目录中已知pytest_toy未列入proof清单而拒绝，actual exit1且未SSH/建远端目录/运输；失败现场保留。新代码只复制固定10份proof与manifest，显式排除且保留pytest_toy，其他extra仍拒绝。11针对CPU及唯一archive reviewer通过；授权新独占本地v2 bundle/control一次归档
 - `archive_review`: `experiments/reviews/IDEA01_M1C_G5_ARCHIVE_APPROVAL_2026-10-03.md`
 - `cpu_authorization_ref`: `4ad109025ea28557b47f8f467bfd8962882ccf34`
 - `cpu_launch_report`: `experiments/submissions/idea01_text2cad_benchmark_20260928/CODEX_G5_CPU_LAUNCH_2026-10-03.md`
-- `latest_review`: `experiments/reviews/IDEA01_M1C_G5_CODEX_FINAL_RESULTS_REVIEW_2026-10-03.md`
+- `latest_review`: `experiments/reviews/IDEA01_M1C_TEXT2CAD_FINAL_DELIVERY_2026-10-03.md`
 - `approved_diagnostic_plan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
 - `approved_sha`: `none`（正式CPU评价已结束，无新增评价授权）
@@ -35,7 +41,7 @@
 - `matrix_certificate`: `experiments/reviews/IDEA01_M1C_G4_MATRIX_CERTIFICATE_2026-10-03.json`
 - `matrix_certificate_sha256`: `afad9371cc846ad7e636c4ae4b76740ea1b74f787d002602bb677e9bb834bfc6`
 - `readonly_audit_witness_sha`: `43db1b90be46f346cdf6a9bddf83717a7b5d777814631e9d70172f1b654a1323`
-- `archive_mode`: `full`
+- `archive_mode`: `closed`
 - `diagnostic_max_bytes`: 16777216（两个预定义条件各一次；当前约2MiB+清单）
 - `gpu_budget`: 0 卡小时
 - `max_scored_pairs`: 0
@@ -46,7 +52,7 @@
 - `last_run_sha`: `56ac0f8e7e1c3680ab3e28bbe3bae9f1f95b0719`；历史授权ref67e89a20eb6fc3b35d27c3ba2363da4311d9113c，两invocation20261002T131158Z-c3812433/20261002T131159Z-6ce644de均exit0/finalized，controller status=ok/组empty，119885.30卡秒/60019.4233067秒墙钟
 - `data`: 8046CAD/3644唯一strip文本完整矩阵；CPU评价恢复7934原查询，query/gallery/qrels/evalmap以G5预注册pins连接，不调方法
 - `model`: 既有two_head_factorized_logprob_sum/spec text2cad-vector-score-v1；FP32/full272/b16/无trim-cache，不能称纯MLE或CAD几何NLL；不做任何真实模型/BERT/NPU前向
-- `server`: yunnan-share2只读原干净detached56ac0f8，不fetch/detach/改源码/装包；RT /home/ma-user/work/CADRetrieval_runtime，既有spec10c18c17。cvteam6仅共享OBS存储入口（cvteam14 SSH banner超时），无GPU；避/data/data_dev
+- `server`: yunnan-share2保持原干净detached56ac0f8，不fetch/detach/改源码/装包；RT /home/ma-user/work/CADRetrieval_runtime，既有spec10c18c17。cvteam6与4-A6000仅共享OBS存储/只读核验入口，未使用其GPU；避/data/data_dev
 - `required_output`: G5独立CPU模块/CLI、固定toy证据/完整实现SHA与独立审码；批准后一次正式评价，全7934ranks/3644top20/固定基线/重复上限/5000文本组query加权CI/分层/真实命令退出与输入代码指纹；独立复算和本地OBS逐SHA报告。G4原件/失败现场与Kimi草稿保持
 - `ownership`: 用户已授权Codex接手本地实现、运输、报告及CPU评价；保留Kimi草稿，以CODEX_新报告交接。新增代码仍独立审查。零NPU、不重启/重复评分/续跑
 - `stop_conditions`: 工程故障保留真实证据，依据根因修复、审查后继续，无需重复许可；源资产/实验数值/研究协议或预算问题保留证据讨论，不换模型/放宽门/扩NPU预算/删除覆盖未知资产，不重试已完成评分
