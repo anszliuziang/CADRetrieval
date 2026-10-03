@@ -4,7 +4,10 @@
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G5_CPU_EVALUATION_2026-10-03.md`
-- `phase`: G5正式一次评价actual exit0/completion通过，7934ranks/3644top20/5000bootstrap已保存；15:18:22Z单次独立结果audit运行operator36536/child19068，仅读进度不重复启动；待完整复算和OBS归档后最终批准
+- `phase`: G5正式一次评价及独立结果audit均actual0/all_passed，873364检查/全部39670方法rank、145760top20记录、5000展开bootstrap一致；授权一次既有结果的完整OBS归档，最终存储门后交付
+- `archive_transport_authorized`: true（仅既有结果资产运输，不授权再次评价）
+- `approved_archive_sha`: `3e2c9701d4c990ed21fb3bd55b123eb8f1939095`
+- `archive_review`: `experiments/reviews/IDEA01_M1C_G5_ARCHIVE_APPROVAL_2026-10-03.md`
 - `cpu_authorization_ref`: `4ad109025ea28557b47f8f467bfd8962882ccf34`
 - `cpu_launch_report`: `experiments/submissions/idea01_text2cad_benchmark_20260928/CODEX_G5_CPU_LAUNCH_2026-10-03.md`
 - `latest_review`: `experiments/reviews/IDEA01_M1C_G5_CODEX_CODE_APPROVAL_2026-10-03.md`
