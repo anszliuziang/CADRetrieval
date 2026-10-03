@@ -1,16 +1,19 @@
-# 当前实验任务：G5 预注册 CPU 评价正式执行
+# 当前实验任务：G5 CPU 评价结果独立审核
 
-- `state`: `pilot_authorized`
+- `state`: `review_required`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G5_CPU_EVALUATION_2026-10-03.md`
-- `phase`: G5一次正式CPU评价15:07:01Z已启动，operator6612/child7240；仅读正常进度，完成真实exit后独立raw正例rank/指标审核及归档；无新评分
+- `phase`: G5正式一次评价actual exit0/completion通过，7934ranks/3644top20/5000bootstrap已保存；15:18:22Z单次独立结果audit运行operator36536/child19068，仅读进度不重复启动；待完整复算和OBS归档后最终批准
 - `cpu_authorization_ref`: `4ad109025ea28557b47f8f467bfd8962882ccf34`
 - `cpu_launch_report`: `experiments/submissions/idea01_text2cad_benchmark_20260928/CODEX_G5_CPU_LAUNCH_2026-10-03.md`
 - `latest_review`: `experiments/reviews/IDEA01_M1C_G5_CODEX_CODE_APPROVAL_2026-10-03.md`
 - `approved_diagnostic_plan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
-- `approved_sha`: `e2d823aa284c800906ed37c0a2d0272e052de96b`
+- `approved_sha`: `none`（正式CPU评价已结束，无新增评价授权）
+- `last_cpu_sha`: `e2d823aa284c800906ed37c0a2d0272e052de96b`
+- `cpu_result_manifest_sha256`: `c98e205626a9d95d4830f3c628518f5f5e34f215c80b2079948dc0e54b19be95`（15payload/15660013bytes；实际child exit0/545.908秒）
+- `independent_result_witness_sha256`: `007aa82bdc682a35e2b8c0e25bc2b153ca0f2a86786e4d9b9554578fcd6c3fc9`（只读独立审码通过；941toy方向/tie/median通过，无production import）
 - `last_archive_sha`: `8bc4eeabea57f416982a286add9b65ba35f57ed1`
 - `full_matrix_approved`: true
 - `matrix_certificate`: `experiments/reviews/IDEA01_M1C_G4_MATRIX_CERTIFICATE_2026-10-03.json`
