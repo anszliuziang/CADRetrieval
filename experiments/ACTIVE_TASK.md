@@ -1,10 +1,10 @@
 # 当前实验任务：G5 预注册 CPU 评价实现
 
-- `state`: `implementation`
+- `state`: `review_required`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G5_CPU_EVALUATION_2026-10-03.md`
-- `phase`: G4三处完整原件及最终7359连接门通过；Codex按既有预注册实现纯numpy/stdlib CPU评价并做toy测试/独立代码审查；当前不授权计算真实检索指标
+- `phase`: G5本地纯numpy/stdlib实现完成；21针对测试/真实输入连接通过，独立代码审查中；当前不授权计算真实检索指标
 - `latest_review`: `experiments/reviews/IDEA01_M1C_G4_CODEX_FINAL_MATRIX_REVIEW_2026-10-03.md`
 - `approved_diagnostic_plan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）

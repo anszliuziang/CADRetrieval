@@ -1,0 +1,19 @@
+{
+  "schema": "text2cad-g5-cpu-frozen-v1",
+  "seed": 20261003,
+  "bootstrap_replicates": 5000,
+  "methods": ["sum", "mean", "length_asc", "length_desc", "random"],
+  "certificate_path": "experiments/reviews/IDEA01_M1C_G4_MATRIX_CERTIFICATE_2026-10-03.json",
+  "certificate_sha256": "afad9371cc846ad7e636c4ae4b76740ea1b74f787d002602bb677e9bb834bfc6",
+  "checkpoint_sha256": "235b137e72f97c740550e29698c342967d3be7c1d4cd0067a1b3380389034598",
+  "inputs": {
+    "queries": {"root": "data", "path": ".cache/m0_real_run_v3/query.jsonl", "sha256": "a0d8504f5a5555e5312dd38a31321a6ea254087e6390e786559cfc0b6d307fcd"},
+    "gallery": {"root": "data", "path": ".cache/m0_real_run_v3/gallery.jsonl", "sha256": "09782bd6d316e7b0863c70f1df9cd6504e7dc41ce3bb9a433821b1c22ab85e30"},
+    "qrels": {"root": "data", "path": ".cache/m0_real_run_v3/qrels.jsonl", "sha256": "f0677928ae2412ca4bcd8952c95d89f0568c5bb214c7bb53e82e0059555c87d6"},
+    "mapping": {"root": "runtime", "path": "pair_manifest_v4/evaluation_map.json", "sha256": "a6f5b19a76a14aef4eab03879ae9f0f872b9e5a30e4bda5ba9ea8a45c0ed1875"},
+    "texts": {"root": "runtime", "path": "pair_manifest_v4_worker/texts.jsonl", "sha256": "c59b4aef8137b1e71c1581291a4c1d2bcbafe36f22d81d01431a5cc02dad7a21"},
+    "store": {"root": "runtime", "path": "pair_manifest_v4_worker/cad_store.jsonl", "sha256": "2f441110f013bb614b0bd2fdb7a3b49569a231bbf3f8eaa2c03ac1d725cb1380"},
+    "lengths": {"root": "runtime", "path": "pair_manifest_v4_worker/cad_length_index.jsonl", "sha256": "daac66a102e34fe45c9cb474922076b0d62345ab0c9796f917a0f8085c6ea0c3"},
+    "pair_manifest": {"root": "runtime", "path": "pair_manifest_v4_worker/pair_manifest.json", "sha256": "62086beb064af7b738665825edbf1a3cb63ebfaceddc7e227c0aa45390902557"}
+  }
+}
