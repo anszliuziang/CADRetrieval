@@ -4,7 +4,9 @@
 - `task_id`: `idea01_text2cad_benchmark_20260928`
 - `plan`: `experiments/plans/IDEA01_TEXT2CAD_BENCHMARK_2026-09-28.md`
 - `active_subplan`: `experiments/plans/IDEA01_M1C_G5_CPU_EVALUATION_2026-10-03.md`
-- `phase`: G5独立代码审核通过；只授权批准SHA干净本地detached checkout执行一次7934原query CPU评价、5000文本组bootstrap及结果归档；无新评分
+- `phase`: G5一次正式CPU评价15:07:01Z已启动，operator6612/child7240；仅读正常进度，完成真实exit后独立raw正例rank/指标审核及归档；无新评分
+- `cpu_authorization_ref`: `4ad109025ea28557b47f8f467bfd8962882ccf34`
+- `cpu_launch_report`: `experiments/submissions/idea01_text2cad_benchmark_20260928/CODEX_G5_CPU_LAUNCH_2026-10-03.md`
 - `latest_review`: `experiments/reviews/IDEA01_M1C_G5_CODEX_CODE_APPROVAL_2026-10-03.md`
 - `approved_diagnostic_plan`: `experiments/plans/IDEA01_M1C_G4_OBS_RECEIVER_DIAGNOSTIC_PROPOSAL_2026-10-03.md`
 - `approved_proposal`: `experiments/plans/IDEA01_M1C_G4_ARCHIVE_RECOVERY_PROPOSAL_2026-10-03.md`（用户授权继续；执行者改为Codex）
