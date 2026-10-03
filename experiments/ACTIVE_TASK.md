@@ -14,6 +14,9 @@
 - `approved_finalproof_sha`: `078eb3f58be67ad894a72becb99f621d1d98e3c0`
 - `finalproof_script_sha256`: `90073542265e5b804822e18c2173461a14d18c224a4e32df780c5e3497fde649`
 - `finalproof_target`: `cvteam6:/data/obs_data_liuza/CADRetrieval/runs/m1c_g5_final_delivery_proof_20261003`（独占；本地runtime/g5_final_delivery_proof_bundle_20261003及control_20261003）
+- `finalproof_launch`: 2026-10-03T16:11:17Z一次hidden controller PID40276，launcher runtime/g5_final_delivery_proof_launcher_20261003.json；授权refe0a32ba5d180727b96dc5145bc736f3302e90699
+- `finalproof_manifest_sha256`: `b555cf47d3dad7ab465c616b2b19a3ca00d0735ac340c54dbf24c05c3bf21f1b`（62payload/108659bytes；本地全部SHA与报告/cert/原始trace绑定通过）
+- `finalproof_progress`: 8路双端全部actual0、remoteSHA0；独立byte witness仍在等OBS元数据，remote owned python PID522414/State S/wchan request_wait_answer，无archive stderr，未有completion/controller exit。不能重复启动或另读全部target，也不能据运输0冒称独立byte完成。仅进程读诊断Py3.8 Path.readlink失败已保留并用os.readlink修复，未影响/重启archive
 - `approved_archive_sha`: `a6525797506ab7d4e9012bdb623d4c52931b8351`
 - `archive_script_sha256`: `4210ebebef08ce7a5a253f1202925d78a84b49a4d06dc2edd895bb11dedfb1e0`
 - `archive_recovery`: 首次仅本地准备因review目录中已知pytest_toy未列入proof清单而拒绝，actual exit1且未SSH/建远端目录/运输；失败现场保留。新代码只复制固定10份proof与manifest，显式排除且保留pytest_toy，其他extra仍拒绝。11针对CPU及唯一archive reviewer通过；授权新独占本地v2 bundle/control一次归档
