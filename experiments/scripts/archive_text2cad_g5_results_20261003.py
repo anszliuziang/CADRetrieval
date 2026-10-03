@@ -10,7 +10,7 @@ import time
 
 repo=Path('D:/projects/IdeaSpark/CADRetrievalIdea1');rt=repo.parent/'CADRetrievalIdea1_runtime'
 code=Path('C:/Users/liuza/.codex/worktrees/text2cad-g5-cpu/CADRetrievalIdea1')
-source=rt/'g5_complete_archive_bundle_20261003';control=rt/'g5_complete_archive_control_20261003'
+source=rt/'g5_complete_archive_bundle_v2_20261003';control=rt/'g5_complete_archive_control_v2_20261003'
 target='/data/obs_data_liuza/CADRetrieval/runs/idea01_text2cad_g5_cpu_20261003'
 ssh=['ssh','-o','BatchMode=yes','-o','ConnectTimeout=20','cvteam6']
 source.mkdir(exist_ok=False);control.mkdir(exist_ok=False)
@@ -67,6 +67,26 @@ def stream_archive(sender_argv,receiver_argv,se,so,re):
              sender_argv=sender_argv,receiver_argv=receiver_argv))
     if sender.returncode or receiver.returncode: raise RuntimeError('archive pipe failed')
 
+def copy_review_proof(proof,dst,expected_manifest_sha):
+    # This directory owns a known pytest fixture. Only declared proof files are payload.
+    manifest=proof/'review_witness_manifest.json'
+    assert digest(manifest)==expected_manifest_sha,'review manifest byte pin'
+    pins=json.loads(manifest.read_text())['witnesses']
+    expected=set(pins)|{'review_witness_manifest.json'}
+    actual={p.name for p in proof.iterdir()}
+    assert actual-expected <= {'pytest_toy'} and expected <= actual,'unknown review source extra/missing'
+    excluded=actual-expected
+    for n in excluded: assert (proof/n).is_dir() and not (proof/n).is_symlink(),'excluded fixture identity'
+    for n,pin in pins.items():
+        assert Path(n).name==n and (proof/n).is_file() and not (proof/n).is_symlink()
+        assert digest(proof/n)==pin['sha256'],n
+    dst.mkdir(exist_ok=False)
+    for n in expected: shutil.copy2(proof/n,dst/n)
+    assert {p.name for p in dst.iterdir()}==expected
+    assert digest(dst/'review_witness_manifest.json')==expected_manifest_sha
+    for n,pin in pins.items(): assert digest(dst/n)==pin['sha256'],'copied review proof '+n
+    return dict(included=sorted(expected),excluded_known_fixture_dirs=sorted(excluded),reason='only declared proof payload, fixture retained at source')
+
 try:
     audit=rt/'g5_independent_results_audit_20261003'
     assert json.loads((audit/'audit_result.json').read_text())['all_passed'] is True
@@ -75,18 +95,15 @@ try:
     assert json.loads((formal/'actual_child_exit.json').read_text())['actual_child_exit_code']==0
     checked_copytree(formal,source/'formal');checked_copytree(audit,source/'independent_audit')
     proof=rt/'g5_fresh_review_20261003/review_e2d823_001'
-    proof_manifest=json.loads((proof/'review_witness_manifest.json').read_text())
-    assert {p.name for p in proof.iterdir()}==set(proof_manifest['witnesses'])|{'review_witness_manifest.json'}
-    for n,pin in proof_manifest['witnesses'].items():
-        assert (proof/n).is_file() and not (proof/n).is_symlink() and digest(proof/n)==pin['sha256'],n
-    shutil.copytree(proof,source/'code_review')
-    for n,pin in proof_manifest['witnesses'].items(): assert digest(source/'code_review'/n)==pin['sha256'],'copied review proof '+n
+    scope=copy_review_proof(proof,source/'code_review','369621fd59cdfdd35716dc23544de40c081a97d076db4027f0602b7be5833e0b')
+    (source/'code_review_scope.json').write_text(json.dumps(scope,indent=2)+'\n',encoding='utf-8')
     for n in ['g5_cpu_targeted_tests_20261003_stdout.log','g5_cpu_targeted_tests_20261003_stderr.log',
               'g5_cpu_targeted_tests_20261003_exit.json','g5_cpu_input_linkage_preflight_20261003.json',
               'g5_root_bootstrap_toy_oracle_20261003.json','g5_independent_witness_toy_20261003.json',
               'g5_cpu_operator_launcher_20261003.json','g5_independent_operator_launcher_20261003.json',
-              'archive_g5_complete_results_20261003.py']:
+              'g5_archive_boundary_tests_20261003.json','g5_archive_review_scope_tests_20261003.json']:
         shutil.copy2(rt/n,source/n)
+    shutil.copy2(Path(__file__),source/'actual_archive_script.py')
     head=capture('code_head',['git','-C',str(code),'rev-parse','HEAD']).decode().strip()
     assert head=='e2d823aa284c800906ed37c0a2d0272e052de96b'
     assert not capture('code_status',['git','-C',str(code),'status','--porcelain','--untracked-files=all']).strip()
