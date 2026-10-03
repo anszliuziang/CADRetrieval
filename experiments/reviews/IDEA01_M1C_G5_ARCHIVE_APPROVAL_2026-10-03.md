@@ -1,9 +1,15 @@
 # G5 完整结果与证据归档批准
 
-Git实现SHA `3e2c9701d4c990ed21fb3bd55b123eb8f1939095`；实际脚本 `experiments/scripts/archive_text2cad_g5_results_20261003.py` byte SHA `d0f745db9cc729acb457f3a2026a772f1ae8b317bfc2758eec35734cdca5a299`。只授权一次既有结果资产归档，不授权再次评价或评分。
+当前批准Git实现SHA `a6525797506ab7d4e9012bdb623d4c52931b8351`；实际脚本 `experiments/scripts/archive_text2cad_g5_results_20261003.py` byte SHA `4210ebebef08ce7a5a253f1202925d78a84b49a4d06dc2edd895bb11dedfb1e0`。只授权一次既有结果资产归档，不授权再次评价或评分。历史首批准为`3e2c9701d4c990ed21fb3bd55b123eb8f1939095`/byte `d0f745db9cc729acb457f3a2026a772f1ae8b317bfc2758eec35734cdca5a299`，由下述本地准备故障后的新审查取代。
 
 唯一 archive reviewer 首审原 prototype `2255c742b3ee900bb0e9dd13e12e18dc849209ea34d19e63737bd89f1601a356` 找到三个 Important：receiver启动失败丢sender真实退出记录；顶层文件检查未拒绝嵌套unknown；副本未重新绑定原input pins。均在任何真实G5运输前修复，原审查记录保留。统一finally先回收自身所有已spawn子进程再落真实退出；源与复制后原manifest/所有SHA严格检查；副本input与执行module/config raw字节pin及批准Git canonical bytes相连。CRLF仅用于Git canonical比较，实际执行原字节另存，不冒称两种hash相等。
 
 Root 8 项针对CPU见证全部通过，包括receiver-missing、sender/receiver post-spawn写证据故障、peer非零、正常退出、nested extra、复制后损坏；在测试cleanup前观察已创建进程均不存活，实际退出记录正确。证据在runtime `g5_archive_boundary_tests_20261003.json`、测试源码在Git `experiments/tests/test_g5_archive_operator_boundaries_20261003.py`。唯一reviewer复审Ready，无Critical/Important/Minor。未真实传输/改原资产/算新精度。
 
-新独占OBS目标 `cvteam6:/data/obs_data_liuza/CADRetrieval/runs/idea01_text2cad_g5_cpu_20261003`，本地control `g5_complete_archive_control_20261003`，bundle `g5_complete_archive_bundle_20261003`。范围为已完成formal15payload、independent audit12payload、固定八输入、批准执行代码、review/toy证据与协议；不递归父runtime、不重新运输G4矩阵、不混CPUfixtures。显式预建所有父目录；真实两端退出0、完整remote SHA0、独立只读Py3.8 byte/覆盖/无extra全部通过后才最终交付批准。
+## 首次本地准备失败与范围修复
+
+15:35:34Z首次准备PID18428实际exit1，固定review目录另含pytest运行产生的`pytest_toy`目录，严格proof清单检查拒绝该目录。尚未执行任何SSH、远端mkdir或tar运输；全部评价原件安全，旧bundle/control/launcher/stdout/stderr和真实exit保留。不能把该本地拒绝记为远端运输失败或数据损坏。
+
+新`copy_review_proof`固定原review manifest SHA `369621fd59cdfdd35716dc23544de40c081a97d076db4027f0602b7be5833e0b`，只复制声明的10份proof与manifest；唯一可排除项是非symlink的`pytest_toy`目录，保留源目录并输出`code_review_scope.json`。其他缺失/extra/foreign manifest仍拒绝，formal及independent audit的严格flat全SHA门不变。新3项CPU验证已知fixture排除并保留、unknown extra拒绝、foreign manifest拒绝；原8项边界测试按新byte SHA再次通过，合计11项。唯一archive reviewer复审Ready，无Critical/Important/Minor。
+
+新独占OBS目标 `cvteam6:/data/obs_data_liuza/CADRetrieval/runs/idea01_text2cad_g5_cpu_20261003`，本地control `g5_complete_archive_control_v2_20261003`，bundle `g5_complete_archive_bundle_v2_20261003`。远端目标仍要求不存在，首次失败未触及该目标。范围为已完成formal15payload、independent audit12payload、固定八输入、批准执行代码、review/toy证据与协议；不递归父runtime、不重新运输G4矩阵、不混CPUfixtures。显式预建所有父目录；真实两端退出0、完整remote SHA0、独立只读Py3.8 byte/覆盖/无extra全部通过后才最终交付批准。
