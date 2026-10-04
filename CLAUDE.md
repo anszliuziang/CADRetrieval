@@ -1,5 +1,13 @@
 # CADRetrieval 项目执行约定（给 Claude Code / Kimi K3）
 
+## 2026-10-04 已有矩阵诊断完成
+
+用户要求在cvteam6/cvteam14跳板机不可达时继续分析已有数据。完整本地G4矩阵可读，4-A6000仅共享OBS只读核验，未访问前两机、未使用服务器GPU。Codex一次本地CPU分析actual exit0，全部15868个SUM/MEAN正式正例排名与原G5一致；5000文本组共享排列及独立39548检查/60000null统计通过，原模型/数据/标签/主方法未变，零新增前向。批准代码00afcf73124edbb0056fc44cfc89d6755834efab、授权40639e4720c3524bf166f1223e633e35b7574fe2。
+
+新结论：SUM正确文本R20=2.609024%，其他文本严格错配期待0.246364%，有文本标签对齐信号；移除文本行offset后共同候选项SS占99.6824%，全排名Spearman均值0.968837，Top20总候选覆盖1059/8046。原生直接UID检索仍弱，不能据此否定所有文生CAD模型，也不能将共同SS占比称检索错误的因果解释。新分析是看过G5后提出的探索性诊断，语义相关性/背景校正/设计家族泛化仍待新方案。新增诊断仅本地，原G4/G5 OBS资产审核状态不变。ACTIVE已reviewed/approved none，诊断invocations1，无待运行或运输任务；不新建监控。
+
+报告：`experiments/submissions/idea01_text2cad_benchmark_20260928/CODEX_TEXT2CAD_ALIGNMENT_DIAGNOSTICS_2026-10-04.md`；完整轻量统计与审核范围：`experiments/reviews/IDEA01_TEXT2CAD_MATRIX_DIAGNOSTICS_RESULTS_2026-10-04.json`。新增代码仍按用户接手授权由Codex实现、独立审核；Kimi未提交草稿保留。下一轮dev读出校正/几何盲审/同gallery强基线未授权启动。下文原研究和恢复记录保持历史。
+
 ## 2026-10-03 用户授权的执行者变更
 
 ### 工程故障的持续授权（2026-10-03 用户新指令）

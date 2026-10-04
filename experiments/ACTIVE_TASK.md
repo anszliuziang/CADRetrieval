@@ -1,12 +1,19 @@
 # 当前任务：Text2CAD 已有矩阵补充诊断
 
-- `state`: `pilot_authorized`
+- `state`: `reviewed`
 - `active_subplan`: `experiments/plans/IDEA01_TEXT2CAD_EXISTING_MATRIX_DIAGNOSTICS_2026-10-04.md`
-- `phase`: 用户2026-10-04要求继续数据分析；新纯CPU诊断代码独立Ready/31针对测试通过，授权指定代码与后代本授权commit一次本地分析
-- `approved_sha`: `00afcf73124edbb0056fc44cfc89d6755834efab`
+- `phase`: 用户2026-10-04要求的已有矩阵分析已完成；一次本地actual exit0、全部15868正式positive ranks一致，5000共享置换及独立39548检查/60000null统计通过。报告边界审核完成，无待运行任务
+- `approved_sha`: `none`
+- `last_diagnostic_sha`: `00afcf73124edbb0056fc44cfc89d6755834efab`
+- `diagnostic_authorization_ref`: `40639e4720c3524bf166f1223e633e35b7574fe2`
 - `gpu_budget`: 0 卡小时
 - `max_scored_pairs`: 0
-- `diagnostic_invocations`: 0
+- `diagnostic_invocations`: 1
+- `diagnostic_results`: `experiments/reviews/IDEA01_TEXT2CAD_MATRIX_DIAGNOSTICS_RESULTS_2026-10-04.json`
+- `diagnostic_report`: `experiments/submissions/idea01_text2cad_benchmark_20260928/CODEX_TEXT2CAD_ALIGNMENT_DIAGNOSTICS_2026-10-04.md`
+- `diagnostic_manifest_sha256`: `374d5df5406ec7ac3966adfdab0523a4703f568470a318b9e7ec0aa6f0be1ec7`（11payload；新增诊断仅本地，原G4/G5 OBS状态不变）
+- `diagnostic_transport_authorized`: false（本轮仅本地分析与共享OBS清单只读核验）
+- `next_experiment_authorized`: false（dev评分读出/语义盲审/同gallery基线仅建议，未启动）
 - `ownership`: 用户授权Codex实现/分析；不派Kimi。原正式G4/G5结果和证书保持，新增分析明确post-hoc exploratory
 - `server`: 本地CPU；4-A6000仅OBS只读。用户说明cvteam6/cvteam14跳板机故障，不访问两机。零远端执行/运输/模型下载/前向
 
