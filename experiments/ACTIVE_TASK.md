@@ -1,4 +1,16 @@
-# 当前实验任务：Text2CAD 全量研究已审核交付
+# 当前任务：Text2CAD 已有矩阵补充诊断
+
+- `state`: `review_required`
+- `active_subplan`: `experiments/plans/IDEA01_TEXT2CAD_EXISTING_MATRIX_DIAGNOSTICS_2026-10-04.md`
+- `phase`: 用户2026-10-04要求继续数据分析；本地矩阵与4-A6000 OBS manifest可读。新纯CPU代码/固定toy测试已完成，等待独立审码后一次已有矩阵诊断
+- `approved_sha`: `none`
+- `gpu_budget`: 0 卡小时
+- `max_scored_pairs`: 0
+- `diagnostic_invocations`: 0
+- `ownership`: 用户授权Codex实现/分析；不派Kimi。原正式G4/G5结果和证书保持，新增分析明确post-hoc exploratory
+- `server`: 本地CPU；4-A6000仅OBS只读。用户说明cvteam6/cvteam14跳板机故障，不访问两机。零远端执行/运输/模型下载/前向
+
+## 以下为已完成原全量研究的交付记录
 
 - `state`: `reviewed`
 - `task_id`: `idea01_text2cad_benchmark_20260928`
