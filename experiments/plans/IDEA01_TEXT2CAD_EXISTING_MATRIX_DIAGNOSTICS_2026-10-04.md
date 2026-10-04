@@ -22,3 +22,12 @@
 ## 关口与交付
 
 toy 覆盖重复组复用行/原 query 权重、完整 ties、正确排名方向、置换双臂共享、精确排除正确行、加性分解、候选排序和非有限值拒绝。独立审码通过后指定完整 Git SHA 本地一次分析。结果表、解释与局限写新 CODEX 报告。原正式评价不会重复；后续盲审多正例/同 gallery 强检索基线/新 checkpoint 或前向仅列建议，当前不运行。
+
+## 论文对实验设计的约束
+
+- [Text2CAD 原论文](https://arxiv.org/html/2409.17106v1) 第3节将 L0 定义为抽象外形、L3 定义为详细几何相对数值；第4节建模 CAD 构造序列的文本条件分布。L0 exact UID 与语义相关性应分别评价，不能将未命中 UID 自动判作语义错误，也不能未经盲审将所有未命中解释为语义正确。
+- [Diffusion Classifier](https://arxiv.org/html/2303.16203v3) 第3.2节固定图像 x、比较条件 c 的 p(x|c)，并按类别先验得后验。本任务固定文本 t、比较不同 CAD c 的 s(c,t)，比较轴相反。推论：候选共同偏好在后者不会自动抵消；分类成功的文献不能直接担保本检索形式成功。
+- [Likelihood Ratios for OOD Detection](https://proceedings.neurips.cc/paper/2019/hash/1e79596878b2320cac26dd792a6c51c9-Abstract.html) 在另一个任务中发现 likelihood 被背景统计混淆，并提出 likelihood ratio。这里仅借其提出假设，不能把跨领域结果当 CAD 根因证明。
+- [Text-to-CAD Retrieval: a Strong Baseline](https://arxiv.org/html/2605.05572v1) 第IV-A节也是 L0，但预处理后的 test 为8023而本库为8046；已有不同模态训练。应在同一 UID gallery/同一 qrels 重算强基线，不能直接抄其发表数字与本实验并表。
+
+下一轮若获授权：先在验证集冻结候选共同项修正规则，再在未用于选规则的测试集确认；对 query/Gallery 几何进行独立盲审多正例、带长度匹配的硬负例，检查语义条件区分能力；明确泛化单位为设计家族而非仅 UID。原 R20 2.609% 与重复组 UID ceiling 80.401% 的巨大差距不能仅用重复文本免责。所有这些是新研究方案，不在本次分析中偷偷改变正例或主方法。

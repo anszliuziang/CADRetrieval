@@ -1,0 +1,15 @@
+# 已有矩阵诊断代码审核
+
+批准代码：`00afcf73124edbb0056fc44cfc89d6755834efab`。用户2026-10-04要求已有数据分析，授权本地一次零GPU/零新forward诊断，规则见对应plan。原G4/G5结果冻结，不把本轮称为确认实验。
+
+首稿b87171独立审查发现两个Important：旧helper执行字节pin不能匹配当前源码；调用者自填HEAD且未读取授权、未绑定实际脚本可绕过执行门。Minor为G5清单先read_text再SHA，不能严格核原字节。均修复后才批准。
+
+Root实证：当前源码LF及历史e2d823a Git blob均de76f9057b8759d6f02c18ac1f2c9d143f4f639d42d2e461378870a3ade5e373；仅将LF转CRLF恰等于原startup记录0fdce6ae27794d1f0756026cdfd69dbd4448f7df085666ac7b9a1c1659e1e0c8。现在只对Python源码核canonical LF并保留actual SHA。数据、证书和manifest仍核原字节。首次说明误把当前/历史换行方向说反，以本实证为准。无源码逻辑/数据变更。
+
+新门要求完整approved code SHA及后代authorization ref、实际HEAD等于authorization ref、tracked clean、ACTIVE第一字段状态/approved code/诊断plan/零NPU/zero pairs匹配，授权commit源码与批准源码一致，实际__file__和源码字节属于批准仓库。
+
+Root针对测试31项exit0。期间新增授权toy曾因默认Windows编码失败，显式UTF8修复后通过；未读完整矩阵/运行诊断。独立唯一g5_cpu_review初稿5000双臂共享toy与组权重/错配精确期待/SS/Spearman等通过；复审只检查新门和3新gate测试，6个真实临时Git反例拒绝，统计AST与初稿不变，不重复整套。
+
+复审Ready，无Critical/Important/Minor。独立见证：`D:/projects/IdeaSpark/CADRetrievalIdea1_runtime/g5_fresh_review_20261003/review_00afcf_20261004/review_witness_manifest.json` SHA f14b1dae98563fdd0e4037da53877b22ef7f795a41c928bddb28d2542c7ca6b4。原失败与toy容差过严证据保留。
+
+执行仅一次，新输出目录`D:/projects/IdeaSpark/CADRetrievalIdea1_runtime/text2cad_matrix_diagnostics_20261004`，stdout/stderr/真实退出在同runtime的`text2cad_matrix_diagnostics_control_20261004`。无远端计算/运输，4-A6000仅已完成清单只读核验。结果必须恢复全部15868正式positive ranks一致、保存5000draw和新诊断、逐文件SHA，再审结论。

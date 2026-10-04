@@ -1,9 +1,9 @@
 # 当前任务：Text2CAD 已有矩阵补充诊断
 
-- `state`: `review_required`
+- `state`: `pilot_authorized`
 - `active_subplan`: `experiments/plans/IDEA01_TEXT2CAD_EXISTING_MATRIX_DIAGNOSTICS_2026-10-04.md`
-- `phase`: 用户2026-10-04要求继续数据分析；本地矩阵与4-A6000 OBS manifest可读。新纯CPU代码/固定toy测试已完成，等待独立审码后一次已有矩阵诊断
-- `approved_sha`: `none`
+- `phase`: 用户2026-10-04要求继续数据分析；新纯CPU诊断代码独立Ready/31针对测试通过，授权指定代码与后代本授权commit一次本地分析
+- `approved_sha`: `00afcf73124edbb0056fc44cfc89d6755834efab`
 - `gpu_budget`: 0 卡小时
 - `max_scored_pairs`: 0
 - `diagnostic_invocations`: 0
