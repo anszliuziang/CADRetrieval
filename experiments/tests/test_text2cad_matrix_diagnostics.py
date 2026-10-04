@@ -1,5 +1,6 @@
 """Small hand-derived fixtures for the post-hoc alignment diagnostics."""
 import importlib.util
+import hashlib
 from pathlib import Path
 import numpy as np
 import pytest
@@ -77,3 +78,15 @@ def test_permutation_metrics_share_draws_and_detect_alignment():
     assert np.array_equal(out[0], out[1])
     assert out[0, :, 0].tolist() == [1., 0.]
     assert out[0, :, 4].tolist() == [1., 2.]
+
+
+def test_python_source_pin_accepts_only_line_ending_difference(tmp_path):
+    # Historical Windows invocation used CRLF, while the Git blob is LF.
+    m = module(); p = tmp_path/'helper.py'; b=b'x = 1\n'
+    pin=hashlib.sha256(b).hexdigest()
+    p.write_bytes(b); lf=m.source_pin(p,pin)
+    p.write_bytes(b'x = 1\r\n'); crlf=m.source_pin(p,pin)
+    assert lf['canonical_lf_sha256'] == crlf['canonical_lf_sha256'] == pin
+    assert lf['actual_sha256'] != crlf['actual_sha256']
+    p.write_bytes(b'x = 2\n')
+    with pytest.raises(ValueError): m.source_pin(p,pin)

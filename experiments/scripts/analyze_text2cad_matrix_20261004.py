@@ -31,6 +31,14 @@ def dump(path, obj):
                           encoding='utf-8', newline='\n')
 
 
+def source_pin(path, canonical_pin):
+    raw = Path(path).read_bytes()
+    actual = hashlib.sha256(raw).hexdigest()
+    canonical = hashlib.sha256(raw.replace(b'\r\n', b'\n')).hexdigest()
+    require(canonical == canonical_pin, 'Python source content changed')
+    return dict(actual_sha256=actual, canonical_lf_sha256=canonical)
+
+
 def rank_row(values):
     a = np.asarray(values, dtype=np.float64)
     require(a.ndim == 1 and a.size and np.isfinite(a).all(), 'invalid scores')
@@ -118,7 +126,7 @@ def run(args):
     require(git('rev-parse', 'HEAD') == args.approved_sha, 'unapproved HEAD')
     require(not git('status', '--porcelain', '--untracked-files=no'), 'dirty tracked files')
     helper = repo/'experiments/src/text2cad_g5_cpu.py'
-    require(digest(helper) == '0fdce6ae27794d1f0756026cdfd69dbd4448f7df085666ac7b9a1c1659e1e0c8', 'G5 helper differs')
+    helper_pin = source_pin(helper, 'de76f9057b8759d6f02c18ac1f2c9d143f4f639d42d2e461378870a3ade5e373')
     spec = importlib.util.spec_from_file_location('g5_read_only', helper)
     e = importlib.util.module_from_spec(spec); spec.loader.exec_module(e)
     cp = repo/'experiments/configs/text2cad_g5_cpu_frozen_20261003.json'
@@ -144,7 +152,7 @@ def run(args):
     require(set(old) == set(linked['query_ids']) and len(old) == 7934, 'formal rank coverage')
     out.mkdir(parents=True, exist_ok=False); started = time.time()
     dump(out/'startup.json', dict(pid=os.getpid(), argv=sys.argv, approved_sha=args.approved_sha,
-         code_sha256=digest(Path(__file__)), python=sys.version, numpy=np.__version__, platform=platform.platform(),
+         code_sha256=digest(Path(__file__)), helper_source=helper_pin, python=sys.version, numpy=np.__version__, platform=platform.platform(),
          seed=SEED, replicates=REPLICATES, exploratory=True, zero_npu=True, score_forwards=0,
          inputs={k:dict(path=str(p),sha256=digest(p)) for k,p in pins.items()},
          raw_manifest_sha256=digest(raw/'SHA256SUMS'), formal_manifest_sha256=digest(formal/'SHA256SUMS')))
