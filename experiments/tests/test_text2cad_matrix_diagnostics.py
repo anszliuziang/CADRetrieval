@@ -1,6 +1,7 @@
 """Small hand-derived fixtures for the post-hoc alignment diagnostics."""
 import importlib.util
 import hashlib
+import subprocess
 from pathlib import Path
 import numpy as np
 import pytest
@@ -90,3 +91,22 @@ def test_python_source_pin_accepts_only_line_ending_difference(tmp_path):
     assert lf['actual_sha256'] != crlf['actual_sha256']
     p.write_bytes(b'x = 2\n')
     with pytest.raises(ValueError): m.source_pin(p,pin)
+
+
+def test_authorization_rejects_self_approval_and_code_change(tmp_path):
+    # A caller-provided HEAD hash alone must not authorize a full analysis.
+    m=module(); r=tmp_path/'repo'; r.mkdir()
+    def git(*args):
+        return subprocess.check_output(['git','-C',str(r),'-c','user.name=Toy','-c','user.email=toy@example.invalid',*args],text=True).strip()
+    git('init','-q'); (r/'experiments/scripts').mkdir(parents=True)
+    code=r/'experiments/scripts/analyze_text2cad_matrix_20261004.py'; code.write_text('x=1\n')
+    active=r/'experiments/ACTIVE_TASK.md'; active.write_text('- `state`: `review_required`\n')
+    git('add','.'); git('commit','-qm','code'); approved=git('rev-parse','HEAD')
+    with pytest.raises(ValueError): m.require_authorization(r,approved,approved)
+    active.write_text('- `state`: `pilot_authorized`\n- `approved_sha`: `'+approved+'`\n'
+                      '- `gpu_budget`: 0 卡小时\n- `max_scored_pairs`: 0\n'
+                      '- `active_subplan`: `experiments/plans/IDEA01_TEXT2CAD_EXISTING_MATRIX_DIAGNOSTICS_2026-10-04.md`\n')
+    git('add','.'); git('commit','-qm','authorize'); auth=git('rev-parse','HEAD')
+    m.require_authorization(r,approved,auth)
+    code.write_text('x=2\n'); git('add','.'); git('commit','-qm','wrong code'); wrong=git('rev-parse','HEAD')
+    with pytest.raises(ValueError): m.require_authorization(r,approved,wrong)
