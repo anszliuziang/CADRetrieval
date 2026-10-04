@@ -105,7 +105,7 @@ def test_authorization_rejects_self_approval_and_code_change(tmp_path):
     with pytest.raises(ValueError): m.require_authorization(r,approved,approved)
     active.write_text('- `state`: `pilot_authorized`\n- `approved_sha`: `'+approved+'`\n'
                       '- `gpu_budget`: 0 卡小时\n- `max_scored_pairs`: 0\n'
-                      '- `active_subplan`: `experiments/plans/IDEA01_TEXT2CAD_EXISTING_MATRIX_DIAGNOSTICS_2026-10-04.md`\n')
+                      '- `active_subplan`: `experiments/plans/IDEA01_TEXT2CAD_EXISTING_MATRIX_DIAGNOSTICS_2026-10-04.md`\n',encoding='utf-8')
     git('add','.'); git('commit','-qm','authorize'); auth=git('rev-parse','HEAD')
     m.require_authorization(r,approved,auth)
     code.write_text('x=2\n'); git('add','.'); git('commit','-qm','wrong code'); wrong=git('rev-parse','HEAD')
