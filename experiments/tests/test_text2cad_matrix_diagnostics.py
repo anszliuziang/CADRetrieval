@@ -110,3 +110,12 @@ def test_authorization_rejects_self_approval_and_code_change(tmp_path):
     m.require_authorization(r,approved,auth)
     code.write_text('x=2\n'); git('add','.'); git('commit','-qm','wrong code'); wrong=git('rev-parse','HEAD')
     with pytest.raises(ValueError): m.require_authorization(r,approved,wrong)
+
+
+def test_data_manifest_pin_checks_raw_bytes_without_normalization(tmp_path):
+    m=module(); p=tmp_path/'SHA256SUMS'
+    b=(('a'*64)+'  query_ranks.jsonl\n').encode()
+    pin=hashlib.sha256(b).hexdigest(); p.write_bytes(b)
+    assert m.data_manifest(p,pin)=={'query_ranks.jsonl':'a'*64}
+    p.write_bytes(b.replace(b'\n',b'\r\n'))
+    with pytest.raises(ValueError): m.data_manifest(p,pin)

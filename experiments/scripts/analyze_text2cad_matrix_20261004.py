@@ -61,6 +61,18 @@ def require_authorization(repo, approved_sha, authorization_ref):
     require((Path(repo)/code).read_bytes().replace(b'\r\n',b'\n')==approved.replace(b'\r\n',b'\n'), 'actual execution code differs')
 
 
+def data_manifest(path, pin):
+    raw=Path(path).read_bytes()
+    require(hashlib.sha256(raw).hexdigest()==pin and b'\r' not in raw and raw.endswith(b'\n'), 'data manifest bytes differ')
+    entries={}
+    for line in raw.decode('utf-8').splitlines():
+        sha,name=line.split('  ',1)
+        require(re.fullmatch('[0-9a-f]{64}',sha) and name not in entries
+                and not Path(name).is_absolute() and '..' not in Path(name).parts, 'invalid manifest entry')
+        entries[name]=sha
+    return entries
+
+
 def rank_row(values):
     a = np.asarray(values, dtype=np.float64)
     require(a.ndim == 1 and a.size and np.isfinite(a).all(), 'invalid scores')
@@ -165,9 +177,8 @@ def run(args):
     formal = repo/'experiments/runs/idea01_text2cad_g5_cpu_20261003'
     require(digest(formal/'metrics.json') == '6005aa72961c06cf4cf7d1fa9fc59f81e2e31f63b18fe8d94a9d8b6d60d3dec5', 'G5 metrics differ')
     # Bind every original positive rank to the certified formal artifact, not a report.
-    formal_manifest = (formal/'SHA256SUMS').read_text()
-    require(hashlib.sha256(formal_manifest.encode()).hexdigest() == 'c98e205626a9d95d4830f3c628518f5f5e34f215c80b2079948dc0e54b19be95', 'G5 manifest differs')
-    expected_query_sha = dict((name,sha) for sha,name in (line.split('  ',1) for line in formal_manifest.splitlines()))['query_ranks.jsonl']
+    formal_manifest=data_manifest(formal/'SHA256SUMS','c98e205626a9d95d4830f3c628518f5f5e34f215c80b2079948dc0e54b19be95')
+    expected_query_sha = formal_manifest['query_ranks.jsonl']
     require(digest(formal/'query_ranks.jsonl') == expected_query_sha, 'G5 positive ranks differ')
     old = {r['query_id']: r for r in e.jsonl(formal/'query_ranks.jsonl')}
     require(set(old) == set(linked['query_ids']) and len(old) == 7934, 'formal rank coverage')
