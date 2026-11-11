@@ -1,4 +1,19 @@
-# 当前任务：Text2CAD 已有矩阵补充诊断
+# 当前任务：GLM 5.3 接手夜间批（2026-11-12，环境/分析/调研）
+
+- `state`: `results_submitted`（三项夜间任务完成，等用户验收）
+- `ownership`: 用户 2026-11-11 指定 GLM 5.3 接手并授权其决定/授权新任务；计划、独立审码、SHA、预算纪律保留；Codex 按需参与
+- `night_tasks`: 用户 2026-11-12 0 时前后授权三项——①yunnao-share4 环境与资产准备；②失效原因深度分析（零前向本地诊断）；③CAD 生成×检索 benchmark 对齐调研
+- `gpu_budget`: 0 卡小时（今晚全部任务零前向）
+- `max_scored_pairs`: 0
+- `deliverables`: `experiments/submissions/idea01_next_phase_20261112/`（ENV_SETUP / TEXT2CAD_FAILURE_ANALYSIS / CAD_GENERATION_RETRIEVAL_BENCHMARK_SURVEY 三报告）
+- `share4_env`: `experiments/configs/idea01_yunnao_share4_env.json`；环境 cadretrieval-glm-torch271（torch 2.7.1+cpu / torch_npu 2.7.1.post1 / 4 卡空闲核验）；Text2CAD+BERT+IEEE-T-ASE+评价输入全部 pinned SHA 核验通过；qwen2.5-3B-SFT 按需后传
+- `failure_diag`: `experiments/scripts/analyze_text2cad_failure_factors_20261112.py`（冻结变体定义先于结果；v0 绑定正式 G5 ranks；输出 runtime/text2cad_failure_factors_20261112/）；全部 exploratory，方法选择不得据此宣称确认
+- `next_experiment_authorized`: false（E1 validation 评分矩阵 / E2 空文本背景矩阵 / E3 L1-L3 对照 / E4 判别基线 / E5 CADmium 对照均仅在失效分析 §6 建议，未启动）
+- `branch`: `glm-night-20261112`（本地提交，验收后合并）
+
+## 以下为历史任务记录（已完成并 reviewed）
+
+### Text2CAD 已有矩阵补充诊断（2026-10-04，Codex）
 
 - `state`: `reviewed`
 - `active_subplan`: `experiments/plans/IDEA01_TEXT2CAD_EXISTING_MATRIX_DIAGNOSTICS_2026-10-04.md`
@@ -6,16 +21,10 @@
 - `approved_sha`: `none`
 - `last_diagnostic_sha`: `00afcf73124edbb0056fc44cfc89d6755834efab`
 - `diagnostic_authorization_ref`: `40639e4720c3524bf166f1223e633e35b7574fe2`
-- `gpu_budget`: 0 卡小时
-- `max_scored_pairs`: 0
-- `diagnostic_invocations`: 1
 - `diagnostic_results`: `experiments/reviews/IDEA01_TEXT2CAD_MATRIX_DIAGNOSTICS_RESULTS_2026-10-04.json`
 - `diagnostic_report`: `experiments/submissions/idea01_text2cad_benchmark_20260928/CODEX_TEXT2CAD_ALIGNMENT_DIAGNOSTICS_2026-10-04.md`
 - `diagnostic_manifest_sha256`: `374d5df5406ec7ac3966adfdab0523a4703f568470a318b9e7ec0aa6f0be1ec7`（11payload；新增诊断仅本地，原G4/G5 OBS状态不变）
-- `diagnostic_transport_authorized`: false（本轮仅本地分析与共享OBS清单只读核验）
-- `next_experiment_authorized`: false（dev评分读出/语义盲审/同gallery基线仅建议，未启动）
 - `ownership`: 用户授权Codex实现/分析；不派Kimi。原正式G4/G5结果和证书保持，新增分析明确post-hoc exploratory
-- `server`: 本地CPU；4-A6000仅OBS只读。用户说明cvteam6/cvteam14跳板机故障，不访问两机。零远端执行/运输/模型下载/前向
 
 ## 以下为已完成原全量研究的交付记录
 
