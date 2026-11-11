@@ -164,8 +164,8 @@ def link_inputs():
 
 def load_matrix():
     entries = manifest_entries(RAW / "SHA256SUMS")
-    scores = np.full((N_TEXT, N_CAD), np.nan, dtype=np.float32)
-    means = np.full((N_TEXT, N_CAD), np.nan, dtype=np.float32)
+    scores = np.full((N_TEXT, N_CAD), np.nan, dtype=np.float64)
+    means = np.full((N_TEXT, N_CAD), np.nan, dtype=np.float64)
     lens = np.zeros((N_TEXT, N_CAD), dtype=np.int16)
     n_chunks = 0
     t0 = time.time()
@@ -197,8 +197,8 @@ def load_matrix():
             st = np.fromiter((r["score_total"] for r in rows), dtype=np.float64, count=N_CAD)
             mt = np.fromiter((r["mean_total"] for r in rows), dtype=np.float64, count=N_CAD)
             ln = np.fromiter((r["n_valid_total"] for r in rows), dtype=np.int32, count=N_CAD)
-            scores[t] = st.astype(np.float32)
-            means[t] = mt.astype(np.float32)
+            scores[t] = st
+            means[t] = mt
             lens[t] = ln.astype(np.int16)
             n_chunks += 1
             if n_chunks % 500 == 0:
@@ -249,7 +249,7 @@ def additive_residual(S, iters=25):
         col = (A - grand - row[:, None]).mean(axis=0)
         row = (A - grand - col[None, :]).mean(axis=1)
     resid = A - grand - row[:, None] - col[None, :]
-    return resid.astype(np.float32), row, col, grand
+    return resid, row, col, grand
 
 
 def length_residual(S, lengths):
@@ -264,7 +264,7 @@ def length_residual(S, lengths):
     b = (n * sxy - sx * sy) / denom
     a = (sy - b * sx) / n
     resid = A - (a[:, None] + b[:, None] * x[None, :])
-    return resid.astype(np.float32), b
+    return resid, b
 
 
 def main():
@@ -331,7 +331,7 @@ def main():
     halfA[perm[: N_TEXT // 2]] = True
     bA = A[halfA].mean(axis=0)
     bB = A[~halfA].mean(axis=0)
-    S_v3 = scores - np.where(halfA[:, None], bB[None, :], bA[None, :]).astype(np.float32)
+    S_v3 = scores - np.where(halfA[:, None], bB[None, :], bA[None, :])
     S_v5, b5 = length_residual(scores, lengths)
 
     variant_scores = {
