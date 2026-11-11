@@ -1,0 +1,61 @@
+{
+  "host": "yunnao-share4",
+  "recorded_utc": "2026-11-12",
+  "recorded_by": "GLM 5.3 (takeover governance 2026-11-11)",
+  "hostname": "notebook-ceff1d49-82a0-487f-84ce-cfd4c18505d5",
+  "hardware": {
+    "npu": "4x Huawei Ascend 910C (npu-smi 25.5.1), chips 4-7, 65536MB HBM each",
+    "occupancy_at_recon": "no running processes on any NPU",
+    "cpu_cores": 320,
+    "mem_gb": 1005,
+    "work_disk": "/home/ma-user/work 4.0TB (851MB used at recon)"
+  },
+  "cann": { "version": "8.3.RC1", "innerversion": "V100R001C23SPC001B235", "path": "/usr/local/Ascend" },
+  "git_checkout": {
+    "path": "/home/ma-user/work/CADRetrieval",
+    "head_at_handover": "80f53480932844941eb066ce12151c752b86dec0",
+    "origin": "https://github.com/anszliuziang/CADRetrieval.git",
+    "origin_role": "code sync / reading mirror only; authorized scoring still validates the CNB trusted remote",
+    "worktree": "clean"
+  },
+  "python_env": {
+    "path": "/home/ma-user/work/envs/cadretrieval-glm-torch271",
+    "created_from": "conda clone of /home/ma-user/anaconda3/envs/PyTorch-2.7.1",
+    "python": "3.11.10",
+    "torch": "2.7.1+cpu",
+    "torch_npu": "2.7.1.post1",
+    "npu_device_count_verified": 4,
+    "transformers": "4.53.1",
+    "numpy": "1.26.4",
+    "notes": [
+      "matches the historical yunnan-share2 project env versions",
+      "base env PyTorch-2.7.1 printed a transient 'ERR99999 UNKNOWN application exception' on first torch_npu import during recon; the cloned env imports cleanly and sees 4 devices; root cause not investigated (cosmetic observation, recorded as-is)"
+    ]
+  },
+  "assets_runtime": {
+    "root": "/home/ma-user/work/CADRetrieval_runtime",
+    "models": {
+      "Text2CAD-v1.0": "models/Text2CAD-v1.0/422d4c93198c3cd98d5c2092c0ab214b3a76a68d/Text2CAD_1.0.pth (sha256 235b137e...4598 verified)",
+      "bert-large-uncased": "models/bert-large-uncased/6da4b6a26a1877e173fca3225479512db81a5e5b/ (5 files, all pinned SHAs verified)"
+    },
+    "datasets": {
+      "Text2CAD-v1.0": "datasets/Text2CAD-v1.0/422d4c93198c3cd98d5c2092c0ab214b3a76a68d/ (cad_seq.zip 9f3a8bb8..., train_test_val.json 4ea6db90..., text2cad_v1.0.csv 32427ca7..., minimal_json zip 7e9a29ea...; all verified)",
+      "IEEE-T-ASE": "datasets/IEEE-T-ASE/4091ce30ad85b774a9231484f9b40372dc0451d3/ (sha256sum -c 6/6 OK)"
+    },
+    "evaluation_inputs": "evaluation_inputs/m0_v3/ (query.jsonl a0d8504f..., gallery.jsonl 09782bd6..., qrels/audit/leakage) + pair_manifest_v4/ + pair_manifest_v4_worker/",
+    "not_transferred": {
+      "qwen2.5-3B-SFT": "deferred (5.8GB; needed only for the CadQuery P0/P1 line; upload on demand)",
+      "Text2CAD minimal_json": "transferred and verified"
+    }
+  },
+  "network": {
+    "proxy_present": true,
+    "verified_reachable": ["huggingface.co", "hf-mirror.com", "github.com"],
+    "obs_mounts": "none (no fuse.obsfs/nfs found at recon)"
+  },
+  "transfer_incidents": [
+    "bert model.safetensors first scp attempt died with 'Connection closed' (~1.34GB); retry succeeded, SHA verified",
+    "minimal_json zip first attempt failed because only .../text2cad_v1.0/misc was created, not .../misc/minimal_json; dir pre-created and retry succeeded, SHA verified"
+  ],
+  "npu_budget_used": "0 card-hours (environment and asset preparation only; no model forward)"
+}
