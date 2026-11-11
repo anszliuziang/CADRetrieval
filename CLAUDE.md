@@ -1,4 +1,8 @@
-# CADRetrieval 项目执行约定（给 Claude Code / Kimi K3）
+# CADRetrieval 项目执行约定
+
+## 2026-11-11 交接给 GLM 5.3
+
+用户指定由 GLM 5.3 接手整个项目。接手先读[项目交接文档](experiments/HANDOFF_GLM53_2026-11-11.md)和 [ACTIVE_TASK](experiments/ACTIVE_TASK.md)；下文旧执行者及运行状态是历史记录。此前的历史前向机是两卡 `yunnan-share2`（旧别名 `yunnao-share2`）。用户另确认四卡 `yunnao-share4` 可用，尚未独立核验连接、占用和运行环境；它不继承历史机器的路径或实验授权。已完成的研究保持 `reviewed`，无待续跑任务。
 
 ## 2026-10-04 已有矩阵诊断完成
 
