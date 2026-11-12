@@ -15,7 +15,7 @@
 | 表示族 | 代表生成方法（text 条件除注明外） | 现状 |
 |---|---|---|
 | **命令/参数序列**（DeepCAD sketch-extrude JSON，272 token、8-bit 量化） | **Text2CAD**（NeurIPS 2024 Spotlight，[2409.17106](https://arxiv.org/abs/2409.17106)，BERT 编码 + cross-attention decoder；本项目主线仪器）、CAD-GPT（[2412.19663](https://arxiv.org/abs/2412.19663)）、**CADmium**（[2507.09792](https://arxiv.org/abs/2507.09792)，Qwen2.5-Coder 1.5B–14B LoRA，MIT/Apache-2.0，**生成 JSON 序列而非 CadQuery 代码**——与我们 9-30 审计结论一致）、CAD-Llama（[2505.04481](https://arxiv.org/abs/2505.04481)）、GenCAD（[2409.16294](https://arxiv.org/abs/2409.16294)，验收订正：图像条件生成，非文本条件）；编辑类：FlexCAD（[2411.05823](https://arxiv.org/abs/2411.05823)）、CAD-Editor（[2502.03997](https://arxiv.org/abs/2502.03997)） | 最成熟；评测全部 generation-only（F1/Chamfer/Invalidity）；本轮检索未发现用生成分数做检索的实例 |
-| **程序代码** | **Text-to-CadQuery**（[2505.06507](https://arxiv.org/abs/2505.06507)，文本继承 Text2CAD、CadQuery 代码由 Gemini 2.0 Flash 翻译 + 执行/渲染反馈修正，6 个开源 LLM 微调，Top-1 exact match 69.3%；HF `ricemonster/IEEE-T-ASE`，即本项目 P0/P1 仪器）、CAD-Recode（[2412.14042](https://arxiv.org/abs/2412.14042)，point cloud 条件）、CAD-Coder（同名两篇：[2505.14646](https://arxiv.org/abs/2505.14646) MIT/GenCAD-Code 147K 对；[2505.19713](https://arxiv.org/abs/2505.19713) CoT+RL）、Query2CAD（[2406.00144](https://arxiv.org/abs/2406.00144)，OpenSCAD，纯 prompt 工程）、CADCodeVerify（ICLR 2025） | 数据充足（17 万 + 百万级新数据集，见 §3）；评测 generation-only；**检索 benchmark 不存在** |
+| **程序代码** | **Text-to-CadQuery**（[2505.06507](https://arxiv.org/abs/2505.06507)，文本继承 Text2CAD、CadQuery 代码由 Gemini 2.0 Flash 翻译 + 执行/渲染反馈修正，6 个开源 LLM 微调，Top-1 exact match 69.3%；HF `ricemonster/IEEE-T-ASE`，即本项目 P0/P1 仪器）、CAD-Recode（[2412.14042](https://arxiv.org/abs/2412.14042)，point cloud 条件）、CAD-Coder（同名两篇：[2505.14646](https://arxiv.org/abs/2505.14646) MIT/GenCAD-Code 147K 对；[2505.19713](https://arxiv.org/abs/2505.19713) CoT+RL）、Query2CAD（[2406.00144](https://arxiv.org/abs/2406.00144)，OpenSCAD，纯 prompt 工程）、CADCodeVerify（ICLR 2025） | 数据充足（17 万 + 百万级新数据集，见 §3）；评测 generation-only；**本轮检索未发现现成的 text↔CadQuery 检索协议** |
 | **BRep** | SolidGen（[2203.13944](https://arxiv.org/abs/2203.13944)，无条件）、BrepGen（SIGGRAPH 2024，[2401.15563](https://arxiv.org/abs/2401.15563)，无条件/补全；**注意：2410.01551 是无关论文，勿引**）、ComplexGen（[2205.14573](https://arxiv.org/abs/2205.14573)，点云条件）、BrepDiff（SIGGRAPH 2025）、DTGBrepGen（[2503.13110](https://arxiv.org/abs/2503.13110)）、**HoLa（[2504.14257](https://arxiv.org/abs/2504.14257)，验收订正：§5.3 明确支持文本条件生成）**、BrepARG（CVPR 2026）；编辑类 B-repLer（[2508.10201](https://arxiv.org/abs/2508.10201)） | 文本条件 BRep 生成已有实例（HoLa）；检索评测见 §4（MM-CAD:B、BRepCLIP） |
 | **相邻**：text-to-3D | CLIP-Forge（CVPR 2022，zero-shot 检索式生成，ShapeNet）、Point-E、Shap-E；image-to-CAD：Img2CAD（同名两篇 [2408.01437](https://arxiv.org/abs/2408.01437)/[2410.03417](https://arxiv.org/abs/2410.03417)） | 方法论参照系（对比对齐/生成先验） |
 
@@ -99,7 +99,7 @@
 
 1. **主线对照**：把 IMMA 四个重训 baseline 数字列入我们报告的"同库参照"栏（标注训练条件差异），不再说"没有任何可比较数字"。
 2. **表示策略**：命令序列线继续用 Text2CAD 官方 test（唯一现成协议）；若论文需要"基准贡献"，优先自建 text↔CadQuery 检索协议（资产、映射、split 全部现成，缺口真实存在）。
-3. **数据来源注意**：Text2CAD/IEEE-T-ASE 为 CC BY-NC-SA 4.0（gated），公开基准衍生需核许可；Zero-To-CAD-1m（Apache-2.0）是许可最干净的大规模替代/扩充源。
+3. **数据来源注意（审慎口径）**：Text2CAD 数据为 CC BY-NC-SA 4.0（gated）；**IEEE-T-ASE 发布页缺许可元数据**（其文本继承 Text2CAD，派生资产许可须单独核对，不得直接沿用上游声明）；Zero-To-CAD-1m 发行卡标注 Apache-2.0（验收已核），是许可最清晰的大规模替代/扩充源。
 4. **引用卫生**：BrepGen 用 2401.15563；CADmium 生成的是 JSON 序列不是 CadQuery；CADPrompt 不是检索基准；ABC-NECAD 未找到出处勿引；"CAD-GRAM/BRepDiffuser"未检索到，疑为记忆混淆，勿引。
 
 ## 8. 未核验事项清单

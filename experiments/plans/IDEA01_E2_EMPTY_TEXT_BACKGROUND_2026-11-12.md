@@ -1,54 +1,63 @@
-# Idea 01 / E2：空文本背景分数小试（机制诊断）
+# Idea 01 / E2：空文本背景分数小试（机制诊断）——v2（2026-11-12 验收意见修订）
 
-状态：**计划提交，待 GLM 授权执行**（按 2026-11-11 接手治理与 2026-11-12 验收意见，新实验启动授权由 GLM 决定；本计划由 GLM 起草并自审，执行代码须另过独立 fresh review）。上位背景：失效分析 `experiments/submissions/idea01_next_phase_20261112/TEXT2CAD_FAILURE_ANALYSIS_2026-11-12.md`（验收意见：先 E2 机制诊断 → E1 事前保留评价集确认 → E3 描述具体度对照）。
+状态：**研究方向通过；本地实现 + CPU 预检进行中；正式 NPU 前向待用户批准启动**。授权模型（验收订正）：**GLM 负责实施，用户批准启动**。v1 的四点验收修正全部纳入本版（启动授权措辞、跨机分数可比门、单卡 E2 执行路径、总账预算）。
+
+## 0. 授权与绑定（验收第 1 点）
+
+- **授权模型**：GLM 负责实施；NPU 正式前向由**用户批准启动**（`ACTIVE_TASK.md` ownership 行已同步订正）。
+- **可信授权远端**：允许集合 = {CNB `https://cnb.cool/lzacode/CADRetrieval`（share2 历史），GitHub 镜像 `https://github.com/anszliuziang/CADRetrieval`（share4）}；runner 校验 `origin` URL 属于允许集合（精确匹配 + 大小写/`.git` 归一）。
+- **授权引用 ref**：runner 不再固定读 `origin/master`——E2 授权从**计划钉住的显式 ref** 读取：`origin/glm-night-20261112`（本分支已推送；后续所有 E2 代码提交都在该分支）。fetched ACTIVE_TASK 必须包含：`state`=`pilot_authorized`、**`e2_approved_sha`**（完整 40 hex == 运行 HEAD）、`e2_max_pairs`、`e2_max_card_seconds`、`e2_deadline_utc`。任一缺失/不符即拒绝。授权 ref 及其来源（远端 URL、fetched ref SHA、blob sha256）写入 environment 记录。
+- **完整批准 SHA**：启动前由用户批准的执行提交 = 本分支上含全部 E2 代码与计划的提交；运行 HEAD 必须 detached 到该 SHA 且工作树干净。
 
 ## 1. 本轮只回答什么
 
-最初 diffusion 类比的同候选差分读出在 CAD 自回归线上是否成立：**给每个候选 CAD 一次空文本背景分数 `S(∅,c)`，检验 `S(q,c) − S(∅,c)` 是否优于裸 SUM、与 v3（候选均值扣除）相比如何**。同时测量空文本背景与"候选平均条件分数背景"（v2/v3 的 col 效应）的接近程度。
+同候选差分读出：给每个候选一次空文本背景分数 `S(∅,c)`，检验 `S(q,c) − S(∅,c)` 是否优于裸 SUM、与 v3（候选均值扣除）相比如何。**定位：已探索 test 图库上的机制诊断，非方法确认**；空文本可能偏离训练分布，B0/B1 敏度对照用于检验这一点。查询侧零新前向（复用 G4 已认证分数）。
 
-**定位边界**：这是在**已探索过的 test 图库（8,046 CAD / 7,934 L0 查询）上的机制诊断**，不是方法确认。空文本可能偏离 Text2CAD 训练分布（训练时 instruction 从不为空），因此结果只用于机制解读；任何方法声明必须走 E1 的确认流程。查询侧**零新前向**（复用 G4 已认证的 S(q,c) 分数）。
+**跨机可比前提（验收第 2 点，新增门）**：G4 条件分数来自 share2，背景分数将在 share4 生成。**差分读出之前必须先通过跨机复算门**：冻结少量历史 G4 非空文本与对应候选批次，在 share4 以原协议（FP32、完整 272、batch 16/尾批 14、无 trim/cache）复算，逐对与 G4 原始分数比较，容差**事先定义**：每对 `|Δscore_total| ≤ max(1e-3, 1e-6·|score|)` 且 `n_valid` 完全一致；任一对超差即停止，不做差分。通过后全量查询矩阵继续复用。
 
-## 2. 冻结定义（先于任何结果）
+## 2. 冻结定义
 
-**对象（与 G4 完全一致，不换任何资产）**：checkpoint `235b137e…`、BERT `6da4b6a2…`、图库 = `cad_seq.zip` 8,046 候选 + `pair_manifest_v4` 冻结清单、协议 = FP32 / 完整 272 位置 / `two_head_factorized_logprob_sum`。
+**对象**：checkpoint `235b137e…`、BERT `6da4b6a2…`、图库 = `cad_seq.zip` 8,046 候选，**候选索引顺序与原 pair_manifest_v4 的 cad_store 完全一致**（构建时逐字节复制 + 运行时 SHA 对账）。
 
-**背景文本定义（两个，预先注册；B0 主、B1 敏度，不据结果挑选）**：
-- **B0（主）**：空串 `""`。编码 = 官方 `BertTokenizer` 对空串的分词结果（预期 `[CLS] [SEP]` 两个 token；运行时以 tokenizer 证据固定 ids 并写入环境记录）。**不改 `load_texts` 的通用校验**（其拒绝空串的合同保持）——新增专用加载函数 `load_background_texts`：严格要求恰 1 条记录、`text == ""`、`text_sha256 == sha256("")`、`n_chars == 0`，其余 schema 校验同 texts 表；新专用 reason code；任何偏离即拒绝。背景清单单独成目录（`background_manifest/`），sha256 入运行环境。
-- **B1（敏度）**：`"a CAD model."`（最小内容、更接近训练分布的自然语句）。作用：检验 B0 的 off-distribution 效应方向；仅报告，不进入主结论。
+**背景清单（三份，均为独立 manifest 目录）**：
+- **B0**：texts 恰 1 行 `text=""`（BERT 编码预期 `[CLS] [SEP]`，运行时以 tokenizer 证据固定 ids）；
+- **B1**：texts 恰 1 行 `text="a CAD model."`（敏度；仅报告不选主）；
+- **REPLAY（跨机复算）**：**预先注册**的 G4 历史非空文本 8 条（唯一文本 index = {0, 1, 2, 3, 1000, 2000, 3000, 3643}，取自 pair_manifest_v4 texts 表原文）× 候选 index [0, 1024)（与 G4 chunk 对齐，便于逐对比对）= **8,192 对**。
 
-**读出（全部冻结）**：
-- R0 = 裸 SUM（已有 G4 分数）；
-- **R1 = S(q,c) − S_B0(∅,c)**（主读出；同候选差分，即 PMI/DiffusionITM 式读出的自回归对应物）；
-- R1b = S(q,c) − S_B1(∅,c)（敏度）；
-- R2 = v3 半样本候选均值扣除（复用失效分析产物，作加性背景参照）。
+**准入实现**：`load_texts` 通用合同不变（仍拒绝空串）；新增专用 `load_background_texts(dir, expected_text)`：恰 1 条记录、text 与期望逐字相等、`text_sha256`/`n_chars` 一致、text_index=0 连续；REPLAY 清单用通用 `load_texts`（全部非空）。三份清单的 fingerprints 在构建时写入**提交的** `configs/text2cad_e2_background_expected_20261112.json`，运行时严格对账。
 
-**指标**：R@1/5/10/20、MedR、MeanR（7,934 查询等权）；单例（3,005）/重复（4,929）文本组分层；长度四分位（切点 27/40/70）；**配对文本组 bootstrap**（3,644 组、5,000 次、seed 20261112、共享抽样，报告 R1−R0 与 R1−R2 的 R@20/R@5 差值区间及 R@1 区间）。
-**机制统计**：`corr(S_B0(c), col_effect(c))` 与 `corr(S_B0(c), length(c))`（对照 −0.757）；每候选 `S_B0(c) − mean_t S(t,c)` 的分布；R1 与 R2 排名的 Spearman。
-**实现口径**：候选侧排名比较在 float64 下进行（失效分析的 float32 教训）；tie 按 cad_index 升序（与 G5 一致）。
+**执行路径（验收第 3 点）**：新增**单卡 E2 专用入口** `run_text2cad_e2_background.py`（模块 `idea01/text2cad_e2_runner.py`），与现有 G4 双卡正式入口并存、互不改语义：
+- E2 入口：单卡（`--device npu:X`，cards_used=1，n_shards=1）、FP32/无 trim/无 cache/**batch 16（尾批按实际）**、读 E2 三份清单、授权按 §0、E2 专用预算台账（per-invocation environment + ledger）；
+- **dry-run（CPU、零前向）实际读取 E2 三份清单**：B0 验证空串准入与 tokenizer ids、B1 验证固定句、REPLAY 验证 8 条文本与候选子集、三者共用的 8,046 候选与索引顺序对账（cad_store SHA 与原 v4 相等）；**dry-run 与 score 两个入口的校验逻辑一致**（同一模块的同一组校验函数）。
 
-## 3. 预算
+**读出（冻结）**：R0=SUM（已有）；**R1=S(q,c)−S_B0(∅,c)**；R1b=S(q,c)−S_B1(∅,c)（敏度）；R2=v3（已有）。指标：R@1/5/10/20、MedR、单例（3,005 查询）/重复（4,929 查询，**对应 639 个文本组**——口径订正）分层、长度四分位（27/40/70）；配对文本组 bootstrap（3,644 组、5,000 次、seed 20261112）。**B0 与 B1 若结论方向或幅度差异明显，结论一律写成"结果对背景文本选择敏感"**。机制统计：corr(S_B0, col_effect)、corr(S_B0, length)（对照 −0.757）、S_B0 与候选均值差分布、R1 vs R2 排名 Spearman。float64 口径、tie 按 cad_index。
 
-全库新前向 **8,046（B0）+ 8,046（B1）= 16,092 对**。按 G4 实测速率（119,885.30 卡秒 / 29,319,624 对 ≈ 4.09 ms·卡/对）外推 ≈ **66 卡秒**；预算上限设 **0.25 卡时 / 单次墙钟 30 分钟 / 单张 NPU**，先到即停非零退出。share4 四卡空闲，使用任务指定单卡。
+## 3. 总账预算（验收第 4 点）
 
-## 4. 运行前置门（share4 首次正式前向，按验收要求逐项）
+| 项 | 对数 | 说明 |
+|---|---:|---|
+| B0 背景 | 8,046 | 主背景向量 |
+| B1 背景 | 8,046 | 敏度背景向量 |
+| B0 smoke | ≥1 | 1 对真实前向（批量前强制），计入总账 |
+| REPLAY 跨机复算 | 8,192 | share4 复算 G4 历史批，过容差门 |
+| **总计（启动前锁定）** | **≥24,285 对** | 16,093 + 8,192；实际以台账为准 |
 
-1. **可信远端迁移审核**：`p1_runner.EXPECTED_ORIGIN_URL` 从单一 CNB 改为**显式允许集合**{CNB `https://cnb.cool/lzacode/CADRetrieval`，GitHub 镜像 `https://github.com/anszliuziang/CADRetrieval`}，其余授权门（state/approved_sha/approved_selection、fetch rc、problems 空）不变；本地提交 + 单测（含伪造 bare remote 的双 URL 用例与非法 URL 拒绝用例）+ 独立 fresh review。注意：Text2CAD frozen runner（`text2cad_frozen_runner.py`）同样引用该常量，一并生效。
-2. **空文本准入代码**：`load_background_texts` + B0/B1 清单构造脚本 + 单测（空表/多条/非空文本/哈希不符全拒绝）；fresh review。
-3. **share4 零 NPU 预检**：`run_text2cad_score_matrix.py --mode dry-run --scan-candidates --device cpu`（B2 已有模式）在新机通过，产出与 B2 同构证据。
-4. **1 对真实 smoke**：新 SHA 上单卡 1 对真实前向（B0 背景 × 1 候选），审逐 token/有限值/显存/耗时后，再放行批量。
-5. **评分输入构造**：E2 专用 pair manifest（1 个背景文本 × 8,046 候选 × 2 个背景定义），UID 映射与 qrels 不进入评分目录（沿用 v4 纪律）。
+- **累计上限 900 卡秒**（≈0.25 卡时；外推需求 ≈99 卡秒 + 加载开销，余量 >9×）；**共同墙钟截止**：启动时在 ACTIVE_TASK 写死 `e2_deadline_utc`（建议启动后 6 小时），任一上限先到即停非零。
+- 所有调用（smoke/批量/replay）共享同一 E2 ledger；台账未收尾拒绝续跑。
 
-## 5. 执行与产物
+## 4. 运行前置门（顺序）
 
-- `run_id`: `idea01_text2cad_e2_background_20261112`；输出 `/home/ma-user/work/CADRetrieval_runtime/runs/idea01_text2cad_e2_background_20261112/`（checkout 外），台账延续 G4 风格（per-invocation environment + budget ledger）。
-- 完成后：原始文件取回本地 Git 忽略镜像 `experiments/runs/<run_id>/`，不自引用 SHA256SUMS 双端核验，再按计划转存共享 OBS。
-- 分析：本地 CPU 复算 R1/R1b/R2 对比与 bootstrap，输出 `results.json` + 轻量 summary 进 `experiments/reviews/`；报告回填 `experiments/submissions/idea01_next_phase_20261112/E2_RESULTS_*.md`（事实/解释/建议分节）。
+1. 本地实现 + 单测：URL 允许集合、显式授权 ref、`load_background_texts`、E2 清单构建器、E2 runner（dry-run/score 一致校验）、预算台账 caps。
+2. 独立 fresh review 通过 + 用户批准启动（写 `e2_approved_sha` 等 ACTIVE_TASK 字段）。
+3. share4 CPU dry-run 预检（三清单 + 候选对账，零前向）。
+4. share4 REPLAY 跨机复算 8,192 对 → 容差门（§1）。
+5. B0 smoke 1 对 → 证据审查。
+6. B0/B1 批量 → 本地差分分析 → E2 结果报告。
 
-## 6. 停止条件
+## 5. 停止条件与产物
 
-哈希失败、tokenizer 证据与预期不符（B0 ids ≠ [CLS][SEP]）、非有限分数、超预算、远端 Git 变脏、准入代码拒绝合法输入——任一发生即停、留证、非零退出，不得放宽。结果若显示 B0 与 B1 结论方向相反且幅度大，只如实报告并降级机制解读（off-distribution 主导的信号）。
+哈希失败、tokenizer 证据不符、replay 超容差、非有限分数、超 900 卡秒或墙钟截止、远端 Git 变脏、准入拒绝——任一即停、留证、非零。产物：`runs/idea01_text2cad_e2_background_20261112/`（checkout 外）→ 本地镜像 + SHA256SUMS → 共享 OBS；分析输出 `results.json` + 轻量 summary 进 `experiments/reviews/`；报告回填 `submissions/idea01_next_phase_20261112/E2_RESULTS_*.md`。
 
-## 7. 与 E1/E3 的衔接（摘自验收意见，E1/E3 另立计划）
+## 6. 与 E1/E3 衔接（不变）
 
-- **E1**：若用开发文本估计目标图库逐候选背景，必须在**同一批目标 CAD** 上估计；若按开发集 Recall 选方法，开发图库必须含开发正例；最终评价用事前保留的查询与图库协议。E2 的 B0/B1 若要进入确认流程，须在 E1 的开发协议下重新冻结并只保留一个背景定义。
-- **E3**：L1/L3 同库对照，检验描述具体度对登记 UID 检索的影响（规模另行估算）。
+E1：开发文本估计目标图库逐候选背景必须在同一批目标 CAD 上估计；按开发集 Recall 选方法则开发图库须含开发正例；最终评价用事前保留的查询与图库协议。E3：L1/L3 同库对照。

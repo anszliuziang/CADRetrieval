@@ -1,12 +1,13 @@
 # 当前任务：E2 空文本背景小试（2026-11-12，计划已提交待执行授权）
 
-- `state`: `implementation`（E2 计划提交完成；代码实现/预检待做；**真实前向未启动**）
-- `ownership`: 用户 2026-11-11 指定 GLM 5.3 接手；**新实验启动授权由 GLM 决定（2026-11-12 验收确认），用户保留最终指令权**；计划先行、独立审码、SHA、预算纪律保留；Codex/评审按需参与
-- `plan`: `experiments/plans/IDEA01_E2_EMPTY_TEXT_BACKGROUND_2026-11-12.md`
-- `acceptance`: 2026-11-12 验收（runtime/glm_night_acceptance_codex_20261112/EXPERIMENT_AUDIT.md）：share4 环境通过；失效分析数表按探索结果接收、归因措辞已订正；调研退回修订（已修订：MM-CAD:B / HoLa / BRepCLIP / CadQuery 训练隔离 4,581 UID / 新颖性审慎口径）；下一步优先 E2
-- `e2_budget`: 全库新前向 16,092 对（B0+B1 背景 × 8,046）；上限 0.25 卡时 / 30 分钟墙钟 / 单卡 FP32 full 272；查询侧零新前向
-- `e2_prerequisites`: ①可信远端迁移（EXPECTED_ORIGIN_URL → CNB+GitHub 镜像允许集合，自审+单测+fresh review）②空文本专用准入 loader（不改 load_texts 通用校验）③share4 零 NPU dry-run 预检 ④1 对真实 smoke ⑤E2 专用 manifest（不含 UID/qrels 于评分目录）
-- `e2_positioning`: 已探索 test 图库上的机制诊断；非方法确认；E1 确认流程见计划 §7
+- `state`: `implementation`（E2 本地实现完成：URL 允许集合/显式授权 ref、load_background_texts、单卡 E2 runner（dry-run 与 score 共用校验）、三清单构建器、E2 指纹配置；**本地 CPU dry-run 预检通过**（B0 tokenizer=[101,102]、三清单+8,046 候选对账、零前向）；待：独立审码、share4 torch 全测+dry-run、REPLAY 跨机复算、用户批准启动后 smoke+批量）
+- `ownership`: 用户 2026-11-11 指定 GLM 5.3 接手；**GLM 负责实施，NPU 正式前向由用户批准启动**（2026-11-12 二次验收订正）；计划先行、独立审码、SHA、预算纪律保留；评审按需参与
+- `plan`: `experiments/plans/IDEA01_E2_EMPTY_TEXT_BACKGROUND_2026-11-12.md`（v2，含验收四点修正）
+- `acceptance`: 2026-11-12 验收（runtime/glm_night_acceptance_codex_20261112/EXPERIMENT_AUDIT.md）：E2 研究方向通过，进入本地实现与 CPU 预检；正式 NPU 前向待用户批准
+- `e2_authorization`: 授权远端允许集合 = {CNB `https://cnb.cool/lzacode/CADRetrieval`, GitHub 镜像 `https://github.com/anszliuziang/CADRetrieval`}；授权 ref = `origin/glm-night-20261112`（runner 从 fetched ACTIVE_TASK 读 `state=pilot_authorized` + `e2_approved_sha`（==HEAD）+ `e2_max_pairs` + `e2_max_card_seconds` + `e2_deadline_utc`）；启动时本文件须已写入完整批准 SHA
+- `e2_budget`: 总账 ≥24,285 对 = B0 8,046 + B1 8,046 + smoke ≥1 + REPLAY 跨机复算 8,192；**累计上限 900 卡秒**；**共同墙钟截止 `e2_deadline_utc` 于启动时写死**；先到即停非零
+- `e2_prerequisites`: ①URL 允许集合 + 显式授权 ref（代码+单测+fresh review）②`load_background_texts` 专用准入（`load_texts` 合同不变）③E2 单卡执行路径（dry-run 与 score 校验一致；B0/B1/REPLAY 三清单 + 8,046 候选顺序对账）④share4 CPU dry-run 预检 ⑤REPLAY 跨机容差门（`|Δ|≤max(1e-3,1e-6·|s|)` 且 n_valid 全等）先行 ⑥B0 smoke 计入总账
+- `e2_positioning`: 已探索 test 图库上的机制诊断；非方法确认；B0/B1 差异明显时结论写作"结果对背景文本选择敏感"
 - `night_tasks`: 用户 2026-11-12 授权三项夜间任务已完成并验收（share4 环境通过/失效分析接收/调研修订后通过路径以本轮修订为准）
 - `gpu_budget`: 0 卡小时（E2 未启动；启动后按 e2_budget）
 - `max_scored_pairs`: 0（E2 未启动；启动后 ≤16,092 新前向）

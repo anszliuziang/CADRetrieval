@@ -1,0 +1,71 @@
+{
+  "schema": "text2cad-e2-background-expected-v1",
+  "authorization_ref": "origin/glm-night-20261112",
+  "plan": "experiments/plans/IDEA01_E2_EMPTY_TEXT_BACKGROUND_2026-11-12.md",
+  "backgrounds": {
+    "b0": {
+      "texts_sha256": "5fe69498cd968942b53c9dfb96987b18401466a9bde8a7d40533ff2d0f398d92",
+      "cad_store_sha256": "2f441110f013bb614b0bd2fdb7a3b49569a231bbf3f8eaa2c03ac1d725cb1380",
+      "cad_length_index_sha256": "daac66a102e34fe45c9cb474922076b0d62345ab0c9796f917a0f8085c6ea0c3",
+      "pair_manifest_sha256": "042560b9685bfe23cca68ceee38f6bd148480cf7a4d5758cf7ec9ef0b65bbf56"
+    },
+    "b1": {
+      "texts_sha256": "6c99b6ec504d8e2dab8c18ac4746268370f9ca7b6de4f4e0e929b3967730ed5d",
+      "cad_store_sha256": "2f441110f013bb614b0bd2fdb7a3b49569a231bbf3f8eaa2c03ac1d725cb1380",
+      "cad_length_index_sha256": "daac66a102e34fe45c9cb474922076b0d62345ab0c9796f917a0f8085c6ea0c3",
+      "pair_manifest_sha256": "19361b2bdfbe854214558e8c8d2735aa0a8702ed7ee2af3a4ececb5c32cf9a3a"
+    },
+    "replay": {
+      "texts_sha256": "bcdebdbe5e02c8dbdf5c22664edf91a947b50f30004afcffa8cd65b44902ea1c",
+      "cad_store_sha256": "52e34b3ad89121f639cfe0d322cf545211ce86beb655193bdfb0ddd33d0a35f0",
+      "cad_length_index_sha256": "34fdbefa7b52c0a48f4087fafe558dd555fd46e087cc729403775098e26e1c89",
+      "pair_manifest_sha256": "22c5b22a6cd5e7b1ce8f5ab9ee3313da8a8f4db2c2b863cbe19e4c564acb6517"
+    }
+  },
+  "original_cad_store_sha256": "2f441110f013bb614b0bd2fdb7a3b49569a231bbf3f8eaa2c03ac1d725cb1380",
+  "replay_texts": [
+    {
+      "original_text_index": 0,
+      "text": "A simple geometric shape, resembling a cube with a triangular cutout on one side.",
+      "text_sha256": "00434bbaa4072a92df04a7f617ceb0ca27caa5b27e31000916c07fa2a5568e11"
+    },
+    {
+      "original_text_index": 1,
+      "text": "A cylindrical object with a slightly tapered top and bottom, and a flat bottom. The object has a central hole that is slightly larger than the cylinder's diameter. The object is symmetrical along its central axis.",
+      "text_sha256": "004d04e07df3db258869e1673677b42cbe4447d05c9ad18103ed858ae9bb10a2"
+    },
+    {
+      "original_text_index": 2,
+      "text": "A long, thin, rectangular prism with a slightly tapered shape, narrowing slightly towards the top. The top and bottom faces are parallel to each other, and the sides are perpendicular to the base and top faces. The prism is centered in the image.",
+      "text_sha256": "005059c7ca8c63b6b75e2b49561c21e94a017e432fffe2bbed9016eb9c26618b"
+    },
+    {
+      "original_text_index": 3,
+      "text": "A rectangular prism with a cylindrical hole in the center. The prism has a flat top and bottom, and the sides are parallel to each other. The cylindrical hole is centered on the prism's axis. The dimensions of the prism are 4 units long, 2 units wide, and 1 unit tall. The hole is 1 unit in diameter. The prism is gray.",
+      "text_sha256": "00652fcfbea10414a107a9fb6dacd73bfcd470e84e39768422b6f4b039ac32ca"
+    },
+    {
+      "original_text_index": 1000,
+      "text": "A three-dimensional, abstract, geometric shape with a curved, elongated form, resembling a stylized letter 'J'. It appears to be a monochromatic, metallic object with a smooth surface. The shape is symmetrical along a central vertical axis, with a slightly tapered, rectangular base that narrows towards the top. The upper part of the 'J' is composed of two curved lines that meet at a sharp angle.</",
+      "text_sha256": "44f375a39b07261ecb42f4d2a9655ce8ed982bd7f8ba3b62863d319f2fd36253"
+    },
+    {
+      "original_text_index": 2000,
+      "text": "A rectangular prism with a flat bottom and a flat top, connected by a rectangular side panel.",
+      "text_sha256": "8dbeac25b39d696e503e05c0dc0cd63697b0821cc1286bbbda4f441d9c6ea023"
+    },
+    {
+      "original_text_index": 3000,
+      "text": "A cylindrical object with a flat top and bottom, connected by a cylindrical section. The top and bottom sections are slightly larger than the cylindrical section, creating a stepped appearance. The object is symmetrical along its central axis.",
+      "text_sha256": "d32bff0355a4a538e5ae9ddff75deb8ab51349e788e8ea64b29f059f0510689f"
+    },
+    {
+      "original_text_index": 3643,
+      "text": "A 3D model of a rectangular prism with a cylindrical hole in the center. The prism has a flat top and bottom. The hole is located in the center of the prism. The dimensions of the prism are 2 units by 4 units by 6 units. The cylindrical hole has a diameter of 1 unit.",
+      "text_sha256": "ffc72b12fe232ea56d692545bc15b626dfcd0d5c9c3854810a437ac3583c9426"
+    }
+  ],
+  "replay_n_cads": 1024,
+  "cad_seq_zip_sha256": "9f3a8bb85f9ceb078c19bc43f750fe596d3323631f2e846a7f541e47af7e7eaa",
+  "budget_note": "caps live in ACTIVE_TASK e2_* fields at launch; totals >= 24,285 pairs / <= 900 card-seconds / deadline e2_deadline_utc"
+}

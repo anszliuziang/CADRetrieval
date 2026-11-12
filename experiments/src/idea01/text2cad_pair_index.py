@@ -109,6 +109,7 @@ REASON_DUPLICATE_ID = "duplicate_id"
 REASON_ORDER_MISMATCH = "order_mismatch"
 REASON_COUNT_MISMATCH = "count_mismatch"
 REASON_TEXT_DRIFT = "text_drift"
+REASON_BACKGROUND_TEXT_MISMATCH = "background_text_mismatch"
 REASON_MEMBER_MISMATCH = "member_mismatch"
 REASON_ZIP_MEMBER_MISSING = "zip_member_missing"
 REASON_ASSET_SHA_MISMATCH = "asset_sha256_mismatch"
@@ -925,6 +926,36 @@ def load_texts(manifest_dir) -> list[str]:
     if any(t is None for t in texts):
         raise PairIndexError(REASON_COUNT_MISMATCH, "text_index coverage is not contiguous")
     return [t for t in texts if t is not None]
+
+
+def load_background_texts(manifest_dir, expected_text: str) -> str:
+    """E2-only auditable admission for a single designated background text.
+
+    The general `load_texts` contract is UNTOUCHED (it keeps rejecting empty
+    strings for query texts). This loader accepts EXACTLY one texts.jsonl
+    record whose text equals `expected_text` verbatim -- including the empty
+    string for the E2 B0 background -- with consistent text_sha256/n_chars
+    and text_index 0. Anything else is a hard refusal.
+    """
+    manifest_dir = Path(manifest_dir)
+    records = read_jsonl_strict(manifest_dir / TEXTS_FILE, TEXTS_RECORD_KEYS, TEXTS_FILE)
+    if len(records) != 1:
+        raise PairIndexError(
+            REASON_COUNT_MISMATCH,
+            f"background manifest must contain exactly 1 text record, got {len(records)}",
+        )
+    rec = records[0]
+    if rec["text_index"] != 0:
+        raise PairIndexError(REASON_FIELD_MISMATCH, f"background text_index must be 0, got {rec['text_index']!r}")
+    text = rec["text"]
+    if not isinstance(text, str) or text != expected_text:
+        raise PairIndexError(
+            REASON_BACKGROUND_TEXT_MISMATCH,
+            f"background text mismatch: got {text!r}, expected {expected_text!r}",
+        )
+    if rec["text_sha256"] != sha256_text(text) or rec["n_chars"] != len(text):
+        raise PairIndexError(REASON_FIELD_MISMATCH, "background text integrity drift")
+    return text
 
 
 def load_cad_store(manifest_dir) -> list[str]:

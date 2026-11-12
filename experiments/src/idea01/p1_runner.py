@@ -284,6 +284,12 @@ class BudgetLedger:
 # ------------------------------------------------------- authorization (R3)
 
 EXPECTED_ORIGIN_URL = "https://cnb.cool/lzacode/CADRetrieval"
+EXPECTED_ORIGIN_URL_GITHUB_MIRROR = "https://github.com/anszliuziang/CADRetrieval"
+#: Trusted-remote allowlist (2026-11-12 E2 migration): CNB is the historical
+#: authorized remote (share2); the GitHub mirror is the share4 checkout origin.
+#: Both are accepted by default; anything else is refused. Callers that pass an
+#: explicit `expected_origin` still get exact-match semantics (tests, toys).
+EXPECTED_ORIGIN_URLS = (EXPECTED_ORIGIN_URL, EXPECTED_ORIGIN_URL_GITHUB_MIRROR)
 ACTIVE_TASK_BLOB = "experiments/ACTIVE_TASK.md"
 AUTHORIZATION_REF = "origin/master"
 
@@ -295,11 +301,20 @@ def normalize_remote_url(url: str) -> str:
     return u
 
 
-def fetch_authorized_active_task(repo_root: Path, expected_origin: str = EXPECTED_ORIGIN_URL, ref: str = AUTHORIZATION_REF) -> tuple[str | None, dict]:
+def origin_allowed(url: str, allowed_origins=EXPECTED_ORIGIN_URLS) -> bool:
+    want = {normalize_remote_url(o) for o in allowed_origins}
+    return normalize_remote_url(url) in want
+
+
+def fetch_authorized_active_task(repo_root: Path, expected_origin: str | None = None, ref: str = AUTHORIZATION_REF) -> tuple[str | None, dict]:
     """R3 (review addendum): read the authorization from the Codex-controlled
     origin ref AFTER `git fetch`, never from the detached HEAD's working tree
     (a commit cannot contain its own approved_sha; the working-tree file could
     be stale or self-authored). Validates the origin remote URL first.
+
+    `expected_origin=None` (production default) validates against the trusted
+    allowlist `EXPECTED_ORIGIN_URLS` (CNB + GitHub mirror); an explicit value
+    requires an exact match (toy/test usage).
 
     Returns (text, meta): text is None on refusal; meta carries audit fields
     (origin url, ref sha, blob sha256, fetch rc) and problems."""
@@ -316,8 +331,14 @@ def fetch_authorized_active_task(repo_root: Path, expected_origin: str = EXPECTE
         meta["problems"].append(f"cannot read origin remote url: {e}")
         return None, meta
     meta["origin_url"] = url
-    if normalize_remote_url(url) != normalize_remote_url(expected_origin):
-        meta["problems"].append(f"origin remote {url!r} != expected {expected_origin!r}")
+    if expected_origin is not None:
+        origin_ok = normalize_remote_url(url) == normalize_remote_url(expected_origin)
+        expected_desc = expected_origin
+    else:
+        origin_ok = origin_allowed(url)
+        expected_desc = "allowlist " + " | ".join(EXPECTED_ORIGIN_URLS)
+    if not origin_ok:
+        meta["problems"].append(f"origin remote {url!r} not authorized (expected {expected_desc})")
         return None, meta
     try:
         r = git("fetch", "origin", timeout=300)
