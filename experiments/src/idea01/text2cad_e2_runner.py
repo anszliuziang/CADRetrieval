@@ -271,40 +271,51 @@ GRACE_S = 30.0  # termination grace, COUNTED INTO the caps (KILL lands by the de
 def _supervise_loop(parent_pid: int, ledger_path: str, wall_deadline: float,
                     max_card_seconds: float, cards_used: int = 1,
                     now_fn=time.time, sleep_fn=time.sleep):
-    """Independent supervision PROCESS (G4-style, review round 6): a separate
-    interpreter that cannot be blocked by the scoring process. Signals are
-    scheduled on ABSOLUTE times:
+    """Independent supervision PROCESS (G4-style, round 7): signals are
+    scheduled on ABSOLUTE times computed from the FIRST ledger snapshot - no
+    second sample is needed. With N cards, card-seconds accrue at N per wall
+    second, so the card-second deadline is deterministic:
 
-      hard  = min(wall_deadline, projected card-second deadline)
-      TERM  at hard - GRACE_S
-      KILL  at hard            (the grace is counted INTO the caps; the child
-                                is dead BY the deadline, never after it)
+      card_deadline = first_snapshot_time + (cap - spent_at_snapshot) / N
+      hard          = min(wall_deadline, card_deadline)
+      TERM at hard - GRACE_S
+      KILL at hard                     (grace counted INTO the caps; the child
+                                        is dead BY the deadline)
 
-    The card-second deadline is estimated from the ledger consumption rate
-    (two-sample estimate, re- refreshed every tick). The wall-clock check runs
-    INDEPENDENTLY of ledger reads (a ledger read failure must never skip it).
-    now_fn/sleep_fn are injectable for controllable-clock regressions; a real
-    stuck child is expected to IGNORE SIGTERM so only SIGKILL ends it - the
-    POSIX regression asserts exactly that.
+    The wall arm is independent of ledger reads (a read failure never skips
+    it). Once TERM is sent the supervisor ONLY waits for the unsent KILL at
+    its absolute time - no further ledger polling. If the ledger later shows
+    the cap NOT reached by TERM time that is irrelevant: the conservative
+    first-snapshot arithmetic stands. now_fn/sleep_fn are injectable for
+    controllable-clock regressions. A stuck child that IGNORES SIGTERM is
+    killed by SIGKILL at `hard` (the POSIX regression asserts the exit signal
+    and the timing).
     """
     import signal
-    import time as _time
 
-    term_at = None       # absolute time when SIGTERM is due (None = not yet known)
-    kill_at = None       # absolute time when SIGKILL is due
-    term_sent = False
-    kill_sent = False
-    prev_sample = None   # (time, cumulative card-seconds incl. pending)
+    def hard_kill_at(reason: str, at: float) -> None:
+        print(f"E2 supervision: SIGTERM to {parent_pid} at {at:.3f} ({reason})",
+              file=sys.stderr, flush=True)
+        try:
+            os.kill(parent_pid, signal.SIGTERM)
+        except OSError:
+            pass
+        while now_fn() < at - 1e-9:
+            sleep_fn(max(0.0, min(1.0, at - now_fn())))
+        print(f"E2 supervision: SIGKILL to {parent_pid} at {at:.3f}", file=sys.stderr,
+              flush=True)
+        try:
+            os.kill(parent_pid, signal.SIGKILL)
+        except OSError:
+            pass
+        os._exit(3)
 
-    while True:
+    # FIRST snapshot fixes the absolute card deadline immediately (round 7,
+    # item 1): cards_used card-seconds accrue per wall second, so the remaining
+    # (cap - spent) card-seconds are exactly (cap - spent)/N wall seconds away.
+    first = None
+    while first is None:
         now = now_fn()
-
-        # --- wall-clock arm: independent of any ledger read ---
-        if term_at is None and now >= wall_deadline - GRACE_S:
-            term_at = wall_deadline - GRACE_S
-            kill_at = wall_deadline
-
-        # --- card-second arm: estimate the consumption rate from the ledger ---
         try:
             data = json.loads(Path(ledger_path).read_text(encoding="utf-8"))
             started = None
@@ -313,69 +324,68 @@ def _supervise_loop(parent_pid: int, ledger_path: str, wall_deadline: float,
                     started = float(inv["started_epoch"])
                     break
             if started is not None:
-                total = float(data.get("card_seconds_spent", 0.0)) + max(
+                spent = float(data.get("card_seconds_spent", 0.0)) + max(
                     0.0, now - started) * cards_used
-                if term_at is None:
-                    if prev_sample is not None:
-                        dt = now - prev_sample[0]
-                        ds = total - prev_sample[1]
-                        if dt > 0 and ds > 0:
-                            rate = ds / dt  # card-seconds per wall second
-                            card_deadline = now + max(0.0, max_card_seconds - total) / rate
-                            if card_deadline < wall_deadline:
-                                term_at = card_deadline - GRACE_S
-                                kill_at = card_deadline
-                    prev_sample = (now, total)
-                else:
-                    # card arm already armed: re-estimate and pull it EARLIER
-                    # if consumption accelerated, never later
-                    if prev_sample is not None:
-                        dt = now - prev_sample[0]
-                        ds = total - prev_sample[1]
-                        if dt > 0 and ds > 0:
-                            rate = ds / dt
-                            card_deadline = now + max(0.0, max_card_seconds - total) / rate
-                            if card_deadline < wall_deadline:
-                                cand_t = card_deadline - GRACE_S
-                                if term_at is None or cand_t < term_at:
-                                    term_at = cand_t
-                                    kill_at = card_deadline
-                    prev_sample = (now, total)
+                first = (now, spent)
         except Exception:
-            pass  # ledger not written yet / transient read error: wall arm unaffected
+            pass  # ledger not written yet; retry on the next tick
+        if first is None:
+            if now >= wall_deadline:
+                hard_kill_at("wall deadline while ledger unreadable", now)
+            sleep_fn(min(5.0, max(0.05, wall_deadline - now)))
+            continue
 
-        # --- fire on the ABSOLUTE schedule ---
-        if not term_sent and term_at is not None and now >= term_at:
-            print(f"E2 supervision: SIGTERM to {parent_pid} (hard deadline "
-                  f"{kill_at:.3f}; TERM grace counted into the caps)",
-                  file=sys.stderr, flush=True)
+    snap_t, snap_spent = first
+    card_deadline = snap_t + max(0.0, max_card_seconds - snap_spent) / cards_used
+    hard = min(wall_deadline, card_deadline)
+    term_at = hard - GRACE_S
+    now = now_fn()
+    if now >= hard:
+        hard_kill_at("hard deadline already passed at supervision start", hard)
+
+    term_sent = False
+    while True:
+        now = now_fn()
+        if not term_sent and now >= term_at:
+            print(f"E2 supervision: SIGTERM to {parent_pid} at {term_at:.3f} "
+                  f"(hard {hard:.3f})", file=sys.stderr, flush=True)
             try:
                 os.kill(parent_pid, signal.SIGTERM)
             except OSError:
                 pass
             term_sent = True
-        if term_sent and not kill_sent and now >= kill_at:
-            print(f"E2 supervision: SIGKILL to {parent_pid} at the absolute hard deadline",
+        if term_sent:
+            # ONLY wait for the unsent KILL at its absolute time; no ledger
+            # polling after TERM (round 7, item 1)
+            while now_fn() < hard - 1e-9:
+                sleep_fn(max(0.0, min(1.0, hard - now_fn())))
+            print(f"E2 supervision: SIGKILL to {parent_pid} at {hard:.3f}",
                   file=sys.stderr, flush=True)
             try:
                 os.kill(parent_pid, signal.SIGKILL)
             except OSError:
                 pass
-            kill_sent = True
             os._exit(3)
-        if kill_sent:
-            return  # child is dead; supervisor exits
+        nxt = min(term_at, wall_deadline)
+        sleep_fn(max(0.05, min(5.0, nxt - now_fn())))
 
-        # sleep until the next scheduled moment (or the poll tick), on the
-        # injected clock
-        now2 = now_fn()
-        nxt = GRACE_S
-        for t in (term_at, kill_at):
-            if t is not None:
-                nxt = min(nxt, max(0.0, t - now2))
-        nxt = min(nxt, 5.0) if (term_at is None or kill_at is None or now2 < term_at) else max(
-            0.0, min(nxt, kill_at - now2))
-        sleep_fn(max(0.0, min(nxt, 5.0)))
+
+def start_deadline_supervision(auth: dict, ledger_path: Path):
+    """Spawn the independent supervisor process (POSIX only; elsewhere the
+    in-loop checks and the operator's outer timeout remain, recorded honestly).
+    Returns the process handle or None."""
+    import multiprocessing as mp
+
+    if os.name != "posix":
+        return None
+    proc = mp.Process(
+        target=_supervise_loop,
+        args=(os.getpid(), str(ledger_path), float(auth["deadline_epoch"]),
+              float(auth["max_card_seconds"]), 1),
+        daemon=True,
+    )
+    proc.start()
+    return proc
 
 
 def start_deadline_supervision(auth: dict, ledger_path: Path):
@@ -411,7 +421,7 @@ def _ensure_outside_checkout(out_dir: Path, repo_root: Path) -> None:
         raise E2Error(f"out_dir {out_resolved} is inside the Git checkout {repo_resolved}")
 
 
-def verify_background_done(run_root: Path, ledger, which: str, success_note: str, n_pairs: int) -> dict:
+def verify_background_done(run_root: Path, ledger, which: str, success_note: str, n_pairs: int, cap: float) -> dict:
     """Execution-order gate for a COMPLETED background: the shared ledger must
     contain a finalized, successful invocation with the exact success note and
     the real per-invocation pairs_charged field, and the background's chunk
@@ -436,42 +446,46 @@ def verify_background_done(run_root: Path, ledger, which: str, success_note: str
             f"gate {which}: shared ledger has no finalized successful invocation with note "
             f"{success_note!r} and pairs_charged >= {n_pairs}"
         )
-    # evidence check: the success note is only consumable together with the
-    # per-invocation environment + summary records (review round 5, item 2)
+    # evidence check (review round 7, item 2): the FINAL SETTLEMENT record is
+    # the authoritative verdict - it must exist, declare success, and bill
+    # within the cap; the environment + summary records must merely exist
     missing = []
     settle_bad = []
     for i in ok[:1]:
-        # the SUMMARY is the settlement record and must carry settle_ok=true;
-        # the environment record must merely exist
         env_f = run_root / f"environment_{i['invocation_id']}.json"
         sum_f = run_root / f"summary_{i['invocation_id']}.json"
+        fin_f = run_root / f"final_settlement_{i['invocation_id']}.json"
         if not env_f.is_file():
             missing.append(env_f.name)
         if not sum_f.is_file():
             missing.append(sum_f.name)
+        if not fin_f.is_file():
+            missing.append(fin_f.name)
             continue
         try:
-            content = json.loads(sum_f.read_text(encoding="utf-8"))
-            if content.get("settle_ok") is not True:
-                settle_bad.append(sum_f.name)
+            fin = json.loads(fin_f.read_text(encoding="utf-8"))
+            if fin.get("settle_ok") is not True or fin.get("breach") is not False:
+                settle_bad.append(f"{fin_f.name}: verdict/breach")
+            elif float(fin.get("ledger_card_seconds", -1)) > cap + 1e-6:
+                settle_bad.append(f"{fin_f.name}: card_seconds over cap")
         except Exception:  # noqa: BLE001
-            settle_bad.append(sum_f.name)
+            settle_bad.append(fin_f.name)
     if missing:
         raise E2Error(
             f"gate {which}: success note present but evidence records missing: {missing}"
         )
     if settle_bad:
         raise E2Error(
-            f"gate {which}: evidence records do not carry settle_ok=true: {settle_bad}"
+            f"gate {which}: final settlement does not authorize success: {settle_bad}"
         )
     return {"invocations": [i["invocation_id"] for i in ok], "chunk": chunk_files[0].name,
             "evidence_verified": True}
 
 
-def verify_smoke_done(run_root: Path, ledger) -> dict:
+def verify_smoke_done(run_root: Path, ledger, cap: float) -> dict:
     """The contractual 1-pair smoke must be completed (exact note + real
     pairs_charged field + one scored pair on disk)."""
-    return verify_background_done(run_root, ledger, "smoke_b0", SMOKE_NOTE, 1)
+    return verify_background_done(run_root, ledger, "smoke_b0", SMOKE_NOTE, 1, cap)
 
 
 def verify_replay_gate(run_root: Path, cfg: dict, auth: dict, ledger) -> dict:
@@ -485,7 +499,8 @@ def verify_replay_gate(run_root: Path, cfg: dict, auth: dict, ledger) -> dict:
     # the REPLAY stage itself must have SETTLED SUCCESSFULLY in the shared
     # ledger with its evidence records present (round 6, item 3: a FAILED
     # replay - e.g. evidence_write_failed - can never feed a batch)
-    gates_ev = verify_background_done(run_root, ledger, "replay", SUCCESS_NOTE["replay"], want_pairs)
+    gates_ev = verify_background_done(run_root, ledger, "replay", SUCCESS_NOTE["replay"], want_pairs,
+                                      float(auth["max_card_seconds"]))
     rec_path = run_root / "replay_gate_record.json"
     if not rec_path.is_file():
         raise E2Error(
@@ -544,12 +559,13 @@ def require_prerequisite_gates(run_root: Path, which: str, cfg: dict, auth: dict
     tolerance-gate record, then b0 (its own success record required by b1),
     and only then b1."""
     gates: dict[str, Any] = {}
+    cap = float(auth["max_card_seconds"])
     if which != "smoke_b0":
-        gates["smoke"] = verify_smoke_done(run_root, ledger)
+        gates["smoke"] = verify_smoke_done(run_root, ledger, cap)
     if which in ("b0", "b1"):
         gates["replay_gate"] = verify_replay_gate(run_root, cfg, auth, ledger)
     if which == "b1":
-        gates["b0_done"] = verify_background_done(run_root, ledger, "b0", B0_OK_NOTE, int(cfg["backgrounds"]["b0"]["n_unique_text"]) * int(cfg["backgrounds"]["b0"]["n_gallery"]))
+        gates["b0_done"] = verify_background_done(run_root, ledger, "b0", B0_OK_NOTE, int(cfg["backgrounds"]["b0"]["n_unique_text"]) * int(cfg["backgrounds"]["b0"]["n_gallery"]), cap)
     return gates
 
 
@@ -774,9 +790,9 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
                 f"{type(exc).__name__}: {exc}")
 
     # ---- settle #2 at the SAME clock, AFTER the evidence writes (round 6 #2):
-    # time spent writing evidence is honestly accounted; on failure the
-    # evidence files are REWRITTEN as failure evidence and the success note is
-    # never written
+    # time spent writing evidence is honestly accounted; on failure the success
+    # note is never written and the authoritative final settlement record
+    # (written after finalize) carries settle_ok=false
     now2 = NOW_FN()
     if exit_code == 0:
         projected2 = float(ledger.data.get("card_seconds_spent", 0.0)) + max(
@@ -789,35 +805,41 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
         elif now2 > auth["deadline_epoch"]:
             exit_code, note, failure = 2, "deadline_exceeded", (
                 "wall-clock deadline passed during the evidence writes")
-    if exit_code != 0:
-        # rewrite the evidence as FAILURE evidence so the files on disk can
-        # never contradict the ledger verdict
-        try:
-            fail_record = {
-                "invocation_id": invocation_id, "e2_background": which,
-                "approved_sha": auth["approved_sha"], "failure": failure,
-                "settlement": {"card_seconds_spent": spent,
-                                "max_card_seconds": auth["max_card_seconds"]},
-                "settle_ok": False,
-            }
-            atomic_publish(run_root / f"environment_{invocation_id}.json",
-                           [json.dumps(fail_record, indent=2, sort_keys=True, ensure_ascii=False)])
-            atomic_publish(run_root / f"summary_{invocation_id}.json",
-                           [json.dumps(fail_record, indent=2, sort_keys=True, ensure_ascii=False)])
-        except Exception:  # noqa: BLE001 - failure evidence is best-effort
-            pass
 
     if exit_code == 0:
         note = SUCCESS_NOTE[which]
-    # finalize LAST, with the one final verdict; the process exit code below is
-    # derived from the SAME values the ledger records
+    # finalize LAST, with the verdict from settle #2; the ledger then bills
+    # with its OWN clock - that AUTHORITATIVE number decides the final verdict
+    # (review round 7, item 2: verdict and billing share one settlement)
     ledger.finalize_invocation(invocation_id, exit_code=exit_code, note=note)
-    settled = float(ledger.data.get("card_seconds_spent", 0.0))
-    if settled > auth["max_card_seconds"] + 1e-6 and exit_code == 0:
-        # unreachable safety net after the projection refusal
-        print(f"E2 FATAL: LEDGER BREACH: settled {settled:.2f} card-seconds exceed cap "
-              "with a success verdict", file=sys.stderr, flush=True)
-        return 3
+    authoritative = float(ledger.data.get("card_seconds_spent", 0.0))
+    breach = authoritative > auth["max_card_seconds"] + 1e-6 and exit_code == 0
+    if breach:
+        failure = (f"authoritative card-seconds {authoritative:.2f} exceed cap "
+                   f"{auth['max_card_seconds']} after finalize; verdict corrected")
+        ledger.amend_last_verdict(exit_code=2, note="card_seconds_exceeded")
+        exit_code, note = 2, "card_seconds_exceeded"
+
+    # independent FINAL SETTLEMENT record: authoritative post-finalize billing
+    # plus the verdict the process actually exits with; downstream stages
+    # consume THIS record (the stale success summary is irrelevant to the gates)
+    final_settlement = {
+        "schema": "text2cad-e2-final-settlement-v1",
+        "invocation_id": invocation_id,
+        "e2_background": which,
+        "approved_sha": auth["approved_sha"],
+        "exit_code": exit_code,
+        "note": note,
+        "settle_ok": exit_code == 0,
+        "breach": breach,
+        "ledger_card_seconds": authoritative,
+        "max_card_seconds": auth["max_card_seconds"],
+        "wall_deadline_epoch": auth["deadline_epoch"],
+        "failure": failure,
+        "generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    atomic_publish(run_root / f"final_settlement_{invocation_id}.json",
+                   [json.dumps(final_settlement, indent=2, sort_keys=True, ensure_ascii=False)])
 
     if exit_code != 0:
         print(f"E2 FATAL: {failure}", file=sys.stderr)

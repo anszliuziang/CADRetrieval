@@ -500,6 +500,26 @@ class SharedBudgetLedger:
             )
             self._persist_locked()
 
+    def amend_last_verdict(self, *, exit_code: int, note: str) -> None:
+        """E2-only settlement correction (round 7, item 2): re-derive the last
+        invocation's card-seconds from its OWN started/ended epochs (no new
+        clock read), then overwrite its verdict. Used when the authoritative
+        post-finalize billing crosses the cap AFTER a provisional success was
+        written - the ledger is brought back in line with the process exit
+        before anything else consumes it. Additive to the reviewed G4 class;
+        G4 behavior unchanged."""
+        with self._locked():
+            finalized = [i for i in self.data.get("invocations", []) if i.get("finalized")]
+            if not finalized:
+                raise RunnerError("ledger: no finalized invocation to amend")
+            inv = finalized[-1]
+            if float(inv.get("started_epoch", 0)) > 0 and inv.get("ended_epoch"):
+                card_seconds = max(0.0, float(inv["ended_epoch"]) - float(inv["started_epoch"])) * int(inv.get("cards_used", 1))
+                inv["card_seconds"] = round(card_seconds, 2)
+            inv["exit_code"] = int(exit_code)
+            inv["note"] = note
+            self._persist_locked()
+
     def _find_pending(self, invocation_id: str) -> dict[str, Any]:
         for inv in self.data["invocations"]:
             if inv["invocation_id"] == invocation_id and not inv.get("finalized"):

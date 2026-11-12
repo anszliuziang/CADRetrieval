@@ -328,9 +328,12 @@ class TestScorePath(unittest.TestCase):
         with self.assertRaises(e2.E2Error) as ctx_no_settle:
             e2.score_e2(repo, cfg, "b0", dirs, self.root / "ckpt.pth", self.root / "bert",
                         self.root / "cad_seq.zip", run, "npu:0")
-        self.assertIn("settle_ok", str(ctx_no_settle.exception))
+        self.assertIn("final_settlement_S1.json", str(ctx_no_settle.exception))
         (run / "environment_S1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
         (run / "summary_S1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
+        (run / "final_settlement_S1.json").write_text(json.dumps(
+            {"settle_ok": True, "breach": False, "ledger_card_seconds": 36.81,
+             "exit_code": 0}), encoding="utf-8")
         with self.assertRaises(e2.E2Error) as ctx2:
             e2.score_e2(repo, cfg, "b0", dirs, self.root / "ckpt.pth", self.root / "bert",
                         self.root / "cad_seq.zip", run, "npu:0")
@@ -368,9 +371,11 @@ class TestScorePath(unittest.TestCase):
         self.assertEqual(len(invs), 1)
         self.assertEqual(invs[0]["exit_code"], 2)
         self.assertEqual(invs[0]["note"], "deadline_exceeded")
-        summary_path = self.root / "run_settle2" / "summary_TEST-INV-0001.json"
-        self.assertTrue(summary_path.exists())
-        self.assertIs(json.loads(summary_path.read_text(encoding="utf-8"))["settle_ok"], False)
+        fin_path = self.root / "run_settle2" / "final_settlement_TEST-INV-0001.json"
+        self.assertTrue(fin_path.exists())
+        fin = json.loads(fin_path.read_text(encoding="utf-8"))
+        self.assertIs(fin["settle_ok"], False)
+        self.assertEqual(fin["exit_code"], 2)
 
 
 def original_store_dir(root: Path) -> Path:
@@ -392,7 +397,7 @@ class TestGates(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             run = Path(td)
-            auth = {"approved_sha": "a" * 40}
+            auth = {"approved_sha": "a" * 40, "max_card_seconds": 900.0}
             cfg = {"backgrounds": {"replay": {"n_unique_text": 1, "n_gallery": 4}},
                    "g4_sha256sums_sha256": "9" * 64,
                    "g4_chunk_sha256": {"card0/chunk_s00_t00000_00001.jsonl": "g0"},
@@ -415,11 +420,14 @@ class TestGates(unittest.TestCase):
             (run / "summary_R1.json").write_text("{}", encoding="utf-8")
             with self.assertRaises(e2.E2Error) as ctx_b:
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
-            self.assertIn("settle_ok", str(ctx_b.exception))
+            self.assertIn("final_settlement_R1.json", str(ctx_b.exception))
 
             # c) valid evidence but no gate record -> refused
             (run / "environment_R1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
             (run / "summary_R1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
+            (run / "final_settlement_R1.json").write_text(json.dumps({
+                "settle_ok": True, "breach": False,
+                "ledger_card_seconds": 16.0, "exit_code": 0}), encoding="utf-8")
             with self.assertRaises(e2.E2Error) as ctx_c:
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("replay_gate_record.json missing", str(ctx_c.exception))
@@ -470,7 +478,11 @@ class TestGates(unittest.TestCase):
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("mapping differs", str(ctx_h.exception))
 
-            # i) fully correct record passes
+            # i) fully correct record + final settlement passes
+            (run / "final_settlement_R1.json").write_text(json.dumps({
+                "settle_ok": True, "breach": False,
+                "ledger_card_seconds": 16.0, "exit_code": 0,
+            }), encoding="utf-8")
             (run / "replay_gate_record.json").write_text(
                 json.dumps({**rec, "dense_to_original_cad_index":
                             cfg["replay_dense_to_original_cad_index"]}), encoding="utf-8")

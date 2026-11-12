@@ -348,10 +348,12 @@ class TestE2CpuRegression(unittest.TestCase):
         # EITHER WAY the invariant holds: process exit == ledger exit == 2 and
         # no success note is written
         self.assertIn(inv["note"], ("aborted", "deadline_exceeded", "card_seconds_exceeded"))
-        # the evidence on disk must agree with the ledger verdict
-        summary = json.loads((self.RUN_ROOT / "evidence_phase_crossing"
-                              / f"summary_{inv['invocation_id']}.json").read_text(encoding="utf-8"))
-        self.assertIs(summary["settle_ok"], False)
+        # the FINAL SETTLEMENT on disk must agree with the ledger verdict
+        fin = json.loads((self.RUN_ROOT / "evidence_phase_crossing"
+                          / f"final_settlement_{inv['invocation_id']}.json").read_text(encoding="utf-8"))
+        self.assertIs(fin["settle_ok"], False)
+        self.assertEqual(fin["exit_code"], 2)
+        self.assertGreaterEqual(fin["ledger_card_seconds"], 1.0)  # real model load billed
         # the next stage is refused by the smoke gate
         self._patch_runner_edges(self._auth(sha))
         with self.assertRaises(e2.E2Error) as ctx:
