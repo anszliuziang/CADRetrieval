@@ -2130,5 +2130,15 @@
   ],
   "cad_seq_zip_sha256": "9f3a8bb85f9ceb078c19bc43f750fe596d3323631f2e846a7f541e47af7e7eaa",
   "g4_sha256sums_sha256": "97f9cbb60b0de449914ef1bdb2e388ddf0b2bcdae3686c73ceea511e764d3733",
+  "g4_chunk_sha256": {
+    "card0/chunk_s00_t00000_00001.jsonl": "dec0ddd97d79251c4dd3e1f0b24d55757779a0cc66b660f33813d46f88fcd882",
+    "card0/chunk_s00_t00001_00002.jsonl": "f2b4c73c48c36f3e3a726f4dbb6e5d0d0645d60f2cafe843c31703043c0e0f39",
+    "card0/chunk_s00_t00002_00003.jsonl": "0f7f74c8335287e5592f859a7b0f643e4d292be1d38769d626bbaa9f477c966d",
+    "card0/chunk_s00_t00003_00004.jsonl": "90c6e8b18ea3654392388174fc1729e9f13087e82a79da60bda50eeff84c547b",
+    "card0/chunk_s00_t01000_01001.jsonl": "c283f5283834b97d44a20ed2a8613e94575f5caef2e4beec0c6cbb46d4232506",
+    "card1/chunk_s01_t02000_02001.jsonl": "43ae9b60b57264d9ecb7226f5e141b8c72bad5f3727930837c7c437e4bc8aefb",
+    "card1/chunk_s01_t03000_03001.jsonl": "c7cc4826409be6201ac200f4fc26f8e4a2df769e308ed626ba80c5ffb9345564",
+    "card1/chunk_s01_t03643_03644.jsonl": "cbf9d3df3fe01e1ca813462da38bb4e7a7af7d6e29bab35dbb21794277992a4c"
+  },
   "budget_note": "caps live in ACTIVE_TASK e2_* fields at launch; exact totals = smoke 1 + b0 8,046 + b1 8,046 + replay 16,368 = 32,461 pairs / <= 900 card-seconds / deadline e2_deadline_utc"
 }

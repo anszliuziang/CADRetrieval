@@ -75,6 +75,18 @@ def main() -> int:
                          "into the expected-config and enforced by the comparator + batch gate")
     args = ap.parse_args()
 
+    # parse the certified G4 SHA256SUMS for the selected replay texts' chunks
+    certified = {}
+    for line in Path(args.g4_sha256sums).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) == 2:
+            a, b = parts
+            h, rel = (a, b) if len(a) == 64 else (b, a)
+            certified[rel.lstrip("./")] = h
+
     src = Path(args.original_manifest_dir)
     out_root = Path(args.out_root)
     if out_root.exists():
@@ -154,10 +166,16 @@ def main() -> int:
 
     replay_rows = []
     replay_meta = []
+    g4_chunk_pins = {}
     for new_idx, orig_idx in enumerate(REPLAY_ORIGINAL_TEXT_INDICES):
         t = original_texts[orig_idx]
         replay_rows.append(text_row(new_idx, t))
         replay_meta.append({"original_text_index": orig_idx, "text": t, "text_sha256": sha256_text(t)})
+        card = 0 if orig_idx < 1822 else 1
+        g4_rel = f"card{card}/chunk_s{card:02d}_t{orig_idx:05d}_{orig_idx + 1:05d}.jsonl"
+        if g4_rel not in certified:
+            raise SystemExit(f"certified G4 SHA256SUMS lacks {g4_rel}")
+        g4_chunk_pins[g4_rel] = certified[g4_rel]
     sel = REPLAY_DENSE_TO_ORIGINAL_CAD_INDEX
     replay_store = b"".join(
         (json.dumps({"cad_index": new_idx, "member": store_rows[orig]["member"]},
@@ -182,6 +200,7 @@ def main() -> int:
         "replay_dense_to_original_cad_index": REPLAY_DENSE_TO_ORIGINAL_CAD_INDEX,
         "cad_seq_zip_sha256": CAD_SEQ_ZIP_SHA256,
         "g4_sha256sums_sha256": sha256_file(Path(args.g4_sha256sums)),
+        "g4_chunk_sha256": g4_chunk_pins,
         "budget_note": "caps live in ACTIVE_TASK e2_* fields at launch; exact totals = smoke 1 + b0 8,046 + b1 8,046 + replay 16,368 = 32,461 pairs / <= 900 card-seconds / deadline e2_deadline_utc",
     }
     Path(args.config_out).parent.mkdir(parents=True, exist_ok=True)

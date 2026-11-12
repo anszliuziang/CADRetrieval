@@ -312,6 +312,54 @@ class TestE2CpuRegression(unittest.TestCase):
                         self.ZIP, self.RUN_ROOT / "evidence_failure", "cpu", resume=False)
         self.assertIn("smoke_b0", str(ctx.exception))
 
+    def test_evidence_phase_wallclock_crossing_real_ledger(self):
+        # review round 6, item 2 with the REAL ledger and a controllable clock:
+        # the wall-clock deadline crosses DURING the evidence writes - settle #2
+        # must catch it, settle process AND ledger as exit 2, rewrite the
+        # evidence as failure evidence, and the next stage must be refused
+        sha = "9" * 40
+        auth = self._auth(sha)
+        t0 = time.time()
+        auth["deadline_epoch"] = t0 + 2.5
+        self._patch_runner_edges(auth)
+
+        class FakeClock:
+            def __init__(self):
+                self.t = t0
+
+            def __call__(self):
+                self.t += 1.0
+                return self.t
+
+        clock = FakeClock()
+        original_now = e2.NOW_FN
+        e2.NOW_FN = clock
+        try:
+            rc = e2.score_e2(REPO, self.CFG, "smoke_b0", self._dirs(), self.CHECKPOINT, self.BERT,
+                             self.ZIP, self.RUN_ROOT / "evidence_phase_crossing", "cpu",
+                             resume=False)
+        finally:
+            e2.NOW_FN = original_now
+        self.assertEqual(rc, 2)
+        ledger = self._ledger(sha)
+        inv = ledger.data["invocations"][-1]
+        self.assertEqual(inv["exit_code"], 2)
+        # the deadline is crossed either in the loop (aborted) or at settle #2;
+        # EITHER WAY the invariant holds: process exit == ledger exit == 2 and
+        # no success note is written
+        self.assertIn(inv["note"], ("aborted", "deadline_exceeded", "card_seconds_exceeded"))
+        # the evidence on disk must agree with the ledger verdict
+        summary = json.loads((self.RUN_ROOT / "evidence_phase_crossing"
+                              / f"summary_{inv['invocation_id']}.json").read_text(encoding="utf-8"))
+        self.assertIs(summary["settle_ok"], False)
+        # the next stage is refused by the smoke gate
+        self._patch_runner_edges(self._auth(sha))
+        with self.assertRaises(e2.E2Error) as ctx:
+            e2.score_e2(REPO, self.CFG, "replay", self._dirs(), self.CHECKPOINT, self.BERT,
+                        self.ZIP, self.RUN_ROOT / "evidence_phase_crossing", "cpu",
+                        resume=False)
+        self.assertIn("smoke_b0", str(ctx.exception))
+
     def test_g4_sums_pin_mismatch_refuses_replay(self):
         # review round 5, item 3: a comparator run against files that do not
         # match the PINNED certified G4 SHA256SUMS is refused outright

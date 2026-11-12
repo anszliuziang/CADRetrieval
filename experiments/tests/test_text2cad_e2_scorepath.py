@@ -321,14 +321,56 @@ class TestScorePath(unittest.TestCase):
         (run / "smoke_b0" / "chunk_s00_t00000_00001.jsonl").write_bytes(
             jl([{"record_type": "chunk_header"}, {"record_type": "pair", "cad_index": 0,
                 "status": "scored", "score_total": -1.0, "n_valid_total": 10}]))
-        # evidence records accompany the success note (round 5): without them
-        # the smoke gate must STILL refuse
+        # evidence records accompany the success note (round 5+6): without the
+        # settle_ok marker the smoke gate must STILL refuse
         (run / "environment_S1.json").write_text("{}", encoding="utf-8")
         (run / "summary_S1.json").write_text("{}", encoding="utf-8")
+        with self.assertRaises(e2.E2Error) as ctx_no_settle:
+            e2.score_e2(repo, cfg, "b0", dirs, self.root / "ckpt.pth", self.root / "bert",
+                        self.root / "cad_seq.zip", run, "npu:0")
+        self.assertIn("settle_ok", str(ctx_no_settle.exception))
+        (run / "environment_S1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
+        (run / "summary_S1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
         with self.assertRaises(e2.E2Error) as ctx2:
             e2.score_e2(repo, cfg, "b0", dirs, self.root / "ckpt.pth", self.root / "bert",
                         self.root / "cad_seq.zip", run, "npu:0")
-        self.assertIn("replay gate", str(ctx2.exception))
+        self.assertIn("gate replay", str(ctx2.exception))
+
+
+    def test_settle2_catches_deadline_crossing_during_evidence(self):
+        # deterministic settle #2 coverage (round 6 item 2): the wall-clock
+        # deadline is crossed DURING the evidence writes -> the invocation
+        # settles as a failure and the success note is never written
+        repo, cfg, dirs, auth = self._prepare()
+        base = time.time()
+        auth["deadline_epoch"] = base + 3.0  # crossed exactly at settle #2 (clock 2.7 -> 3.6)
+        e2.git_dirty = lambda repo_root: ""
+        e2.head_is_detached = lambda repo_root: (True, "")
+        e2.authorize_e2_run = lambda repo_root, cfg: auth
+
+        calls = {"n": 0}
+
+        def fake_now():
+            calls["n"] += 1
+            return base + calls["n"] * 0.9  # 0.9s per NOW_FN call
+
+        original_now = e2.NOW_FN
+        e2.NOW_FN = fake_now
+        try:
+            rc = e2.score_e2(repo, cfg, "smoke_b0", dirs, self.root / "ckpt.pth",
+                             self.root / "bert", self.root / "cad_seq.zip",
+                             self.root / "run_settle2", "npu:0")
+        finally:
+            e2.NOW_FN = original_now
+        self.assertEqual(rc, 2)
+        ledger = self.records["ledger"]
+        invs = [i for i in ledger.data["invocations"] if i["finalized"]]
+        self.assertEqual(len(invs), 1)
+        self.assertEqual(invs[0]["exit_code"], 2)
+        self.assertEqual(invs[0]["note"], "deadline_exceeded")
+        summary_path = self.root / "run_settle2" / "summary_TEST-INV-0001.json"
+        self.assertTrue(summary_path.exists())
+        self.assertIs(json.loads(summary_path.read_text(encoding="utf-8"))["settle_ok"], False)
 
 
 def original_store_dir(root: Path) -> Path:
@@ -343,46 +385,96 @@ def original_store_dir(root: Path) -> Path:
 
 class TestGates(unittest.TestCase):
     def test_replay_gate_record_checks(self):
+        class FakeLedger:
+            data = {"invocations": [{"invocation_id": "R1", "finalized": True,
+                                     "exit_code": 0, "note": "e2_replay_ok",
+                                     "pairs_charged": 4}]}
+
         with tempfile.TemporaryDirectory() as td:
             run = Path(td)
             auth = {"approved_sha": "a" * 40}
-            cfg = {"backgrounds": {"replay": {"n_unique_text": 2, "n_gallery": 2}},
-                   "g4_sha256sums_sha256": "9" * 64}
+            cfg = {"backgrounds": {"replay": {"n_unique_text": 1, "n_gallery": 4}},
+                   "g4_sha256sums_sha256": "9" * 64,
+                   "g4_chunk_sha256": {"card0/chunk_s00_t00000_00001.jsonl": "g0"},
+                   "replay_dense_to_original_cad_index": [0, 1, 2, 8032],
+                   "replay_texts": [{"original_text_index": 0, "text": "t",
+                                      "text_sha256": "x"}]}
+            payload = jl([{"record_type": "chunk_header"}] + [
+                {"record_type": "pair", "cad_index": 0, "status": "scored",
+                 "score_total": -1.0, "n_valid_total": 10} for _ in range(4)])
+            (run / "replay").mkdir(parents=True)
+            (run / "replay" / "chunk_s00_t00000_00001.jsonl").write_bytes(payload)
+
+            # a) successful replay WITHOUT evidence records -> refused
             with self.assertRaises(e2.E2Error) as ctx:
-                e2.verify_replay_gate(run, cfg, auth)
-            self.assertIn("missing", str(ctx.exception))
+                e2.verify_replay_gate(run, cfg, auth, FakeLedger())
+            self.assertIn("evidence records missing", str(ctx.exception))
+
+            # b) evidence without settle_ok=true -> refused
+            (run / "environment_R1.json").write_text("{}", encoding="utf-8")
+            (run / "summary_R1.json").write_text("{}", encoding="utf-8")
+            with self.assertRaises(e2.E2Error) as ctx_b:
+                e2.verify_replay_gate(run, cfg, auth, FakeLedger())
+            self.assertIn("settle_ok", str(ctx_b.exception))
+
+            # c) valid evidence but no gate record -> refused
+            (run / "environment_R1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
+            (run / "summary_R1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
+            with self.assertRaises(e2.E2Error) as ctx_c:
+                e2.verify_replay_gate(run, cfg, auth, FakeLedger())
+            self.assertIn("replay_gate_record.json missing", str(ctx_c.exception))
+
             rec = {
                 "schema": "text2cad-e2-replay-gate-v1", "approved_sha": "b" * 40,
                 "pass": True, "n_pairs_compared": 4, "max_abs_delta": 0.0,
-                "replay_chunk_sha256": {
-                    "chunk_s00_t00000_00001.jsonl": "x",
-                    "chunk_s00_t00001_00002.jsonl": "y",
-                },
-                "g4_chunk_sha256": {"chunk_s00_t00000_00001.jsonl": "g"},
+                "dense_to_original_cad_index": cfg["replay_dense_to_original_cad_index"],
+                "replay_chunk_sha256": {"chunk_s00_t00000_00001.jsonl": "x"},
+                "g4_chunk_sha256": {"card0/chunk_s00_t00000_00001.jsonl": "g0"},
                 "g4_sha256sums_sha256": "9" * 64,
             }
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
-            with self.assertRaises(e2.E2Error) as ctx2:
-                e2.verify_replay_gate(run, cfg, auth)
-            self.assertIn("bound to", str(ctx2.exception))
+
+            # d) wrong approved sha
+            with self.assertRaises(e2.E2Error) as ctx_d:
+                e2.verify_replay_gate(run, cfg, auth, FakeLedger())
+            self.assertIn("bound to", str(ctx_d.exception))
             rec["approved_sha"] = "a" * 40
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
-            # partial pin set must be refused BEFORE any hash check
-            rec_partial = {**rec, "replay_chunk_sha256": {"chunk_s00_t00000_00001.jsonl": "x"}}
-            (run / "replay_gate_record.json").write_text(json.dumps(rec_partial), encoding="utf-8")
-            with self.assertRaises(e2.E2Error) as ctx3:
-                e2.verify_replay_gate(run, cfg, auth)
-            self.assertIn("expected exactly the 2 replay chunks", str(ctx3.exception))
-            payload = jl([{"record_type": "chunk_header"}])
-            (run / "replay").mkdir()
-            (run / "replay" / "chunk_s00_t00000_00001.jsonl").write_bytes(payload)
-            (run / "replay" / "chunk_s00_t00001_00002.jsonl").write_bytes(payload)
-            rec["replay_chunk_sha256"] = {
-                "chunk_s00_t00000_00001.jsonl": sha(payload),
-                "chunk_s00_t00001_00002.jsonl": sha(payload),
-            }
+
+            # e) disk hash mismatch (pins exist and are checked against disk)
+            with self.assertRaises(e2.E2Error) as ctx_e:
+                e2.verify_replay_gate(run, cfg, auth, FakeLedger())
+            self.assertIn("missing or hash drift", str(ctx_e.exception))
+            rec["replay_chunk_sha256"] = {"chunk_s00_t00000_00001.jsonl": sha(payload)}
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
-            info = e2.verify_replay_gate(run, cfg, auth)
+
+            # f) incomplete certified-G4 pin set
+            rec["g4_chunk_sha256"] = {"some/other_name.jsonl": "g0"}
+            (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
+            with self.assertRaises(e2.E2Error) as ctx_f:
+                e2.verify_replay_gate(run, cfg, auth, FakeLedger())
+            self.assertIn("certified sources", str(ctx_f.exception))
+
+            # g) certified value mismatch
+            rec["g4_chunk_sha256"] = {"card0/chunk_s00_t00000_00001.jsonl": "WRONG"}
+            (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
+            with self.assertRaises(e2.E2Error) as ctx_g:
+                e2.verify_replay_gate(run, cfg, auth, FakeLedger())
+            self.assertIn("certified value", str(ctx_g.exception))
+
+            # h) mapping drift
+            rec["g4_chunk_sha256"] = dict(cfg["g4_chunk_sha256"])
+            rec["dense_to_original_cad_index"] = [0, 1, 2, 3]
+            (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
+            with self.assertRaises(e2.E2Error) as ctx_h:
+                e2.verify_replay_gate(run, cfg, auth, FakeLedger())
+            self.assertIn("mapping differs", str(ctx_h.exception))
+
+            # i) fully correct record passes
+            (run / "replay_gate_record.json").write_text(
+                json.dumps({**rec, "dense_to_original_cad_index":
+                            cfg["replay_dense_to_original_cad_index"]}), encoding="utf-8")
+            info = e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertEqual(info["compared"], 4)
 
     def test_nonfinite_caps_refused(self):

@@ -69,6 +69,8 @@ from idea01.text2cad_pair_index import (  # noqa: E402
 )
 
 E2_CONFIG_REL = "experiments/configs/text2cad_e2_background_expected_20261112.json"
+#: injectable clock for controllable-time regressions (production = real time)
+NOW_FN = time.time
 B0_TEXT = ""
 B1_TEXT = "a CAD model."
 #: expected background text per manifest (replay uses the general load_texts)
@@ -100,7 +102,8 @@ def load_e2_config(repo_root: Path) -> dict:
     if cfg.get("schema") != "text2cad-e2-background-expected-v1":
         raise E2Error(f"E2 config schema mismatch: {cfg.get('schema')!r}")
     for key in ("authorization_ref", "backgrounds", "original_cad_store_sha256",
-                "replay_texts", "cad_seq_zip_sha256", "g4_sha256sums_sha256"):
+                "replay_texts", "cad_seq_zip_sha256", "g4_sha256sums_sha256",
+                "g4_chunk_sha256", "replay_dense_to_original_cad_index"):
         if key not in cfg:
             raise E2Error(f"E2 expected-config missing key {key!r}")
     for which, pins in cfg["backgrounds"].items():
@@ -266,33 +269,42 @@ GRACE_S = 30.0  # termination grace, COUNTED INTO the caps (KILL lands by the de
 
 
 def _supervise_loop(parent_pid: int, ledger_path: str, wall_deadline: float,
-                    max_card_seconds: float, cards_used: int = 1):
-    """Independent supervision PROCESS (G4-style): a separate interpreter that
-    cannot be blocked by the scoring process. Every 5 s it reads the shared
-    ledger and fires SIGTERM at the EARLIER of (a) the wall-clock deadline
-    minus GRACE_S and (b) the projected card-second cap minus GRACE_S, then
-    SIGKILL GRACE_S later - so the scored process is dead BY the deadline and
-    the termination grace is counted into the caps. A hard kill leaves the
-    ledger PENDING: recovery is a reviewer decision."""
-    import signal
-    import time
+                    max_card_seconds: float, cards_used: int = 1,
+                    now_fn=time.time, sleep_fn=time.sleep):
+    """Independent supervision PROCESS (G4-style, review round 6): a separate
+    interpreter that cannot be blocked by the scoring process. Signals are
+    scheduled on ABSOLUTE times:
 
-    def term_now(reason: str) -> None:
-        print(f"E2 supervision: SIGTERM to {parent_pid} ({reason})", file=sys.stderr, flush=True)
-        try:
-            os.kill(parent_pid, signal.SIGTERM)
-        except OSError:
-            return
-        time.sleep(GRACE_S)
-        print(f"E2 supervision: SIGKILL to {parent_pid}", file=sys.stderr, flush=True)
-        try:
-            os.kill(parent_pid, signal.SIGKILL)
-        except OSError:
-            pass
-        os._exit(3)
+      hard  = min(wall_deadline, projected card-second deadline)
+      TERM  at hard - GRACE_S
+      KILL  at hard            (the grace is counted INTO the caps; the child
+                                is dead BY the deadline, never after it)
+
+    The card-second deadline is estimated from the ledger consumption rate
+    (two-sample estimate, re- refreshed every tick). The wall-clock check runs
+    INDEPENDENTLY of ledger reads (a ledger read failure must never skip it).
+    now_fn/sleep_fn are injectable for controllable-clock regressions; a real
+    stuck child is expected to IGNORE SIGTERM so only SIGKILL ends it - the
+    POSIX regression asserts exactly that.
+    """
+    import signal
+    import time as _time
+
+    term_at = None       # absolute time when SIGTERM is due (None = not yet known)
+    kill_at = None       # absolute time when SIGKILL is due
+    term_sent = False
+    kill_sent = False
+    prev_sample = None   # (time, cumulative card-seconds incl. pending)
 
     while True:
-        now = time.time()
+        now = now_fn()
+
+        # --- wall-clock arm: independent of any ledger read ---
+        if term_at is None and now >= wall_deadline - GRACE_S:
+            term_at = wall_deadline - GRACE_S
+            kill_at = wall_deadline
+
+        # --- card-second arm: estimate the consumption rate from the ledger ---
         try:
             data = json.loads(Path(ledger_path).read_text(encoding="utf-8"))
             started = None
@@ -301,14 +313,69 @@ def _supervise_loop(parent_pid: int, ledger_path: str, wall_deadline: float,
                     started = float(inv["started_epoch"])
                     break
             if started is not None:
-                projected = float(data.get("card_seconds_spent", 0.0)) + max(0.0, now - started) * cards_used
-                if projected >= max_card_seconds - GRACE_S:
-                    term_now("projected card-seconds reach cap minus grace")
-            if now >= wall_deadline - GRACE_S:
-                term_now("wall-clock deadline minus grace reached")
+                total = float(data.get("card_seconds_spent", 0.0)) + max(
+                    0.0, now - started) * cards_used
+                if term_at is None:
+                    if prev_sample is not None:
+                        dt = now - prev_sample[0]
+                        ds = total - prev_sample[1]
+                        if dt > 0 and ds > 0:
+                            rate = ds / dt  # card-seconds per wall second
+                            card_deadline = now + max(0.0, max_card_seconds - total) / rate
+                            if card_deadline < wall_deadline:
+                                term_at = card_deadline - GRACE_S
+                                kill_at = card_deadline
+                    prev_sample = (now, total)
+                else:
+                    # card arm already armed: re-estimate and pull it EARLIER
+                    # if consumption accelerated, never later
+                    if prev_sample is not None:
+                        dt = now - prev_sample[0]
+                        ds = total - prev_sample[1]
+                        if dt > 0 and ds > 0:
+                            rate = ds / dt
+                            card_deadline = now + max(0.0, max_card_seconds - total) / rate
+                            if card_deadline < wall_deadline:
+                                cand_t = card_deadline - GRACE_S
+                                if term_at is None or cand_t < term_at:
+                                    term_at = cand_t
+                                    kill_at = card_deadline
+                    prev_sample = (now, total)
         except Exception:
-            pass  # ledger not written yet / transient read error: keep supervising
-        time.sleep(5.0)
+            pass  # ledger not written yet / transient read error: wall arm unaffected
+
+        # --- fire on the ABSOLUTE schedule ---
+        if not term_sent and term_at is not None and now >= term_at:
+            print(f"E2 supervision: SIGTERM to {parent_pid} (hard deadline "
+                  f"{kill_at:.3f}; TERM grace counted into the caps)",
+                  file=sys.stderr, flush=True)
+            try:
+                os.kill(parent_pid, signal.SIGTERM)
+            except OSError:
+                pass
+            term_sent = True
+        if term_sent and not kill_sent and now >= kill_at:
+            print(f"E2 supervision: SIGKILL to {parent_pid} at the absolute hard deadline",
+                  file=sys.stderr, flush=True)
+            try:
+                os.kill(parent_pid, signal.SIGKILL)
+            except OSError:
+                pass
+            kill_sent = True
+            os._exit(3)
+        if kill_sent:
+            return  # child is dead; supervisor exits
+
+        # sleep until the next scheduled moment (or the poll tick), on the
+        # injected clock
+        now2 = now_fn()
+        nxt = GRACE_S
+        for t in (term_at, kill_at):
+            if t is not None:
+                nxt = min(nxt, max(0.0, t - now2))
+        nxt = min(nxt, 5.0) if (term_at is None or kill_at is None or now2 < term_at) else max(
+            0.0, min(nxt, kill_at - now2))
+        sleep_fn(max(0.0, min(nxt, 5.0)))
 
 
 def start_deadline_supervision(auth: dict, ledger_path: Path):
@@ -353,10 +420,13 @@ def verify_background_done(run_root: Path, ledger, which: str, success_note: str
     chunk_files = sorted((run_root / which).glob("chunk_*.jsonl")) if (run_root / which).is_dir() else []
     if not chunk_files:
         raise E2Error(f"gate {which}: no chunk found under <run-root>/{which}")
-    rows = [json.loads(l) for l in chunk_files[0].read_text(encoding="utf-8").splitlines() if l.strip()]
-    pair_rows = [r for r in rows if r.get("record_type") != "chunk_header"]
+    pair_rows = []
+    for cf in chunk_files:
+        rows = [json.loads(l) for l in cf.read_text(encoding="utf-8").splitlines() if l.strip()]
+        pair_rows.extend(r for r in rows if r.get("record_type") != "chunk_header")
     if len(pair_rows) != n_pairs or any(r.get("status") != "scored" for r in pair_rows):
-        raise E2Error(f"gate {which}: chunk must contain exactly {n_pairs} scored pair(s)")
+        raise E2Error(f"gate {which}: chunks must contain exactly {n_pairs} scored pair(s) "
+                      f"across all files, found {len(pair_rows)}")
     invs = ledger.data.get("invocations", [])
     ok = [i for i in invs if i.get("finalized") and i.get("exit_code") == 0
           and str(i.get("note", "")) == success_note
@@ -369,15 +439,33 @@ def verify_background_done(run_root: Path, ledger, which: str, success_note: str
     # evidence check: the success note is only consumable together with the
     # per-invocation environment + summary records (review round 5, item 2)
     missing = []
+    settle_bad = []
     for i in ok[:1]:
-        for prefix in ("environment_", "summary_"):
-            if not (run_root / f"{prefix}{i['invocation_id']}.json").is_file():
-                missing.append(f"{prefix}{i['invocation_id']}.json")
+        # the SUMMARY is the settlement record and must carry settle_ok=true;
+        # the environment record must merely exist
+        env_f = run_root / f"environment_{i['invocation_id']}.json"
+        sum_f = run_root / f"summary_{i['invocation_id']}.json"
+        if not env_f.is_file():
+            missing.append(env_f.name)
+        if not sum_f.is_file():
+            missing.append(sum_f.name)
+            continue
+        try:
+            content = json.loads(sum_f.read_text(encoding="utf-8"))
+            if content.get("settle_ok") is not True:
+                settle_bad.append(sum_f.name)
+        except Exception:  # noqa: BLE001
+            settle_bad.append(sum_f.name)
     if missing:
         raise E2Error(
             f"gate {which}: success note present but evidence records missing: {missing}"
         )
-    return {"invocations": [i["invocation_id"] for i in ok], "chunk": chunk_files[0].name}
+    if settle_bad:
+        raise E2Error(
+            f"gate {which}: evidence records do not carry settle_ok=true: {settle_bad}"
+        )
+    return {"invocations": [i["invocation_id"] for i in ok], "chunk": chunk_files[0].name,
+            "evidence_verified": True}
 
 
 def verify_smoke_done(run_root: Path, ledger) -> dict:
@@ -386,13 +474,18 @@ def verify_smoke_done(run_root: Path, ledger) -> dict:
     return verify_background_done(run_root, ledger, "smoke_b0", SMOKE_NOTE, 1)
 
 
-def verify_replay_gate(run_root: Path, cfg: dict, auth: dict) -> dict:
+def verify_replay_gate(run_root: Path, cfg: dict, auth: dict, ledger) -> dict:
     """b0/b1 may only start after the cross-machine REPLAY tolerance gate PASSED:
     replay_gate_record.json must exist in the run root, be bound to the same
     approved SHA, pass=true, pin ALL expected replay chunks (and their G4
     source chunks), cover every replay pair, and its pinned replay chunk
     hashes must match the actual chunk files on disk."""
     run_root = Path(run_root)
+    want_pairs = int(cfg["backgrounds"]["replay"]["n_unique_text"]) * int(cfg["backgrounds"]["replay"]["n_gallery"])
+    # the REPLAY stage itself must have SETTLED SUCCESSFULLY in the shared
+    # ledger with its evidence records present (round 6, item 3: a FAILED
+    # replay - e.g. evidence_write_failed - can never feed a batch)
+    gates_ev = verify_background_done(run_root, ledger, "replay", SUCCESS_NOTE["replay"], want_pairs)
     rec_path = run_root / "replay_gate_record.json"
     if not rec_path.is_file():
         raise E2Error(
@@ -407,7 +500,6 @@ def verify_replay_gate(run_root: Path, cfg: dict, auth: dict) -> dict:
         raise E2Error(f"replay gate: record bound to {rec.get('approved_sha')}, not this approval")
     if rec.get("pass") is not True:
         raise E2Error(f"replay gate: recorded verdict is pass={rec.get('pass')}")
-    want_pairs = int(cfg["backgrounds"]["replay"]["n_unique_text"]) * int(cfg["backgrounds"]["replay"]["n_gallery"])
     want_names = {f"chunk_s00_t{k:05d}_{k + 1:05d}.jsonl" for k in range(int(cfg["backgrounds"]["replay"]["n_unique_text"]))}
     pins = rec.get("replay_chunk_sha256") or {}
     if set(pins) != want_names:
@@ -421,6 +513,24 @@ def verify_replay_gate(run_root: Path, cfg: dict, auth: dict) -> dict:
         raise E2Error("replay gate: record was not compared against the pinned certified G4 SHA256SUMS")
     if int(rec.get("n_pairs_compared", 0)) != want_pairs:
         raise E2Error(f"replay gate: compared {rec.get('n_pairs_compared')} != {want_pairs} replay pairs")
+    # recorded G4 source hashes must match the CERTIFIED pins item by item
+    want_g4_names = set()
+    for meta in cfg["replay_texts"]:
+        orig = int(meta["original_text_index"])
+        card = 0 if orig < 1822 else 1
+        want_g4_names.add(f"card{card}/chunk_s{card:02d}_t{orig:05d}_{orig + 1:05d}.jsonl")
+    rec_g4 = rec.get("g4_chunk_sha256") or {}
+    if set(rec_g4) != want_g4_names:
+        raise E2Error(
+            f"replay gate: record pins {len(rec_g4)} G4 chunk hash(es), expected exactly "
+            f"the {len(want_g4_names)} certified sources"
+        )
+    for name in want_g4_names:
+        if rec_g4[name] != cfg["g4_chunk_sha256"][name]:
+            raise E2Error(f"replay gate: G4 source {name} hash does not match the certified value")
+    # the candidate mapping must be the frozen one, item by item
+    if list(rec.get("dense_to_original_cad_index") or []) != list(cfg["replay_dense_to_original_cad_index"]):
+        raise E2Error("replay gate: candidate mapping differs from the frozen dense->original index")
     replay_dir = run_root / "replay"
     for fname, pin in sorted(pins.items()):
         f = replay_dir / fname
@@ -437,7 +547,7 @@ def require_prerequisite_gates(run_root: Path, which: str, cfg: dict, auth: dict
     if which != "smoke_b0":
         gates["smoke"] = verify_smoke_done(run_root, ledger)
     if which in ("b0", "b1"):
-        gates["replay_gate"] = verify_replay_gate(run_root, cfg, auth)
+        gates["replay_gate"] = verify_replay_gate(run_root, cfg, auth, ledger)
     if which == "b1":
         gates["b0_done"] = verify_background_done(run_root, ledger, "b0", B0_OK_NOTE, int(cfg["backgrounds"]["b0"]["n_unique_text"]) * int(cfg["backgrounds"]["b0"]["n_gallery"]))
     return gates
@@ -566,7 +676,7 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
     planned = sum((t1 - t0) * n_c for t0, t1, _p in todo)
     if planned > ledger.remaining_pairs():
         raise E2Error(f"planned {planned} pairs exceed remaining shared E2 budget {ledger.remaining_pairs()}")
-    check_deadline(auth)
+    check_deadline(auth, now=NOW_FN())
 
     binding = {
         "schema_version": CHUNK_SCHEMA_VERSION,
@@ -601,12 +711,12 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
                          if i["invocation_id"] == invocation_id)
     try:
         model, load_report, store, preload_report = load_gated_model_and_store(cfg_run, members)
-        check_deadline(auth)  # a load straddling the deadline refuses BEFORE scoring
+        check_deadline(auth, now=NOW_FN())  # a load straddling the deadline refuses BEFORE scoring
         scorer = FrozenMatrixScorer(cfg_run, model, texts, store, pair_space, guarded_ledger, invocation_id, binding)
         which_dir = run_root / which
         which_dir.mkdir(parents=True, exist_ok=True)
         for t0, t1, _p in todo:
-            check_deadline(auth)
+            check_deadline(auth, now=NOW_FN())
             chunk_records = scorer.score_chunk(t0, t1)
             atomic_publish(which_dir / chunk_file_name(0, t0, t1),
                            [json.dumps(r, ensure_ascii=False) for r in chunk_records])
@@ -616,7 +726,7 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
         exit_code, note, failure = 2, "aborted", f"{type(exc).__name__}: {exc}"
 
     # ---- ONE settle decision, then evidence, then the ledger (round 5 #2) ---
-    now = time.time()
+    now = NOW_FN()
     projected_card_seconds = float(ledger.data.get("card_seconds_spent", 0.0)) + max(
         0.0, now - float(started_epoch))
     spent = projected_card_seconds
@@ -655,13 +765,47 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
                 "published_chunks": published, "planned_pairs": planned,
                 "completed_before": len(completed), "scorer_stats": scorer_stats,
                 "load_report": load_report, "preload_report": preload_report,
-                "ledger": ledger.to_dict(), "failure": None,
+                "ledger": ledger.to_dict(), "failure": None, "settle_ok": True,
             }
             atomic_publish(run_root / f"summary_{invocation_id}.json",
                            [json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=False)])
         except Exception as exc:  # noqa: BLE001
             exit_code, note, failure = 2, "evidence_write_failed", (
                 f"{type(exc).__name__}: {exc}")
+
+    # ---- settle #2 at the SAME clock, AFTER the evidence writes (round 6 #2):
+    # time spent writing evidence is honestly accounted; on failure the
+    # evidence files are REWRITTEN as failure evidence and the success note is
+    # never written
+    now2 = NOW_FN()
+    if exit_code == 0:
+        projected2 = float(ledger.data.get("card_seconds_spent", 0.0)) + max(
+            0.0, now2 - float(started_epoch))
+        spent = projected2
+        if projected2 > auth["max_card_seconds"] - 0.05:
+            exit_code, note, failure = 2, "card_seconds_exceeded", (
+                f"projected cumulative card-seconds {projected2:.2f} reach cap "
+                f"{auth['max_card_seconds']} after the evidence writes; settling as a failure")
+        elif now2 > auth["deadline_epoch"]:
+            exit_code, note, failure = 2, "deadline_exceeded", (
+                "wall-clock deadline passed during the evidence writes")
+    if exit_code != 0:
+        # rewrite the evidence as FAILURE evidence so the files on disk can
+        # never contradict the ledger verdict
+        try:
+            fail_record = {
+                "invocation_id": invocation_id, "e2_background": which,
+                "approved_sha": auth["approved_sha"], "failure": failure,
+                "settlement": {"card_seconds_spent": spent,
+                                "max_card_seconds": auth["max_card_seconds"]},
+                "settle_ok": False,
+            }
+            atomic_publish(run_root / f"environment_{invocation_id}.json",
+                           [json.dumps(fail_record, indent=2, sort_keys=True, ensure_ascii=False)])
+            atomic_publish(run_root / f"summary_{invocation_id}.json",
+                           [json.dumps(fail_record, indent=2, sort_keys=True, ensure_ascii=False)])
+        except Exception:  # noqa: BLE001 - failure evidence is best-effort
+            pass
 
     if exit_code == 0:
         note = SUCCESS_NOTE[which]
@@ -800,7 +944,8 @@ def compare_replay_to_g4(replay_run_dir: Path, g4_raw_dir: Path, cfg: dict,
         replay_name = expected_chunk_names[k]
         replay_path = replay_dir / replay_name
         chunk_pins[replay_name] = sha256_file(replay_path)
-        g4_chunk_pins[g4_name] = g4_file_sha  # bound to the certified source files
+        # card-prefixed key so it matches cfg["g4_chunk_sha256"] (round 6)
+        g4_chunk_pins[f"card{card}/{g4_name}"] = g4_file_sha
         g4_by_cad: dict[int, dict] = {}
         with open(g4_path, "r", encoding="utf-8") as f:
             f.readline()  # header
