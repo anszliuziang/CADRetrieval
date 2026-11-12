@@ -1,15 +1,19 @@
-# 当前任务：GLM 5.3 接手夜间批（2026-11-12，环境/分析/调研）
+# 当前任务：E2 空文本背景小试（2026-11-12，计划已提交待执行授权）
 
-- `state`: `results_submitted`（三项夜间任务完成，等用户验收）
-- `ownership`: 用户 2026-11-11 指定 GLM 5.3 接手并授权其决定/授权新任务；计划、独立审码、SHA、预算纪律保留；Codex 按需参与
-- `night_tasks`: 用户 2026-11-12 0 时前后授权三项——①yunnao-share4 环境与资产准备；②失效原因深度分析（零前向本地诊断）；③CAD 生成×检索 benchmark 对齐调研
-- `gpu_budget`: 0 卡小时（今晚全部任务零前向）
-- `max_scored_pairs`: 0
-- `deliverables`: `experiments/submissions/idea01_next_phase_20261112/`（ENV_SETUP / TEXT2CAD_FAILURE_ANALYSIS / CAD_GENERATION_RETRIEVAL_BENCHMARK_SURVEY 三报告）
-- `share4_env`: `experiments/configs/idea01_yunnao_share4_env.json`；环境 cadretrieval-glm-torch271（torch 2.7.1+cpu / torch_npu 2.7.1.post1 / 4 卡空闲核验）；Text2CAD+BERT+IEEE-T-ASE+评价输入全部 pinned SHA 核验通过；qwen2.5-3B-SFT 按需后传
-- `failure_diag`: `experiments/scripts/analyze_text2cad_failure_factors_20261112.py`（冻结变体定义先于结果；v0 绑定正式 G5 ranks；输出 runtime/text2cad_failure_factors_20261112/）；全部 exploratory，方法选择不得据此宣称确认
-- `next_experiment_authorized`: false（E1 validation 评分矩阵 / E2 空文本背景矩阵 / E3 L1-L3 对照 / E4 判别基线 / E5 CADmium 对照均仅在失效分析 §6 建议，未启动）
-- `branch`: `glm-night-20261112`（本地提交，验收后合并）
+- `state`: `implementation`（E2 计划提交完成；代码实现/预检待做；**真实前向未启动**）
+- `ownership`: 用户 2026-11-11 指定 GLM 5.3 接手；**新实验启动授权由 GLM 决定（2026-11-12 验收确认），用户保留最终指令权**；计划先行、独立审码、SHA、预算纪律保留；Codex/评审按需参与
+- `plan`: `experiments/plans/IDEA01_E2_EMPTY_TEXT_BACKGROUND_2026-11-12.md`
+- `acceptance`: 2026-11-12 验收（runtime/glm_night_acceptance_codex_20261112/EXPERIMENT_AUDIT.md）：share4 环境通过；失效分析数表按探索结果接收、归因措辞已订正；调研退回修订（已修订：MM-CAD:B / HoLa / BRepCLIP / CadQuery 训练隔离 4,581 UID / 新颖性审慎口径）；下一步优先 E2
+- `e2_budget`: 全库新前向 16,092 对（B0+B1 背景 × 8,046）；上限 0.25 卡时 / 30 分钟墙钟 / 单卡 FP32 full 272；查询侧零新前向
+- `e2_prerequisites`: ①可信远端迁移（EXPECTED_ORIGIN_URL → CNB+GitHub 镜像允许集合，自审+单测+fresh review）②空文本专用准入 loader（不改 load_texts 通用校验）③share4 零 NPU dry-run 预检 ④1 对真实 smoke ⑤E2 专用 manifest（不含 UID/qrels 于评分目录）
+- `e2_positioning`: 已探索 test 图库上的机制诊断；非方法确认；E1 确认流程见计划 §7
+- `night_tasks`: 用户 2026-11-12 授权三项夜间任务已完成并验收（share4 环境通过/失效分析接收/调研修订后通过路径以本轮修订为准）
+- `gpu_budget`: 0 卡小时（E2 未启动；启动后按 e2_budget）
+- `max_scored_pairs`: 0（E2 未启动；启动后 ≤16,092 新前向）
+- `deliverables`: `experiments/submissions/idea01_next_phase_20261112/`（ENV_SETUP / TEXT2CAD_FAILURE_ANALYSIS / CAD_GENERATION_RETRIEVAL_BENCHMARK_SURVEY，均含 2026-11-12 验收订正）
+- `share4_env`: `experiments/configs/idea01_yunnao_share4_env.json`（解释器 `/home/ma-user/anaconda3/envs/cadretrieval-glm-torch271/bin/python`，验收订正）；24/24 固定资产 SHA 复核通过（验收 witness）
+- `failure_diag`: `experiments/scripts/analyze_text2cad_failure_factors_20261112.py`（执行记录已补全于失效分析 §4.1；全部 exploratory）
+- `branch`: `glm-night-20261112`
 
 ## 以下为历史任务记录（已完成并 reviewed）
 

@@ -19,14 +19,17 @@
 
 ## 2. Python 环境就位
 
-从基础环境 `PyTorch-2.7.1` 克隆项目隔离环境（checkout 外）：
+从基础环境 `PyTorch-2.7.1` 克隆项目隔离环境（conda 默认 envs 目录，非 work/envs——**2026-11-12 验收订正：以下为实际路径**）：
 
 ```
-/home/ma-user/work/envs/cadretrieval-glm-torch271
+/home/ma-user/anaconda3/envs/cadretrieval-glm-torch271
+解释器：/home/ma-user/anaconda3/envs/cadretrieval-glm-torch271/bin/python
 python 3.11.10 / torch 2.7.1+cpu / torch_npu 2.7.1.post1
 torch.npu.device_count() == 4（零前向设备核验通过）
 transformers 4.53.1 / numpy 1.26.4
 ```
+
+（初版报告误写为 `/home/ma-user/work/envs/...`——conda clone 未指定前缀时落在 anaconda3 默认 envs 目录；验收方已用实际解释器非交互复核依赖导入与设备枚举成功。）
 
 版本与 share2 历史 env 完全同版。**观察记录**：侦察时基础 env 首次 `import torch_npu` 打印过一条 `ERR99999 UNKNOWN application exception`；克隆 env 中不复现，4 卡可见，根因未追查（仅记录，不影响使用）。
 
@@ -48,7 +51,7 @@ transformers 4.53.1 / numpy 1.26.4
 
 ## 4. 当前限制与下一步
 
-- 分级纪律不变：share4 的 origin 是 GitHub 镜像，可用于代码同步/阅读；**授权评分仍校验 CNB 可信远端**，迁移执行远端须先本地审核提交。
+- 分级纪律不变：share4 的 origin 是 GitHub 镜像，可用于代码同步/阅读；**现有评分器授权校验 CNB 可信远端（`EXPECTED_ORIGIN_URL`），share4 正式前向前必须先完成可信远端迁移审核与评分准入预检**（含 dry-run 零 NPU 预检 + 1 对真实 smoke）——此为 2026-11-12 验收明确的前置条件，E2 计划已纳入。
 - 本机**无 OBS 挂载**：未来运行的重要产物要回传本地+共享 OBS 须经 cvteam 入口（连通性未重测）。
 - 尚未做：评分 runner 的零卡预检与首批真实前向（须随 T1/B 阶段的正式计划另行授权）。
 - 环境指纹：`experiments/configs/idea01_yunnao_share4_env.json`（本次写入）。
