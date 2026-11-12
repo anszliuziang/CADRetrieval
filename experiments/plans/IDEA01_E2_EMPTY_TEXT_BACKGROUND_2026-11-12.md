@@ -38,20 +38,31 @@
 |---|---:|---|
 | B0 smoke | **1** | 1×1 对真实前向，**最先执行**，完成记录（台账 note + chunk 文件）是后续一切批量的前置门 |
 | REPLAY 跨机复算 | **16,368** | share4 复算 G4 历史批（8×2,046，含尾批 14），本地与 G4 记录逐对比对过容差门后出 `replay_gate_record.json` |
-| B0 背景 | 8,046 | **前置门：smoke 完成记录（真实 pairs_charged 字段）+ replay_gate_record(pass=true, 8 chunk SHA 全验 + G4 源 chunk pins + 逐对完整唯一索引)** |
-| B1 背景 | 8,046 | 同 B0 前置门，**另加 B0 自身成功记录（e2_b0_ok + chunk 对账）** |
+| B0 背景 | 8,046 | **前置门：smoke 完成记录（真实 pairs_charged 字段 + environment/summary 证据核验）+ replay_gate_record(pass=true, 认证 G4 清单绑定, 8 chunk SHA 全验, 逐对完整唯一索引)** |
+| B1 背景 | 8,046 | 同 B0 前置门，**另加 B0 自身成功记录（e2_b0_ok + 证据核验）** |
 | **总计（启动前锁定）** | **32,461 对** | 1 + 16,368 + 8,046 + 8,046（精确数，无区间） |
 
-- **累计上限 900 卡秒**（外推需求 ≈133 卡秒，余量 ~7×）；**共同墙钟截止 `e2_deadline_utc`** 的强制覆盖：scorer 每 batch heartbeat（DeadlineLedgerProxy）+ 每 chunk 前 + 模型加载后 + 结算判定，另配 G4 式**进程级监督**（POSIX 上 deadline 时 SIGTERM→30 s 宽限→SIGKILL，台账留 pending、拒绝自动续跑）；**最终台账在写入前确定唯一退出判定**（投影卡秒达上限-50ms 或已过截止即结算为失败，成功 note 仅在 exit 0 时写入），过程退出与台账永远一致。
+- **累计上限 900 卡秒**（外推需求 ≈133 卡秒，余量 ~7×）；**共同墙钟截止 `e2_deadline_utc`** 的强制覆盖：scorer 每 batch heartbeat（DeadlineLedgerProxy）+ 每 chunk 前 + 模型加载后 + 结算判定，另配 G4 式**独立监督进程**（POSIX；独立解释器每 5 s 读共享台账，以「墙钟截止 −30 s 宽限」与「投影卡秒达上限 −30 s 宽限」**较早者**发 SIGTERM，再 30 s SIGKILL——宽限计入上限，卡死的加载/前向被按期杀死，台账留 pending、拒绝自动续跑）。
+- **最终台账在所有证据核验与写入之后、以唯一退出判定一次性写入**：结算（投影卡秒/墙钟）→ environment+summary 落盘（失败即 `evidence_write_failed` 结算失败）→ 成功 note 仅在全链成功后写入 → finalize；过程退出与台账永远一致，不允许"程序 2 / 台账 0"。
+- **G4 对照强制认证**：比较器先核验 `SHA256SUMS` 文件 SHA256 == 指纹配置钉住的认证值（`97f9cbb6…`），再逐块核对其余 8 个 chunk 的清单条目与磁盘文件，任一不符即拒绝比较；批量门同时核对 record 中的认证清单绑定与候选映射。
 - 授权 caps 拒绝非有限值（inf/nan）；所有调用（smoke/批量/replay）共享同一 canonical E2 ledger；台账未收尾拒绝续跑。
 
 ## 4. 运行前置门（顺序）
 
-1. 本地实现 + 单测：URL 允许集合、显式授权 ref（refspec 强制更新 + 从捕获提交读取，防陈旧 tracking ref）、`load_background_texts`、E2 清单构建器、E2 runner（dry-run/score 一致校验）、预算台账 caps（拒绝非有限值）、smoke/REPLAY 门前置、超限记失败。
-2. 独立 fresh review 通过 + 用户批准启动（写 `e2_approved_sha` 等 ACTIVE_TASK 字段）。
-3. share4 CPU dry-run 预检（四清单 + 候选对账，零前向）。
-4. 执行顺序（强制门控）：**B0 smoke 1 对 → 证据审查 → REPLAY 16,368 对 → 本地逐对比对出 gate record → gate 记录放回 run root 并核 SHA → B0 8,046 → B1 8,046**；任何绕序尝试被 runner 拒绝。
-5. 本地差分分析 → E2 结果报告。
+1. 本地实现 + 单测：URL 允许集合、显式授权 ref（refspec 强制更新 + 从捕获提交读取，防陈旧 tracking ref）、`load_background_texts`、E2 清单构建器、E2 runner（dry-run/score 一致校验）、预算台账 caps（拒绝非有限值）、smoke/REPLAY 门前置、超限记失败、独立监督进程、证据后置统一落账、G4 认证清单强制。
+2. **三条验收回归全部本机通过**：真实台账完整顺序（32,461 对 + 四成功 note）／真实台账证据写失败 → 下一阶段拒绝／G4 清单 pin 不符与 chunk 漂移 → REPLAY 拒绝；POSIX 卡死子进程按期退出回归已写就（本机 Windows skip，share4 Linux 预检执行）。
+3. 独立 fresh review 通过 + 用户批准启动（写 `e2_approved_sha` 等 ACTIVE_TASK 字段）。
+4. share4 CPU dry-run 预检（四清单 + 候选对账，零前向）+ POSIX 监督回归实际执行。
+5. 执行顺序（强制门控）：**B0 smoke 1 对 → 证据审查 → REPLAY 16,368 对 → 本地逐对比对出 gate record（绑定认证 G4 清单）→ gate 记录放回 run root 并核 SHA → B0 8,046 → B1 8,046（需 B0 成功记录+证据核验）**；任何绕序尝试被 runner 拒绝。
+6. 本地差分分析 → E2 结果报告。
+
+## 4.1 第五轮复核修复（2026-11-12）
+
+1. **独立监督进程**：`_supervise_loop`（POSIX fork）替代进程内 Python 定时器——独立解释器每 5 s 读共享台账，投影卡秒达「上限−30 s 宽限」或墙钟达「截止−30 s」即向评分进程发 SIGTERM，30 s 后 SIGKILL；宽限计入上限（KILL 不晚于截止）。评分进程被杀时台账留 pending。
+2. **统一落账**：结算判定 → environment/summary 证据写入（失败即 `evidence_write_failed`）→ 成功 note → finalize（最后一步唯一写入）；下一阶段的完成记录门同时核验 note、pairs_charged 与证据文件存在。
+3. **G4 认证强制**：`g4_sha256sums_sha256`（认证清单 `97f9cbb6…`）钉入指纹配置；比较前核验清单文件 SHA 与 8 个 chunk 的清单条目逐一相符；gate record 携带认证绑定，批量门复核。
+
+三条验收回归（真实台账/真实门代码，仅替 forward）全部本机通过；POSIX 卡死子进程回归已在测试集中就绪（`test_posix_supervisor_kills_stuck_child_by_deadline`），将在 share4 Linux 预检执行。
 
 ## 5. 停止条件与产物
 

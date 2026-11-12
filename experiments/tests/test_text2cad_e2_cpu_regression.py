@@ -283,6 +283,134 @@ class TestE2CpuRegression(unittest.TestCase):
         self.assertFalse(any(str(i["note"]).startswith("e2_") and i["note"].endswith("_ok")
                              for i in invs))
 
+    def test_evidence_failure_real_ledger_blocks_next_stage(self):
+        # review round 5, item 2 with the REAL ledger: an environment-write
+        # failure settles the invocation as a failure and the next stage is
+        # refused (the success note never exists)
+        sha = "c" * 40
+        auth = self._auth(sha)
+        self._patch_runner_edges(auth)
+        original_env = self.fr.environment_record
+
+        def failing_env(cfg, extra):
+            raise OSError("simulated environment record write failure")
+
+        self.fr.environment_record = failing_env
+        try:
+            rc = e2.score_e2(REPO, self.CFG, "smoke_b0", self._dirs(), self.CHECKPOINT, self.BERT,
+                             self.ZIP, self.RUN_ROOT / "evidence_failure", "cpu", resume=False)
+        finally:
+            self.fr.environment_record = original_env
+        self.assertEqual(rc, 2)
+        ledger = self._ledger(sha)
+        inv = ledger.data["invocations"][-1]
+        self.assertTrue(inv["finalized"])
+        self.assertEqual(inv["exit_code"], 2)
+        self.assertEqual(inv["note"], "evidence_write_failed")
+        with self.assertRaises(e2.E2Error) as ctx:
+            e2.score_e2(REPO, self.CFG, "replay", self._dirs(), self.CHECKPOINT, self.BERT,
+                        self.ZIP, self.RUN_ROOT / "evidence_failure", "cpu", resume=False)
+        self.assertIn("smoke_b0", str(ctx.exception))
+
+    def test_g4_sums_pin_mismatch_refuses_replay(self):
+        # review round 5, item 3: a comparator run against files that do not
+        # match the PINNED certified G4 SHA256SUMS is refused outright
+        auth = self._auth("b" * 40)
+        bad_cfg = dict(self.CFG)
+        bad_cfg["g4_sha256sums_sha256"] = "0" * 64
+        with self.assertRaises(e2.E2Error) as ctx:
+            e2.compare_replay_to_g4(
+                self.RUN_ROOT / "full_order" / "replay", G4_RAW, bad_cfg,
+                "b" * 40, self.RUN_ROOT / "g4_pin_mismatch_gate.json")
+        self.assertIn("pinned certified", str(ctx.exception))
+
+    def test_g4_chunk_drift_from_certified_list_refused(self):
+        # a G4 chunk whose bytes differ from the certified list is refused even
+        # when the sums FILE itself matches the pin
+        import hashlib
+
+        def _sha_text(text):
+            return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+        def _sha_bytes(data):
+            return hashlib.sha256(data).hexdigest()
+
+        def _jl(rows):
+            return b"".join(json.dumps(r, ensure_ascii=False).encode("utf-8") + b"\n"
+                            for r in rows)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            g4 = root / "card0"
+            g4.mkdir(parents=True)
+            payload = _jl([{"record_type": "chunk_header"}] + [
+                {"record_type": "pair", "cad_index": c, "status": "scored",
+                 "score_total": -100.0 - c, "n_valid_total": 10} for c in range(2)])
+            (g4 / "chunk_s00_t00000_00001.jsonl").write_bytes(payload)
+            # the certified list pins a DIFFERENT sha than the on-disk chunk
+            sums = "0" * 64 + "  card0/chunk_s00_t00000_00001.jsonl\n"
+            (root / "SHA256SUMS").write_bytes(sums.encode("utf-8"))
+            cfg = {
+                "backgrounds": {"replay": {"n_unique_text": 1, "n_gallery": 2}},
+                "replay_texts": [{"original_text_index": 0, "text": "t", "text_sha256": _sha_text("t")}],
+                "g4_sha256sums_sha256": _sha_bytes(sums.encode("utf-8")),
+                "replay_dense_to_original_cad_index": [0, 1],
+            }
+            rep = root / "replay"
+            rep.mkdir()
+            (rep / "chunk_s00_t00000_00001.jsonl").write_bytes(payload)
+            with self.assertRaises(e2.E2Error) as ctx:
+                e2.compare_replay_to_g4(rep, root, cfg, "a" * 40, root / "gate.json")
+            self.assertIn("certified", str(ctx.exception))
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "fork"),
+                         "POSIX process-group supervision: runs on the Linux preflight host")
+    def test_posix_supervisor_kills_stuck_child_by_deadline(self):
+        """REAL stuck-process regression (review round 5, item 1): an
+        independent supervisor process must terminate a child that is blocked
+        forever, BY the deadline (grace counted into the caps)."""
+        import multiprocessing as mp
+
+        ctx = mp.get_context("fork")
+        with tempfile.TemporaryDirectory() as td:
+            ledger_path = Path(td) / "led.json"
+            ledger_path.write_text(json.dumps({
+                "invocations": [{"invocation_id": "X", "finalized": False,
+                                 "started_epoch": time.time()}],
+                "card_seconds_spent": 0.0,
+            }), encoding="utf-8")
+            deadline = time.time() + 35.0  # TERM at +5, KILL at +35
+            pid = os.fork()
+            if pid == 0:
+                try:
+                    while True:
+                        time.sleep(1)
+                finally:
+                    os._exit(9)
+            sup = ctx.Process(target=e2._supervise_loop,
+                              args=(pid, str(ledger_path), deadline, 900.0, 1))
+            sup.start()
+            died_at = None
+            t_end = deadline + 10.0
+            while time.time() < t_end:
+                wpid, _ = os.waitpid(pid, os.WNOHANG)
+                if wpid != 0:
+                    died_at = time.time()
+                    break
+                time.sleep(0.2)
+            if died_at is None:
+                try:
+                    os.kill(pid, 9)
+                except ProcessLookupError:
+                    pass
+                try:
+                    os.waitpid(pid, 0)
+                except ChildProcessError:
+                    pass
+            if sup.is_alive():
+                sup.terminate()
+            self.assertIsNotNone(died_at, "stuck child survived past the deadline")
+            self.assertLessEqual(died_at, deadline + 1.0, "KILL must land BY the deadline")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -199,7 +199,7 @@ class TestScorePath(unittest.TestCase):
             "backgrounds": {
                 "b0": {**make_manifest(self.root / "mb0", [""], 2), "n_unique_text": 1, "n_gallery": 2},
                 "b1": {**make_manifest(self.root / "mb1", ["a CAD model."], 2), "n_unique_text": 1, "n_gallery": 2},
-                "smoke_b0": {**make_manifest(self.root / "msmoke", [""], 2), "n_unique_text": 1, "n_gallery": 2},
+                "smoke_b0": {**make_manifest(self.root / "msmoke", [""], 1), "n_unique_text": 1, "n_gallery": 1},
                 "replay": {**make_manifest(self.root / "mreplay", ["t0", "t1"], 2), "n_unique_text": 2, "n_gallery": 2},
             },
             "original_cad_store_sha256": sha((original_store_dir(self.root) / CAD_STORE_FILE).read_bytes()),
@@ -208,6 +208,7 @@ class TestScorePath(unittest.TestCase):
                 {"original_text_index": 1, "text": "t1", "text_sha256": sha256_text("t1")},
             ],
             "cad_seq_zip_sha256": "0" * 64,
+            "g4_sha256sums_sha256": "9" * 64,
         }
         dirs = {"b0": self.root / "mb0", "b1": self.root / "mb1", "smoke_b0": self.root / "msmoke",
                 "replay": self.root / "mreplay", "_original": original}
@@ -232,7 +233,7 @@ class TestScorePath(unittest.TestCase):
         chunk = next(iter((run / "smoke_b0").glob("chunk_*.jsonl")))
         body = [json.loads(l) for l in chunk.read_text(encoding="utf-8").splitlines() if l.strip()]
         self.assertEqual(body[0]["record_type"], "chunk_header")
-        self.assertEqual(len([r for r in body if r.get("record_type") == "pair"]), 2)
+        self.assertEqual(len([r for r in body if r.get("record_type") == "pair"]), 1)
         envs = list(run.glob("environment_*.json"))
         sums = list(run.glob("summary_*.json"))
         self.assertEqual(len(envs), 1, "score mode must persist an environment record")
@@ -268,6 +269,36 @@ class TestScorePath(unittest.TestCase):
                         self.root / "cad_seq.zip", self.root / "run3", "npu:0")
         self.assertIn("not detached", str(ctx.exception))
 
+    def test_evidence_write_failure_settles_and_blocks_next_stage(self):
+        repo, cfg, dirs, auth = self._prepare()
+        e2.git_dirty = lambda repo_root: ""
+        e2.head_is_detached = lambda repo_root: (True, "")
+        e2.authorize_e2_run = lambda repo_root, cfg: auth
+        stub_mod = sys.modules["idea01.text2cad_frozen_runner"]
+        real_publish = stub_mod.atomic_publish
+
+        def failing_publish(path, lines):
+            if "environment_" in str(path):
+                raise OSError("simulated evidence write failure")
+            return real_publish(path, lines)
+
+        stub_mod.atomic_publish = failing_publish
+        run = self.root / "run_ev"
+        rc = e2.score_e2(repo, cfg, "smoke_b0", dirs, self.root / "ckpt.pth", self.root / "bert",
+                         self.root / "cad_seq.zip", run, "npu:0")
+        stub_mod.atomic_publish = real_publish
+        self.assertEqual(rc, 2)
+        ledger = self.records["ledger"]
+        invs = [i for i in ledger.data["invocations"] if i["finalized"]]
+        self.assertEqual(len(invs), 1)
+        self.assertEqual(invs[0]["exit_code"], 2)
+        self.assertEqual(invs[0]["note"], "evidence_write_failed")
+        # the failed smoke must NOT unlock the next stage
+        with self.assertRaises(e2.E2Error) as ctx2:
+            e2.score_e2(repo, cfg, "b0", dirs, self.root / "ckpt.pth", self.root / "bert",
+                        self.root / "cad_seq.zip", run, "npu:0")
+        self.assertIn("smoke_b0", str(ctx2.exception))
+
     def test_batch_requires_smoke_and_replay_gate(self):
         repo, cfg, dirs, auth = self._prepare()
         e2.git_dirty = lambda repo_root: ""
@@ -290,6 +321,10 @@ class TestScorePath(unittest.TestCase):
         (run / "smoke_b0" / "chunk_s00_t00000_00001.jsonl").write_bytes(
             jl([{"record_type": "chunk_header"}, {"record_type": "pair", "cad_index": 0,
                 "status": "scored", "score_total": -1.0, "n_valid_total": 10}]))
+        # evidence records accompany the success note (round 5): without them
+        # the smoke gate must STILL refuse
+        (run / "environment_S1.json").write_text("{}", encoding="utf-8")
+        (run / "summary_S1.json").write_text("{}", encoding="utf-8")
         with self.assertRaises(e2.E2Error) as ctx2:
             e2.score_e2(repo, cfg, "b0", dirs, self.root / "ckpt.pth", self.root / "bert",
                         self.root / "cad_seq.zip", run, "npu:0")
@@ -311,7 +346,8 @@ class TestGates(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             run = Path(td)
             auth = {"approved_sha": "a" * 40}
-            cfg = {"backgrounds": {"replay": {"n_unique_text": 2, "n_gallery": 2}}}
+            cfg = {"backgrounds": {"replay": {"n_unique_text": 2, "n_gallery": 2}},
+                   "g4_sha256sums_sha256": "9" * 64}
             with self.assertRaises(e2.E2Error) as ctx:
                 e2.verify_replay_gate(run, cfg, auth)
             self.assertIn("missing", str(ctx.exception))
@@ -323,6 +359,7 @@ class TestGates(unittest.TestCase):
                     "chunk_s00_t00001_00002.jsonl": "y",
                 },
                 "g4_chunk_sha256": {"chunk_s00_t00000_00001.jsonl": "g"},
+                "g4_sha256sums_sha256": "9" * 64,
             }
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
             with self.assertRaises(e2.E2Error) as ctx2:
@@ -370,7 +407,11 @@ class TestComparator(unittest.TestCase):
                 {"record_type": "pair", "cad_index": c, "status": "scored",
                  "score_total": -100.0 - c, "n_valid_total": n_valid} for c in range(2)
             ]
-            (g4 / "chunk_s00_t00000_00001.jsonl").write_bytes(jl(g4_rows))
+            g4_payload = jl(g4_rows)
+            (g4 / "chunk_s00_t00000_00001.jsonl").write_bytes(g4_payload)
+            sums_payload = sha(g4_payload) + "  card0/chunk_s00_t00000_00001.jsonl\n"
+            (root / "SHA256SUMS").write_bytes(sums_payload.encode("utf-8"))
+            certified_sums_sha = sha(sums_payload.encode("utf-8"))
             rep = root / "replay"
             rep.mkdir()
             rep_rows = [{"record_type": "chunk_header"}] + [
@@ -381,6 +422,7 @@ class TestComparator(unittest.TestCase):
             cfg = {
                 "backgrounds": {"replay": {"n_unique_text": 1, "n_gallery": 2}},
                 "replay_texts": [{"original_text_index": 0, "text": "t", "text_sha256": sha256_text("t")}],
+                "g4_sha256sums_sha256": certified_sums_sha,
             }
             rec = e2.compare_replay_to_g4(rep, root, cfg, "a" * 40, root / "gate.json")
             return rec

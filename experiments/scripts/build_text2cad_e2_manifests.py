@@ -69,6 +69,10 @@ def main() -> int:
     ap.add_argument("--original-manifest-dir", required=True)
     ap.add_argument("--out-root", required=True)
     ap.add_argument("--config-out", required=True)
+    ap.add_argument("--g4-sha256sums", required=True,
+                    help="the CERTIFIED G4 raw-matrix SHA256SUMS file (repo experiments/runs/"
+                         "idea01_text2cad_g4_full_20261002/SHA256SUMS); its file sha256 is pinned "
+                         "into the expected-config and enforced by the comparator + batch gate")
     args = ap.parse_args()
 
     src = Path(args.original_manifest_dir)
@@ -177,6 +181,7 @@ def main() -> int:
         "replay_n_cads": REPLAY_N_CADS,
         "replay_dense_to_original_cad_index": REPLAY_DENSE_TO_ORIGINAL_CAD_INDEX,
         "cad_seq_zip_sha256": CAD_SEQ_ZIP_SHA256,
+        "g4_sha256sums_sha256": sha256_file(Path(args.g4_sha256sums)),
         "budget_note": "caps live in ACTIVE_TASK e2_* fields at launch; exact totals = smoke 1 + b0 8,046 + b1 8,046 + replay 16,368 = 32,461 pairs / <= 900 card-seconds / deadline e2_deadline_utc",
     }
     Path(args.config_out).parent.mkdir(parents=True, exist_ok=True)

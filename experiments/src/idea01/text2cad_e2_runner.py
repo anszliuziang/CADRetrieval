@@ -100,7 +100,7 @@ def load_e2_config(repo_root: Path) -> dict:
     if cfg.get("schema") != "text2cad-e2-background-expected-v1":
         raise E2Error(f"E2 config schema mismatch: {cfg.get('schema')!r}")
     for key in ("authorization_ref", "backgrounds", "original_cad_store_sha256",
-                "replay_texts", "cad_seq_zip_sha256"):
+                "replay_texts", "cad_seq_zip_sha256", "g4_sha256sums_sha256"):
         if key not in cfg:
             raise E2Error(f"E2 expected-config missing key {key!r}")
     for which, pins in cfg["backgrounds"].items():
@@ -262,44 +262,71 @@ def authorize_e2_run(repo_root: Path, cfg: dict) -> dict:
     return auth
 
 
-def start_deadline_watchdog(auth: dict):
-    """Process-level deadline supervision mirroring the G4 launcher mechanism:
-    SIGTERM at e2_deadline_utc, SIGKILL after a grace window, so a hung model
-    load or forward cannot outlive the deadline. The shared ledger is left with
-    a PENDING invocation by design - recovery is a reviewer decision, never an
-    automatic resume. Returns (timer, previous SIGTERM handler) or (None, None)
-    on platforms/signals that do not support it."""
+GRACE_S = 30.0  # termination grace, COUNTED INTO the caps (KILL lands by the deadline)
+
+
+def _supervise_loop(parent_pid: int, ledger_path: str, wall_deadline: float,
+                    max_card_seconds: float, cards_used: int = 1):
+    """Independent supervision PROCESS (G4-style): a separate interpreter that
+    cannot be blocked by the scoring process. Every 5 s it reads the shared
+    ledger and fires SIGTERM at the EARLIER of (a) the wall-clock deadline
+    minus GRACE_S and (b) the projected card-second cap minus GRACE_S, then
+    SIGKILL GRACE_S later - so the scored process is dead BY the deadline and
+    the termination grace is counted into the caps. A hard kill leaves the
+    ledger PENDING: recovery is a reviewer decision."""
     import signal
-    import threading
+    import time
 
-    delay = auth["deadline_epoch"] - time.time()
-    if delay <= 0:
-        raise E2Error("e2_deadline_utc already passed")
-    grace = 30.0
+    def term_now(reason: str) -> None:
+        print(f"E2 supervision: SIGTERM to {parent_pid} ({reason})", file=sys.stderr, flush=True)
+        try:
+            os.kill(parent_pid, signal.SIGTERM)
+        except OSError:
+            return
+        time.sleep(GRACE_S)
+        print(f"E2 supervision: SIGKILL to {parent_pid}", file=sys.stderr, flush=True)
+        try:
+            os.kill(parent_pid, signal.SIGKILL)
+        except OSError:
+            pass
+        os._exit(3)
 
-    def _on_term(signum, frame):
-        print("E2 deadline supervision: deadline reached (SIGTERM); scoring aborted",
-              file=sys.stderr, flush=True)
-        t = threading.Timer(grace, lambda: (print(
-            "E2 deadline supervision: SIGKILL after grace; ledger left pending by design",
-            file=sys.stderr, flush=True), os._exit(3)))
-        t.daemon = True
-        t.start()
+    while True:
+        now = time.time()
+        try:
+            data = json.loads(Path(ledger_path).read_text(encoding="utf-8"))
+            started = None
+            for inv in reversed(data.get("invocations", [])):
+                if not inv.get("finalized"):
+                    started = float(inv["started_epoch"])
+                    break
+            if started is not None:
+                projected = float(data.get("card_seconds_spent", 0.0)) + max(0.0, now - started) * cards_used
+                if projected >= max_card_seconds - GRACE_S:
+                    term_now("projected card-seconds reach cap minus grace")
+            if now >= wall_deadline - GRACE_S:
+                term_now("wall-clock deadline minus grace reached")
+        except Exception:
+            pass  # ledger not written yet / transient read error: keep supervising
+        time.sleep(5.0)
+
+
+def start_deadline_supervision(auth: dict, ledger_path: Path):
+    """Spawn the independent supervisor process (POSIX only; elsewhere the
+    in-loop checks and the operator's outer timeout remain, recorded honestly).
+    Returns the process handle or None."""
+    import multiprocessing as mp
 
     if os.name != "posix":
-        # os.kill(SIGTERM) is a hard TerminateProcess on Windows and the SIGTERM
-        # handler is not invoked; process-level supervision is POSIX-only. On
-        # such platforms the in-loop deadline/card-second checks plus the
-        # operator's outer timeout remain the enforcement (recorded honestly).
-        return None, None
-    try:
-        prev = signal.signal(signal.SIGTERM, _on_term)
-    except (ValueError, OSError, AttributeError):
-        return None, None  # not the main thread / unsupported: rely on in-loop checks
-    timer = threading.Timer(max(0.0, delay), lambda: os.kill(os.getpid(), signal.SIGTERM))
-    timer.daemon = True
-    timer.start()
-    return timer, prev
+        return None
+    proc = mp.Process(
+        target=_supervise_loop,
+        args=(os.getpid(), str(ledger_path), float(auth["deadline_epoch"]),
+              float(auth["max_card_seconds"]), 1),
+        daemon=True,
+    )
+    proc.start()
+    return proc
 
 
 def check_deadline(auth: dict, now: Optional[float] = None) -> None:
@@ -338,6 +365,17 @@ def verify_background_done(run_root: Path, ledger, which: str, success_note: str
         raise E2Error(
             f"gate {which}: shared ledger has no finalized successful invocation with note "
             f"{success_note!r} and pairs_charged >= {n_pairs}"
+        )
+    # evidence check: the success note is only consumable together with the
+    # per-invocation environment + summary records (review round 5, item 2)
+    missing = []
+    for i in ok[:1]:
+        for prefix in ("environment_", "summary_"):
+            if not (run_root / f"{prefix}{i['invocation_id']}.json").is_file():
+                missing.append(f"{prefix}{i['invocation_id']}.json")
+    if missing:
+        raise E2Error(
+            f"gate {which}: success note present but evidence records missing: {missing}"
         )
     return {"invocations": [i["invocation_id"] for i in ok], "chunk": chunk_files[0].name}
 
@@ -379,6 +417,8 @@ def verify_replay_gate(run_root: Path, cfg: dict, auth: dict) -> dict:
         )
     if not rec.get("g4_chunk_sha256"):
         raise E2Error("replay gate: record does not pin the certified G4 source chunk hashes")
+    if rec.get("g4_sha256sums_sha256") != cfg["g4_sha256sums_sha256"]:
+        raise E2Error("replay gate: record was not compared against the pinned certified G4 SHA256SUMS")
     if int(rec.get("n_pairs_compared", 0)) != want_pairs:
         raise E2Error(f"replay gate: compared {rec.get('n_pairs_compared')} != {want_pairs} replay pairs")
     replay_dir = run_root / "replay"
@@ -544,7 +584,9 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
     # deadline must bind BOTH the scorer's per-batch heartbeat AND the process
     # itself (G4-style supervision: a hung load/forward is killed, the ledger
     # stays pending, recovery is a reviewer decision)
-    watchdog_timer, _prev_sigterm = start_deadline_watchdog(auth)
+    # independent supervision PROCESS (POSIX): a hung load/forward is killed
+    # BY the deadline; the ledger stays pending (recovery = reviewer decision)
+    supervisor = start_deadline_supervision(auth, ledger_path)
     guarded_ledger = DeadlineLedgerProxy(ledger, auth)
     stale_problems = ledger.begin_invocation(invocation_id, shard_id=0, cards_used=1)
     if stale_problems:
@@ -572,59 +614,70 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
         scorer_stats = dict(scorer.stats)
     except Exception as exc:  # noqa: BLE001
         exit_code, note, failure = 2, "aborted", f"{type(exc).__name__}: {exc}"
-    finally:
-        # THE ONE settle point: the final ledger verdict is decided BEFORE
-        # finalize, so the ledger and the process exit can never disagree
-        # (review round 4, item 4).
-        now = time.time()
-        projected_card_seconds = float(ledger.data.get("card_seconds_spent", 0.0)) + max(
-            0.0, now - float(started_epoch))
-        spent = projected_card_seconds
-        if exit_code == 0 and projected_card_seconds > auth["max_card_seconds"] - 0.05:
-            exit_code, note, failure = 2, "card_seconds_exceeded", (
-                f"projected cumulative card-seconds {projected_card_seconds:.2f} reach cap "
-                f"{auth['max_card_seconds']}; settling as a failure")
-        if exit_code == 0 and now > auth["deadline_epoch"]:
-            exit_code, note, failure = 2, "deadline_exceeded", (
-                "wall-clock deadline passed before settle")
-        if exit_code == 0:
-            note = SUCCESS_NOTE[which]
-        ledger.finalize_invocation(invocation_id, exit_code=exit_code, note=note)
-        settled = float(ledger.data.get("card_seconds_spent", 0.0))
-        if settled > auth["max_card_seconds"] + 1e-6 and exit_code == 0:
-            # safety net: should be impossible after the projection refusal
-            failure = f"LEDGER BREACH: settled {settled:.2f} card-seconds exceed cap with exit 0"
-            print(f"E2 FATAL: {failure}", file=sys.stderr, flush=True)
 
-    env_record = environment_record(cfg_run, extra={
-        "e2_background": which,
-        "authorization_ref": auth["authorization_ref"],
-        "authorization_meta": auth["authorization_meta"],
-        "approved_sha": auth["approved_sha"],
-        "validation_report": validation,
-        "cad_seq_zip_sha256": sha256_file(Path(cad_seq_zip)),
-        "planned_pairs": planned,
-        "completed_before": len(completed),
-        "published_chunks": published,
-        "resume": resume,
-        "settlement": {"card_seconds_spent": spent,
-                        "max_card_seconds": auth["max_card_seconds"], "failure": failure},
-        "command_flags": {"device": device, "batch_size": BATCH_SIZE, "which": which},
-    })
-    atomic_publish(run_root / f"environment_{invocation_id}.json",
-                   [json.dumps(env_record, indent=2, sort_keys=True, ensure_ascii=False)])
-    summary = {
-        "invocation_id": invocation_id, "e2_background": which, "approved_sha": auth["approved_sha"],
-        "device": device, "published_chunks": published, "planned_pairs": planned,
-        "completed_before": len(completed), "scorer_stats": scorer_stats,
-        "load_report": load_report, "preload_report": preload_report,
-        "ledger": ledger.to_dict(), "failure": failure,
-    }
-    atomic_publish(run_root / f"summary_{invocation_id}.json",
-                   [json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=False)])
-    if failure:
+    # ---- ONE settle decision, then evidence, then the ledger (round 5 #2) ---
+    now = time.time()
+    projected_card_seconds = float(ledger.data.get("card_seconds_spent", 0.0)) + max(
+        0.0, now - float(started_epoch))
+    spent = projected_card_seconds
+    if exit_code == 0 and projected_card_seconds > auth["max_card_seconds"] - 0.05:
+        exit_code, note, failure = 2, "card_seconds_exceeded", (
+            f"projected cumulative card-seconds {projected_card_seconds:.2f} reach cap "
+            f"{auth['max_card_seconds']}; settling as a failure")
+    if exit_code == 0 and now > auth["deadline_epoch"]:
+        exit_code, note, failure = 2, "deadline_exceeded", "wall-clock deadline passed before settle"
+
+    if exit_code == 0:
+        # evidence MUST be written and intact BEFORE the ledger records success;
+        # an evidence-write failure settles this invocation as a failure
+        try:
+            env_record = environment_record(cfg_run, extra={
+                "e2_background": which,
+                "authorization_ref": auth["authorization_ref"],
+                "authorization_meta": auth["authorization_meta"],
+                "approved_sha": auth["approved_sha"],
+                "validation_report": validation,
+                "prerequisite_gates": gates,
+                "cad_seq_zip_sha256": sha256_file(Path(cad_seq_zip)),
+                "planned_pairs": planned,
+                "completed_before": len(completed),
+                "published_chunks": published,
+                "resume": resume,
+                "settlement": {"card_seconds_spent": spent,
+                                "max_card_seconds": auth["max_card_seconds"], "failure": None},
+                "command_flags": {"device": device, "batch_size": BATCH_SIZE, "which": which},
+            })
+            atomic_publish(run_root / f"environment_{invocation_id}.json",
+                           [json.dumps(env_record, indent=2, sort_keys=True, ensure_ascii=False)])
+            summary = {
+                "invocation_id": invocation_id, "e2_background": which,
+                "approved_sha": auth["approved_sha"], "device": device,
+                "published_chunks": published, "planned_pairs": planned,
+                "completed_before": len(completed), "scorer_stats": scorer_stats,
+                "load_report": load_report, "preload_report": preload_report,
+                "ledger": ledger.to_dict(), "failure": None,
+            }
+            atomic_publish(run_root / f"summary_{invocation_id}.json",
+                           [json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=False)])
+        except Exception as exc:  # noqa: BLE001
+            exit_code, note, failure = 2, "evidence_write_failed", (
+                f"{type(exc).__name__}: {exc}")
+
+    if exit_code == 0:
+        note = SUCCESS_NOTE[which]
+    # finalize LAST, with the one final verdict; the process exit code below is
+    # derived from the SAME values the ledger records
+    ledger.finalize_invocation(invocation_id, exit_code=exit_code, note=note)
+    settled = float(ledger.data.get("card_seconds_spent", 0.0))
+    if settled > auth["max_card_seconds"] + 1e-6 and exit_code == 0:
+        # unreachable safety net after the projection refusal
+        print(f"E2 FATAL: LEDGER BREACH: settled {settled:.2f} card-seconds exceed cap "
+              "with a success verdict", file=sys.stderr, flush=True)
+        return 3
+
+    if exit_code != 0:
         print(f"E2 FATAL: {failure}", file=sys.stderr)
-        return 2
+        return exit_code
     print(json.dumps({"status": "ok", "invocation_id": invocation_id, "background": which,
                       "pairs": planned, "ledger_pairs_total": ledger.pairs_charged()}))
     return 0
@@ -700,6 +753,27 @@ def compare_replay_to_g4(replay_run_dir: Path, g4_raw_dir: Path, cfg: dict,
     """
     replay_dir = Path(replay_run_dir)
     g4_raw = Path(g4_raw_dir)
+    # certified-source enforcement (review round 5, item 3): the G4 SHA256SUMS
+    # file itself must match the pinned hash, and EVERY compared chunk must be
+    # listed there with a matching sha - otherwise refuse before comparing
+    sums_path = g4_raw / "SHA256SUMS"
+    sums_sha = sha256_file(sums_path)
+    if sums_sha != cfg["g4_sha256sums_sha256"]:
+        raise E2Error(
+            f"G4 SHA256SUMS sha {sums_sha} != pinned certified {cfg['g4_sha256sums_sha256']}"
+        )
+    certified = {}
+    for line in sums_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) == 2:
+            a, b = parts
+            rel = b.lstrip("./") if len(a) == 64 else a.lstrip("./")
+            h = a if len(a) == 64 else b
+            if len(h) == 64:
+                certified[rel] = h
     rows_out: list[dict] = []
     max_abs = 0.0
     n_compared = 0
@@ -717,10 +791,16 @@ def compare_replay_to_g4(replay_run_dir: Path, g4_raw_dir: Path, cfg: dict,
         card = 0 if orig < 1822 else 1
         g4_name = f"chunk_s{card:02d}_t{orig:05d}_{orig + 1:05d}.jsonl"
         g4_path = g4_raw / f"card{card}" / g4_name
+        g4_file_sha = sha256_file(g4_path)
+        if certified.get(f"card{card}/{g4_name}") != g4_file_sha:
+            raise E2Error(
+                f"G4 source chunk {g4_name} sha {g4_file_sha} is NOT in the certified "
+                f"SHA256SUMS (or drifts from it) - refusing the comparison"
+            )
         replay_name = expected_chunk_names[k]
         replay_path = replay_dir / replay_name
         chunk_pins[replay_name] = sha256_file(replay_path)
-        g4_chunk_pins[g4_name] = sha256_file(g4_path)  # bind the comparison to the certified source files
+        g4_chunk_pins[g4_name] = g4_file_sha  # bound to the certified source files
         g4_by_cad: dict[int, dict] = {}
         with open(g4_path, "r", encoding="utf-8") as f:
             f.readline()  # header
@@ -785,6 +865,7 @@ def compare_replay_to_g4(replay_run_dir: Path, g4_raw_dir: Path, cfg: dict,
         "n_violations": n_violations,
         "replay_chunk_sha256": chunk_pins,
         "g4_chunk_sha256": g4_chunk_pins,
+        "g4_sha256sums_sha256": sums_sha,
         "dense_to_original_cad_index": dense_to_original,
         "violations": rows_out[:50],
         "g4_source_dir": str(g4_raw),
