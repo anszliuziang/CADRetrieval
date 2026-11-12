@@ -7,6 +7,7 @@
       --cad-seq-zip $RT/datasets/Text2CAD-v1.0/422d4c93.../cad_seq.zip \
       --b0-manifest-dir $RT/text2cad_e2_manifests_20261112/b0 \
       --b1-manifest-dir $RT/text2cad_e2_manifests_20261112/b1 \
+      --smoke-manifest-dir $RT/text2cad_e2_manifests_20261112/smoke_b0 \
       --replay-manifest-dir $RT/text2cad_e2_manifests_20261112/replay \
       --original-manifest-dir $RT/pair_manifest_v4 \
       --out-dir $RT/runs/idea01_text2cad_e2_background_20261112/dry_run

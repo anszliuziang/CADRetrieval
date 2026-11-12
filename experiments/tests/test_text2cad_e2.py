@@ -177,6 +177,16 @@ class TestE2AuthorizationParsing(unittest.TestCase):
         with self.assertRaises(e2.E2Error):
             e2.parse_e2_authorization(bad, self.SHA)
 
+    def test_comma_separated_caps_accepted(self):
+        text = AT_OK.format(sha=self.SHA).replace("24285", "24,285").replace("900", "900")
+        auth = e2.parse_e2_authorization(text, self.SHA)
+        self.assertEqual(auth["max_pairs"], 24285)
+
+    def test_zero_cap_refused(self):
+        bad = AT_OK.format(sha=self.SHA).replace("900", "0")
+        with self.assertRaises(e2.E2Error):
+            e2.parse_e2_authorization(bad, self.SHA)
+
     def test_deadline_enforced(self):
         auth = e2.parse_e2_authorization(AT_OK.format(sha=self.SHA), self.SHA)
         e2.check_deadline(auth, now=auth["deadline_epoch"] - 1)
@@ -189,20 +199,18 @@ class TestE2ManifestValidation(unittest.TestCase):
         self.td = tempfile.TemporaryDirectory()
         self.addCleanup(self.td.cleanup)
         self.root = Path(self.td.name)
-        self.old_counts = dict(e2.REQUIRED_COUNTS)
-        e2.REQUIRED_COUNTS = {"b0": (1, 3), "b1": (1, 3), "replay": (2, 2)}
-
-    def tearDown(self):
-        e2.REQUIRED_COUNTS = self.old_counts
 
     def _cfg(self, original: Path, b0: Path, b1: Path, replay: Path, replay_texts):
         orig_store_sha = sha((original / CAD_STORE_FILE).read_bytes())
-        return {
+        # original cad_store rows MUST match make_manifest's member format so the
+        # b0 store is byte-identical (the I1 fixture fix from the fresh review)
+        cfg = {
             "schema": "text2cad-e2-background-expected-v1",
             "authorization_ref": "origin/glm-night-20261112",
             "backgrounds": {
                 "b0": make_manifest(b0, [""], 3),
                 "b1": make_manifest(b1, ["a CAD model."], 3),
+                "smoke_b0": make_manifest(b1.parent / "smoke", [""], 1),
                 "replay": make_manifest(replay, [t for _, t in replay_texts], 2),
             },
             "original_cad_store_sha256": orig_store_sha,
@@ -212,6 +220,10 @@ class TestE2ManifestValidation(unittest.TestCase):
             ],
             "cad_seq_zip_sha256": "0" * 64,
         }
+        for which, n_t, n_c in (("b0", 1, 3), ("b1", 1, 3), ("smoke_b0", 1, 1), ("replay", 2, 2)):
+            cfg["backgrounds"][which]["n_unique_text"] = n_t
+            cfg["backgrounds"][which]["n_gallery"] = n_c
+        return cfg
 
     def test_valid_set_passes(self):
         original = self.root / "orig"
@@ -220,7 +232,7 @@ class TestE2ManifestValidation(unittest.TestCase):
         replay_texts = [(0, "text zero"), (1, "text one")]
         cfg = self._cfg(original, self.root / "b0", self.root / "b1", self.root / "replay", replay_texts)
         report = e2.validate_e2_manifests(
-            cfg, {"b0": self.root / "b0", "b1": self.root / "b1", "replay": self.root / "replay"}, original
+            cfg, {"b0": self.root / "b0", "b1": self.root / "b1", "smoke_b0": self.root / "smoke", "replay": self.root / "replay"}, original
         )
         self.assertEqual(report["backgrounds"]["b0"]["text"], "")
         self.assertEqual(report["backgrounds"]["replay"]["n_texts"], 2)
@@ -228,12 +240,15 @@ class TestE2ManifestValidation(unittest.TestCase):
     def test_cad_store_mismatch_refused(self):
         original = self.root / "orig"
         original.mkdir()
-        (original / CAD_STORE_FILE).write_bytes(jl([{"cad_index": i, "member": f"OTHER{i}"} for i in range(3)]))
+        (original / CAD_STORE_FILE).write_bytes(jl([{"cad_index": i, "member": f"cad_seq/0000/{i:08d}/seq/{i:08d}.pth"} for i in range(3)]))
         replay_texts = [(0, "a"), (1, "b")]
         cfg = self._cfg(original, self.root / "b0", self.root / "b1", self.root / "replay", replay_texts)
+        # tamper the ORIGINAL store after config pinning: its bytes must still
+        # match the committed pin, otherwise refuse (candidate-drift gate)
+        (original / CAD_STORE_FILE).write_bytes(jl([{"cad_index": i, "member": f"OTHER{i}"} for i in range(3)]))
         with self.assertRaises(e2.E2Error):
             e2.validate_e2_manifests(
-                cfg, {"b0": self.root / "b0", "b1": self.root / "b1", "replay": self.root / "replay"}, original
+                cfg, {"b0": self.root / "b0", "b1": self.root / "b1", "smoke_b0": self.root / "smoke", "replay": self.root / "replay"}, original
             )
 
     def test_replay_text_mismatch_refused(self):
@@ -243,10 +258,14 @@ class TestE2ManifestValidation(unittest.TestCase):
         replay_texts = [(0, "pinned text"), (1, "pinned two")]
         cfg = self._cfg(original, self.root / "b0", self.root / "b1", self.root / "replay", replay_texts)
         # b0/b1/replay built with different replay texts than pinned
-        cfg["backgrounds"]["replay"] = make_manifest(self.root / "replay2", ["changed"], 2)
+        cfg["backgrounds"]["replay"] = {
+            **make_manifest(self.root / "replay2", ["changed"], 2),
+            "n_unique_text": 2,
+            "n_gallery": 2,
+        }
         with self.assertRaises(e2.E2Error):
             e2.validate_e2_manifests(
-                cfg, {"b0": self.root / "b0", "b1": self.root / "b1", "replay": self.root / "replay2"}, original
+                cfg, {"b0": self.root / "b0", "b1": self.root / "b1", "smoke_b0": self.root / "smoke", "replay": self.root / "replay2"}, original
             )
 
     def test_b0_needs_background_loader(self):
@@ -262,20 +281,44 @@ class TestE2ManifestValidation(unittest.TestCase):
 
 
 class TestDryRunRefusals(unittest.TestCase):
-    def test_refuse_overwrite(self):
+    def test_refuse_overwrite_first(self):
+        # refusal guards precede validation (fresh review I1): empty fixtures are fine,
+        # the existing dry_run.json alone triggers the refusal (out_dir outside the repo)
         with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
             out = Path(td) / "dr"
             out.mkdir()
             (out / "dry_run.json").write_text("{}", encoding="utf-8")
-            with self.assertRaises(e2.E2Error):
+            with self.assertRaises(e2.E2Error) as ctx:
                 e2.dry_run_e2(
                     cfg={"backgrounds": {}, "original_cad_store_sha256": "", "replay_texts": [], "cad_seq_zip_sha256": ""},
-                    dirs={"b0": Path(td), "b1": Path(td), "replay": Path(td)},
+                    dirs={"b0": Path(td), "b1": Path(td), "replay": Path(td), "smoke_b0": Path(td)},
                     original_manifest_dir=Path(td),
                     bert_dir=Path(td),
                     cad_seq_zip=Path(td),
                     out_dir=out,
+                    repo_root=repo,
                 )
+            self.assertIn("refusing to overwrite", str(ctx.exception))
+
+    def test_refuse_outside_checkout(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            (repo / "experiments").mkdir(parents=True)
+            out = repo / "experiments" / "runs" / "x"
+            out.mkdir(parents=True)
+            with self.assertRaises(e2.E2Error) as ctx:
+                e2.dry_run_e2(
+                    cfg={"backgrounds": {}, "original_cad_store_sha256": "", "replay_texts": [], "cad_seq_zip_sha256": ""},
+                    dirs={"b0": Path(td), "b1": Path(td), "replay": Path(td), "smoke_b0": Path(td)},
+                    original_manifest_dir=Path(td),
+                    bert_dir=Path(td),
+                    cad_seq_zip=Path(td),
+                    out_dir=out,
+                    repo_root=repo,
+                )
+            self.assertIn("inside the Git checkout", str(ctx.exception))
 
 
 class TestConfigLoader(unittest.TestCase):

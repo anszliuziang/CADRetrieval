@@ -7,19 +7,33 @@
       "texts_sha256": "5fe69498cd968942b53c9dfb96987b18401466a9bde8a7d40533ff2d0f398d92",
       "cad_store_sha256": "2f441110f013bb614b0bd2fdb7a3b49569a231bbf3f8eaa2c03ac1d725cb1380",
       "cad_length_index_sha256": "daac66a102e34fe45c9cb474922076b0d62345ab0c9796f917a0f8085c6ea0c3",
-      "pair_manifest_sha256": "042560b9685bfe23cca68ceee38f6bd148480cf7a4d5758cf7ec9ef0b65bbf56"
+      "pair_manifest_sha256": "042560b9685bfe23cca68ceee38f6bd148480cf7a4d5758cf7ec9ef0b65bbf56",
+      "n_unique_text": 1,
+      "n_gallery": 8046
     },
     "b1": {
       "texts_sha256": "6c99b6ec504d8e2dab8c18ac4746268370f9ca7b6de4f4e0e929b3967730ed5d",
       "cad_store_sha256": "2f441110f013bb614b0bd2fdb7a3b49569a231bbf3f8eaa2c03ac1d725cb1380",
       "cad_length_index_sha256": "daac66a102e34fe45c9cb474922076b0d62345ab0c9796f917a0f8085c6ea0c3",
-      "pair_manifest_sha256": "19361b2bdfbe854214558e8c8d2735aa0a8702ed7ee2af3a4ececb5c32cf9a3a"
+      "pair_manifest_sha256": "19361b2bdfbe854214558e8c8d2735aa0a8702ed7ee2af3a4ececb5c32cf9a3a",
+      "n_unique_text": 1,
+      "n_gallery": 8046
+    },
+    "smoke_b0": {
+      "texts_sha256": "5fe69498cd968942b53c9dfb96987b18401466a9bde8a7d40533ff2d0f398d92",
+      "cad_store_sha256": "a2b3ceb2ab658fa3375d2fc30c74e8a435b1dce67041bc29e67a72c9bccccb85",
+      "cad_length_index_sha256": "dec9cd9a35cabe8958b39ac0f785258e6b18880b35018ef5681a2a8c967fd98b",
+      "pair_manifest_sha256": "e613d0954e328c3306feab275fa3cc72cdbefab1da22f5b8608df143c95b4810",
+      "n_unique_text": 1,
+      "n_gallery": 1
     },
     "replay": {
       "texts_sha256": "bcdebdbe5e02c8dbdf5c22664edf91a947b50f30004afcffa8cd65b44902ea1c",
       "cad_store_sha256": "52e34b3ad89121f639cfe0d322cf545211ce86beb655193bdfb0ddd33d0a35f0",
       "cad_length_index_sha256": "34fdbefa7b52c0a48f4087fafe558dd555fd46e087cc729403775098e26e1c89",
-      "pair_manifest_sha256": "22c5b22a6cd5e7b1ce8f5ab9ee3313da8a8f4db2c2b863cbe19e4c564acb6517"
+      "pair_manifest_sha256": "22c5b22a6cd5e7b1ce8f5ab9ee3313da8a8f4db2c2b863cbe19e4c564acb6517",
+      "n_unique_text": 8,
+      "n_gallery": 1024
     }
   },
   "original_cad_store_sha256": "2f441110f013bb614b0bd2fdb7a3b49569a231bbf3f8eaa2c03ac1d725cb1380",

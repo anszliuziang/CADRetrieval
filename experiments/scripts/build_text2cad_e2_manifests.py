@@ -10,10 +10,12 @@ torch-free, zero forward. Sources (all SHA-pinned):
                            (experiments/configs/text2cad_e2_background_expected_20261112.json)
 
 Derived manifests (schema text2cad-pair-manifest-v1, same as v4):
-  b0/     texts = [""]                    cad_store/lengths = byte-copies of v4 (8,046)
-  b1/     texts = ["a CAD model."]        same as b0
-  replay/ texts = 8 pinned original texts cad_store/lengths = FIRST 1,024 rows of v4
-          (a prefix, so replay cad_index equals the G4 cad_index)
+  b0/      texts = [""]                    cad_store/lengths = byte-copies of v4 (8,046)
+  b1/      texts = ["a CAD model."]        same as b0
+  smoke_b0/ texts = [""]                   cad_store/lengths = FIRST 1 row (1x1 pair;
+           the contractual one-pair smoke, charged to the shared ledger)
+  replay/  texts = 8 pinned original texts cad_store/lengths = FIRST 1,024 rows of v4
+           (a prefix, so replay cad_index equals the G4 cad_index)
 
 The expected-config pins every artifact sha256, the original cad_store sha
 (the b0/b1 candidate-store equality reference), the replay text mapping, the
@@ -55,16 +57,12 @@ def main() -> int:
     ap.add_argument("--original-manifest-dir", required=True)
     ap.add_argument("--out-root", required=True)
     ap.add_argument("--config-out", required=True)
-    ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
     src = Path(args.original_manifest_dir)
     out_root = Path(args.out_root)
-    if out_root.exists() and not args.force:
-        raise SystemExit(f"refusing to overwrite existing {out_root} (use --force only after review)")
-    if args.force:
-        import shutil
-        shutil.rmtree(out_root)
+    if out_root.exists():
+        raise SystemExit(f"refusing to overwrite existing {out_root}; use a fresh directory")
 
     original_manifest = json.loads((src / PAIR_MANIFEST_FILE).read_text(encoding="utf-8"))
     if original_manifest.get("schema_version") != SCHEMA_VERSION:
@@ -83,7 +81,7 @@ def main() -> int:
     fingerprints: dict[str, dict] = {}
 
     def emit(which: str, text_rows: list[dict], store_bytes: bytes, length_bytes: bytes,
-             n_unique: int, n_gallery: int) -> None:
+             n_unique: int, n_gallery: int) -> None:  # noqa: N802 (internal)
         d = out_root / which
         d.mkdir(parents=True, exist_ok=False)
         (d / TEXTS_FILE).write_bytes(b"".join(json.dumps(r, ensure_ascii=False).encode("utf-8") + b"\n" for r in text_rows))
@@ -117,6 +115,8 @@ def main() -> int:
             "cad_store_sha256": sha256_file(d / CAD_STORE_FILE),
             "cad_length_index_sha256": sha256_file(d / CAD_LENGTH_FILE),
             "pair_manifest_sha256": sha256_file(d / PAIR_MANIFEST_FILE),
+            "n_unique_text": n_unique,
+            "n_gallery": n_gallery,
         }
         print(f"[e2-build] {which}: {n_unique}x{n_gallery} -> {d}")
 
@@ -128,6 +128,13 @@ def main() -> int:
 
     emit("b0", [text_row(0, B0_TEXT)], full_store, full_length, 1, 8046)
     emit("b1", [text_row(0, B1_TEXT)], full_store, full_length, 1, 8046)
+    smoke_store = b"".join(
+        json.dumps(r, ensure_ascii=False).encode("utf-8") + b"\n" for r in store_rows[:1]
+    )
+    smoke_length = b"".join(
+        json.dumps(r, ensure_ascii=False).encode("utf-8") + b"\n" for r in length_rows[:1]
+    )
+    emit("smoke_b0", [text_row(0, B0_TEXT)], smoke_store, smoke_length, 1, 1)
 
     replay_rows = []
     replay_meta = []

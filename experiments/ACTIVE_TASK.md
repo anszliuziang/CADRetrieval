@@ -1,6 +1,6 @@
 # 当前任务：E2 空文本背景小试（2026-11-12，计划已提交待执行授权）
 
-- `state`: `implementation`（E2 本地实现完成：URL 允许集合/显式授权 ref、load_background_texts、单卡 E2 runner（dry-run 与 score 共用校验）、三清单构建器、E2 指纹配置；**本地 CPU dry-run 预检通过**（B0 tokenizer=[101,102]、三清单+8,046 候选对账、零前向）；待：独立审码、share4 torch 全测+dry-run、REPLAY 跨机复算、用户批准启动后 smoke+批量）
+- `state`: `implementation`（E2 本地实现 **r2**：fresh review C1/I1/I2/I3 已修——canonical 共享台账（按批准 SHA 唯一、跨 smoke/b0/b1/replay 累计）、pending 拒绝不自动续跑、分背景 chunk 子目录、smoke_b0 专用 1×1 清单、score 模式 environment_record+load/preload/stats 证据、守卫前置；**本地 CPU dry-run r2 通过**（4 清单+候选对账+tokenizer 证据，零前向）；E2 测试 22/22；本地 torch-free 套件 380 passed + 6 个 torch 依赖失败（服务器跑）；待：share4 侧预检（分支同步到 GitHub 镜像后）+ REPLAY 跨机复算 + 用户批准启动）
 - `ownership`: 用户 2026-11-11 指定 GLM 5.3 接手；**GLM 负责实施，NPU 正式前向由用户批准启动**（2026-11-12 二次验收订正）；计划先行、独立审码、SHA、预算纪律保留；评审按需参与
 - `plan`: `experiments/plans/IDEA01_E2_EMPTY_TEXT_BACKGROUND_2026-11-12.md`（v2，含验收四点修正）
 - `acceptance`: 2026-11-12 验收（runtime/glm_night_acceptance_codex_20261112/EXPERIMENT_AUDIT.md）：E2 研究方向通过，进入本地实现与 CPU 预检；正式 NPU 前向待用户批准
