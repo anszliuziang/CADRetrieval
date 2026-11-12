@@ -22,7 +22,7 @@
 **背景清单（三份，均为独立 manifest 目录）**：
 - **B0**：texts 恰 1 行 `text=""`（BERT 编码预期 `[CLS] [SEP]`，运行时以 tokenizer 证据固定 ids）；
 - **B1**：texts 恰 1 行 `text="a CAD model."`（敏度；仅报告不选主）；
-- **REPLAY（跨机复算）**：**预先注册**的 G4 历史非空文本 8 条（唯一文本 index = {0, 1, 2, 3, 1000, 2000, 3000, 3643}，取自 pair_manifest_v4 texts 表原文）× 候选 index [0, 2,046)（与 G4 chunk 对齐；**2,046 = 127×16+14，与 G4 的 8,046 = 502×16+14 同构尾批 14**，覆盖尾批路径）= **16,368 对**。
+- **REPLAY（跨机复算）**：**预先注册**的 G4 历史非空文本 8 条（唯一文本 index = {0, 1, 2, 3, 1000, 2000, 3000, 3643}，取自 pair_manifest_v4 texts 表原文）× **候选集合 = G4 的前 127 个完整 16 批（原始 index 0..2031）∪ G4 真尾批（原始 index 8,032..8,045，14 条；8,046 = 502×16+14）**，dense 重排为 0..2,045，映射 `replay_dense_to_original_cad_index` 钉入指纹配置；批形状与 G4 历史批**逐批同构**（含真尾批 14，而非尺寸相同的另一批——复核 4 订正）= **16,368 对**。
 
 **准入实现**：`load_texts` 通用合同不变（仍拒绝空串）；新增专用 `load_background_texts(dir, expected_text)`：恰 1 条记录、text 与期望逐字相等、`text_sha256`/`n_chars` 一致、text_index=0 连续；REPLAY 清单用通用 `load_texts`（全部非空）。三份清单的 fingerprints 在构建时写入**提交的** `configs/text2cad_e2_background_expected_20261112.json`，运行时严格对账。
 
@@ -38,11 +38,11 @@
 |---|---:|---|
 | B0 smoke | **1** | 1×1 对真实前向，**最先执行**，完成记录（台账 note + chunk 文件）是后续一切批量的前置门 |
 | REPLAY 跨机复算 | **16,368** | share4 复算 G4 历史批（8×2,046，含尾批 14），本地与 G4 记录逐对比对过容差门后出 `replay_gate_record.json` |
-| B0 背景 | 8,046 | **前置门：smoke 完成记录 + replay_gate_record(pass=true, SHA 对账)** |
-| B1 背景 | 8,046 | 同 B0 前置门 |
+| B0 背景 | 8,046 | **前置门：smoke 完成记录（真实 pairs_charged 字段）+ replay_gate_record(pass=true, 8 chunk SHA 全验 + G4 源 chunk pins + 逐对完整唯一索引)** |
+| B1 背景 | 8,046 | 同 B0 前置门，**另加 B0 自身成功记录（e2_b0_ok + chunk 对账）** |
 | **总计（启动前锁定）** | **32,461 对** | 1 + 16,368 + 8,046 + 8,046（精确数，无区间） |
 
-- **累计上限 900 卡秒**（外推需求 ≈133 卡秒，余量 ~7×）；**共同墙钟截止 `e2_deadline_utc`** 覆盖模型加载与进行中的评分（scorer 每 batch heartbeat 处强制），任一上限先到即停；**结算后复查累计卡秒，任何超支记为失败退出非零**（不允许"900.2 卡秒 + exit 0"）。
+- **累计上限 900 卡秒**（外推需求 ≈133 卡秒，余量 ~7×）；**共同墙钟截止 `e2_deadline_utc`** 的强制覆盖：scorer 每 batch heartbeat（DeadlineLedgerProxy）+ 每 chunk 前 + 模型加载后 + 结算判定，另配 G4 式**进程级监督**（POSIX 上 deadline 时 SIGTERM→30 s 宽限→SIGKILL，台账留 pending、拒绝自动续跑）；**最终台账在写入前确定唯一退出判定**（投影卡秒达上限-50ms 或已过截止即结算为失败，成功 note 仅在 exit 0 时写入），过程退出与台账永远一致。
 - 授权 caps 拒绝非有限值（inf/nan）；所有调用（smoke/批量/replay）共享同一 canonical E2 ledger；台账未收尾拒绝续跑。
 
 ## 4. 运行前置门（顺序）

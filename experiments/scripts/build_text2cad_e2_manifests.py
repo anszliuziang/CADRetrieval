@@ -14,9 +14,11 @@ Derived manifests (schema text2cad-pair-manifest-v1, same as v4):
   b1/      texts = ["a CAD model."]        same as b0
   smoke_b0/ texts = [""]                   cad_store/lengths = FIRST 1 row (1x1 pair;
            the contractual one-pair smoke, charged to the shared ledger)
-  replay/  texts = 8 pinned original texts cad_store/lengths = FIRST 2,046 rows of v4
-           (a prefix, so replay cad_index equals the G4 cad_index; 2,046 = 127*16+14
-           exercises the same tail-14 batch shape as the 8,046-cad G4 gallery)
+  replay/  texts = 8 pinned original texts; cad_store/lengths = the SELECTED 2,046
+           original candidates (127 full 16-batches 0..2031 + the TRUE G4 tail
+           batch 8032..8045), dense-reindexed to 0..2045; the
+           replay_dense_to_original_cad_index mapping in the expected-config
+           aligns pairs back to the certified G4 chunks for the tolerance gate
 
 The expected-config pins every artifact sha256, the original cad_store sha
 (the b0/b1 candidate-store equality reference), the replay text mapping, the
@@ -49,7 +51,16 @@ from idea01.text2cad_pair_index import (  # noqa: E402
 B0_TEXT = ""
 B1_TEXT = "a CAD model."
 REPLAY_ORIGINAL_TEXT_INDICES = [0, 1, 2, 3, 1000, 2000, 3000, 3643]
-REPLAY_N_CADS = 2046  # = 127*16 + 14: exercises the same tail-14 batch shape as G4 (8,046 = 502*16 + 14)
+# Review round 4, item 3: replay must cover the SAME historical batch shapes as
+# G4, not just the same tail SIZE. Selected candidates per text = the first 127
+# full 16-batches of G4 (originals 0..2031) PLUS the TRUE G4 tail batch
+# (originals 8032..8045, 14 candidates; 8,046 = 502*16 + 14). The selected
+# originals are dense-reindexed to positions 0..2045 in the replay manifest
+# (batching shapes: 127 x 16 + 14, mirroring G4's per-text batch sequence), and
+# the dense->original cad_index mapping is pinned in the expected-config so the
+# comparator can align pairs to the certified G4 chunks.
+REPLAY_DENSE_TO_ORIGINAL_CAD_INDEX = list(range(0, 2032)) + list(range(8032, 8046))
+REPLAY_N_CADS = len(REPLAY_DENSE_TO_ORIGINAL_CAD_INDEX)  # 2,046 = 127*16 + 14
 AUTHORIZATION_REF = "origin/glm-night-20261112"
 
 
@@ -143,13 +154,18 @@ def main() -> int:
         t = original_texts[orig_idx]
         replay_rows.append(text_row(new_idx, t))
         replay_meta.append({"original_text_index": orig_idx, "text": t, "text_sha256": sha256_text(t)})
-    prefix_store = b"".join(
-        json.dumps(r, ensure_ascii=False).encode("utf-8") + b"\n" for r in store_rows[:REPLAY_N_CADS]
+    sel = REPLAY_DENSE_TO_ORIGINAL_CAD_INDEX
+    replay_store = b"".join(
+        (json.dumps({"cad_index": new_idx, "member": store_rows[orig]["member"]},
+                    ensure_ascii=False) + "\n").encode("utf-8")
+        for new_idx, orig in enumerate(sel)
     )
-    prefix_length = b"".join(
-        json.dumps(r, ensure_ascii=False).encode("utf-8") + b"\n" for r in length_rows[:REPLAY_N_CADS]
+    replay_length = b"".join(
+        (json.dumps({**{k: v for k, v in length_rows[orig].items() if k != "cad_index"},
+                     "cad_index": new_idx}, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        for new_idx, orig in enumerate(sel)
     )
-    emit("replay", replay_rows, prefix_store, prefix_length, len(REPLAY_ORIGINAL_TEXT_INDICES), REPLAY_N_CADS)
+    emit("replay", replay_rows, replay_store, replay_length, len(REPLAY_ORIGINAL_TEXT_INDICES), REPLAY_N_CADS)
 
     config = {
         "schema": "text2cad-e2-background-expected-v1",
@@ -159,6 +175,7 @@ def main() -> int:
         "original_cad_store_sha256": sha256_file(src / CAD_STORE_FILE),
         "replay_texts": replay_meta,
         "replay_n_cads": REPLAY_N_CADS,
+        "replay_dense_to_original_cad_index": REPLAY_DENSE_TO_ORIGINAL_CAD_INDEX,
         "cad_seq_zip_sha256": CAD_SEQ_ZIP_SHA256,
         "budget_note": "caps live in ACTIVE_TASK e2_* fields at launch; exact totals = smoke 1 + b0 8,046 + b1 8,046 + replay 16,368 = 32,461 pairs / <= 900 card-seconds / deadline e2_deadline_utc",
     }

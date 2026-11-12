@@ -104,14 +104,19 @@ def install_frozen_runner_stub(ledger_root: Path, records: dict) -> None:
             return self.max_pairs - self._pairs
 
         def begin_invocation(self, invocation_id, shard_id=0, cards_used=1):
-            self.data["invocations"].append({"invocation_id": invocation_id, "finalized": False})
+            self.data["invocations"].append({"invocation_id": invocation_id, "finalized": False,
+                                             "started_epoch": time.time(), "cards_used": cards_used})
             self._persist()
             return []
 
         def finalize_invocation(self, invocation_id, exit_code=0, note=""):
+            # matches the REAL SharedBudgetLedger: pairs are recorded as
+            # pairs_charged (never 'forwards') — the exact mismatch the round-4
+            # review caught in verify_smoke_done
             for i in self.data["invocations"]:
                 if i["invocation_id"] == invocation_id and not i.get("finalized"):
-                    i.update(finalized=True, exit_code=exit_code, note=note, forwards=records.get("forwards", 1))
+                    i.update(finalized=True, exit_code=exit_code, note=note,
+                             pairs_charged=records.get("pairs_charged", 1))
                     break
             self._persist()
 
@@ -168,8 +173,19 @@ class TestScorePath(unittest.TestCase):
         self.addCleanup(self.td.cleanup)
         self.root = Path(self.td.name)
         self.records: dict = {}
+        # save the previous module entry (usually the REAL frozen_runner) and
+        # restore it: an unconditional pop would make the next import create a
+        # SECOND module object, silently detaching mock.patch targets from the
+        # module globals that load_gated_model_and_store actually reads
+        self._prev_frozen_module = sys.modules.get("idea01.text2cad_frozen_runner")
         self.stub = install_frozen_runner_stub(self.root / "ledger_root", self.records)
-        self.addCleanup(sys.modules.pop, "idea01.text2cad_frozen_runner", None)
+        self.addCleanup(self._restore_frozen_module)
+
+    def _restore_frozen_module(self):
+        if self._prev_frozen_module is not None:
+            sys.modules["idea01.text2cad_frozen_runner"] = self._prev_frozen_module
+        else:
+            sys.modules.pop("idea01.text2cad_frozen_runner", None)
 
     def _prepare(self):
         repo = self.root / "repo"
@@ -263,12 +279,12 @@ class TestScorePath(unittest.TestCase):
         with self.assertRaises(e2.E2Error) as ctx:
             e2.score_e2(repo, cfg, "b0", dirs, self.root / "ckpt.pth", self.root / "bert",
                         self.root / "cad_seq.zip", run, "npu:0")
-        self.assertIn("smoke gate", str(ctx.exception))
+        self.assertIn("smoke_b0", str(ctx.exception))
         # with smoke done but no replay gate -> refused at the replay gate
         fake_ledger = self.records["ledger"]
         fake_ledger.data["invocations"].append(
             {"invocation_id": "S1", "finalized": True, "exit_code": 0,
-             "note": e2.SMOKE_NOTE, "forwards": 1})
+             "note": e2.SMOKE_NOTE, "pairs_charged": 1})
         fake_ledger._persist()
         (run / "smoke_b0").mkdir()
         (run / "smoke_b0" / "chunk_s00_t00000_00001.jsonl").write_bytes(
@@ -302,7 +318,11 @@ class TestGates(unittest.TestCase):
             rec = {
                 "schema": "text2cad-e2-replay-gate-v1", "approved_sha": "b" * 40,
                 "pass": True, "n_pairs_compared": 4, "max_abs_delta": 0.0,
-                "replay_chunk_sha256": {"chunk_s00_t00000_00001.jsonl": "x"},
+                "replay_chunk_sha256": {
+                    "chunk_s00_t00000_00001.jsonl": "x",
+                    "chunk_s00_t00001_00002.jsonl": "y",
+                },
+                "g4_chunk_sha256": {"chunk_s00_t00000_00001.jsonl": "g"},
             }
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
             with self.assertRaises(e2.E2Error) as ctx2:
@@ -310,13 +330,20 @@ class TestGates(unittest.TestCase):
             self.assertIn("bound to", str(ctx2.exception))
             rec["approved_sha"] = "a" * 40
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
+            # partial pin set must be refused BEFORE any hash check
+            rec_partial = {**rec, "replay_chunk_sha256": {"chunk_s00_t00000_00001.jsonl": "x"}}
+            (run / "replay_gate_record.json").write_text(json.dumps(rec_partial), encoding="utf-8")
             with self.assertRaises(e2.E2Error) as ctx3:
                 e2.verify_replay_gate(run, cfg, auth)
-            self.assertIn("hash drift", str(ctx3.exception))
+            self.assertIn("expected exactly the 2 replay chunks", str(ctx3.exception))
             payload = jl([{"record_type": "chunk_header"}])
             (run / "replay").mkdir()
             (run / "replay" / "chunk_s00_t00000_00001.jsonl").write_bytes(payload)
-            rec["replay_chunk_sha256"] = {"chunk_s00_t00000_00001.jsonl": sha(payload)}
+            (run / "replay" / "chunk_s00_t00001_00002.jsonl").write_bytes(payload)
+            rec["replay_chunk_sha256"] = {
+                "chunk_s00_t00000_00001.jsonl": sha(payload),
+                "chunk_s00_t00001_00002.jsonl": sha(payload),
+            }
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
             info = e2.verify_replay_gate(run, cfg, auth)
             self.assertEqual(info["compared"], 4)
