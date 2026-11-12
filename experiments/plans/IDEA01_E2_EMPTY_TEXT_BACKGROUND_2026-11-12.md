@@ -22,7 +22,7 @@
 **背景清单（三份，均为独立 manifest 目录）**：
 - **B0**：texts 恰 1 行 `text=""`（BERT 编码预期 `[CLS] [SEP]`，运行时以 tokenizer 证据固定 ids）；
 - **B1**：texts 恰 1 行 `text="a CAD model."`（敏度；仅报告不选主）；
-- **REPLAY（跨机复算）**：**预先注册**的 G4 历史非空文本 8 条（唯一文本 index = {0, 1, 2, 3, 1000, 2000, 3000, 3643}，取自 pair_manifest_v4 texts 表原文）× 候选 index [0, 1024)（与 G4 chunk 对齐，便于逐对比对）= **8,192 对**。
+- **REPLAY（跨机复算）**：**预先注册**的 G4 历史非空文本 8 条（唯一文本 index = {0, 1, 2, 3, 1000, 2000, 3000, 3643}，取自 pair_manifest_v4 texts 表原文）× 候选 index [0, 2,046)（与 G4 chunk 对齐；**2,046 = 127×16+14，与 G4 的 8,046 = 502×16+14 同构尾批 14**，覆盖尾批路径）= **16,368 对**。
 
 **准入实现**：`load_texts` 通用合同不变（仍拒绝空串）；新增专用 `load_background_texts(dir, expected_text)`：恰 1 条记录、text 与期望逐字相等、`text_sha256`/`n_chars` 一致、text_index=0 连续；REPLAY 清单用通用 `load_texts`（全部非空）。三份清单的 fingerprints 在构建时写入**提交的** `configs/text2cad_e2_background_expected_20261112.json`，运行时严格对账。
 
@@ -36,23 +36,22 @@
 
 | 项 | 对数 | 说明 |
 |---|---:|---|
-| B0 背景 | 8,046 | 主背景向量 |
-| B1 背景 | 8,046 | 敏度背景向量 |
-| B0 smoke | ≥1 | 1 对真实前向（批量前强制），计入总账 |
-| REPLAY 跨机复算 | 8,192 | share4 复算 G4 历史批，过容差门 |
-| **总计（启动前锁定）** | **≥24,285 对** | 16,093 + 8,192；实际以台账为准 |
+| B0 smoke | **1** | 1×1 对真实前向，**最先执行**，完成记录（台账 note + chunk 文件）是后续一切批量的前置门 |
+| REPLAY 跨机复算 | **16,368** | share4 复算 G4 历史批（8×2,046，含尾批 14），本地与 G4 记录逐对比对过容差门后出 `replay_gate_record.json` |
+| B0 背景 | 8,046 | **前置门：smoke 完成记录 + replay_gate_record(pass=true, SHA 对账)** |
+| B1 背景 | 8,046 | 同 B0 前置门 |
+| **总计（启动前锁定）** | **32,461 对** | 1 + 16,368 + 8,046 + 8,046（精确数，无区间） |
 
-- **累计上限 900 卡秒**（≈0.25 卡时；外推需求 ≈99 卡秒 + 加载开销，余量 >9×）；**共同墙钟截止**：启动时在 ACTIVE_TASK 写死 `e2_deadline_utc`（建议启动后 6 小时），任一上限先到即停非零。
-- 所有调用（smoke/批量/replay）共享同一 E2 ledger；台账未收尾拒绝续跑。
+- **累计上限 900 卡秒**（外推需求 ≈133 卡秒，余量 ~7×）；**共同墙钟截止 `e2_deadline_utc`** 覆盖模型加载与进行中的评分（scorer 每 batch heartbeat 处强制），任一上限先到即停；**结算后复查累计卡秒，任何超支记为失败退出非零**（不允许"900.2 卡秒 + exit 0"）。
+- 授权 caps 拒绝非有限值（inf/nan）；所有调用（smoke/批量/replay）共享同一 canonical E2 ledger；台账未收尾拒绝续跑。
 
 ## 4. 运行前置门（顺序）
 
-1. 本地实现 + 单测：URL 允许集合、显式授权 ref、`load_background_texts`、E2 清单构建器、E2 runner（dry-run/score 一致校验）、预算台账 caps。
+1. 本地实现 + 单测：URL 允许集合、显式授权 ref（refspec 强制更新 + 从捕获提交读取，防陈旧 tracking ref）、`load_background_texts`、E2 清单构建器、E2 runner（dry-run/score 一致校验）、预算台账 caps（拒绝非有限值）、smoke/REPLAY 门前置、超限记失败。
 2. 独立 fresh review 通过 + 用户批准启动（写 `e2_approved_sha` 等 ACTIVE_TASK 字段）。
-3. share4 CPU dry-run 预检（三清单 + 候选对账，零前向）。
-4. share4 REPLAY 跨机复算 8,192 对 → 容差门（§1）。
-5. B0 smoke 1 对 → 证据审查。
-6. B0/B1 批量 → 本地差分分析 → E2 结果报告。
+3. share4 CPU dry-run 预检（四清单 + 候选对账，零前向）。
+4. 执行顺序（强制门控）：**B0 smoke 1 对 → 证据审查 → REPLAY 16,368 对 → 本地逐对比对出 gate record → gate 记录放回 run root 并核 SHA → B0 8,046 → B1 8,046**；任何绕序尝试被 runner 拒绝。
+5. 本地差分分析 → E2 结果报告。
 
 ## 5. 停止条件与产物
 

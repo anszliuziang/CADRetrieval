@@ -5,12 +5,12 @@
 - `plan`: `experiments/plans/IDEA01_E2_EMPTY_TEXT_BACKGROUND_2026-11-12.md`（v2，含验收四点修正）
 - `acceptance`: 2026-11-12 验收（runtime/glm_night_acceptance_codex_20261112/EXPERIMENT_AUDIT.md）：E2 研究方向通过，进入本地实现与 CPU 预检；正式 NPU 前向待用户批准
 - `e2_authorization`: 授权远端允许集合 = {CNB `https://cnb.cool/lzacode/CADRetrieval`, GitHub 镜像 `https://github.com/anszliuziang/CADRetrieval`}；授权 ref = `origin/glm-night-20261112`（runner 从 fetched ACTIVE_TASK 读 `state=pilot_authorized` + `e2_approved_sha`（==HEAD）+ `e2_max_pairs` + `e2_max_card_seconds` + `e2_deadline_utc`）；启动时本文件须已写入完整批准 SHA
-- `e2_budget`: 总账 ≥24,285 对 = B0 8,046 + B1 8,046 + smoke ≥1 + REPLAY 跨机复算 8,192；**累计上限 900 卡秒**；**共同墙钟截止 `e2_deadline_utc` 于启动时写死**；先到即停非零
-- `e2_prerequisites`: ①URL 允许集合 + 显式授权 ref（代码+单测+fresh review）②`load_background_texts` 专用准入（`load_texts` 合同不变）③E2 单卡执行路径（dry-run 与 score 校验一致；B0/B1/REPLAY 三清单 + 8,046 候选顺序对账）④share4 CPU dry-run 预检 ⑤REPLAY 跨机容差门（`|Δ|≤max(1e-3,1e-6·|s|)` 且 n_valid 全等）先行 ⑥B0 smoke 计入总账
+- `e2_budget`: 总账精确 **32,461 对** = smoke 1 + REPLAY 16,368（8×2,046，尾批 14 覆盖）+ B0 8,046 + B1 8,046；**累计上限 900 卡秒**；**共同墙钟截止 `e2_deadline_utc` 于启动时写死**（覆盖模型加载与进行中评分；结算后复查，超支记失败退出非零）；先到即停非零
+- `e2_prerequisites`: ①URL 允许集合 + 显式授权 ref + refspec 强制更新（防陈旧 tracking ref）②`load_background_texts` 专用准入 ③E2 单卡执行路径（dry-run/score 校验一致；四清单对账）④share4 CPU dry-run 预检 ⑤**强制执行顺序**：smoke → REPLAY → 容差门记录 → B0 → B1（runner 拒绝绕序）⑥detached HEAD 检查 ⑦caps 拒绝非有限值 ⑧结算后超支记失败
 - `e2_positioning`: 已探索 test 图库上的机制诊断；非方法确认；B0/B1 差异明显时结论写作"结果对背景文本选择敏感"
 - `night_tasks`: 用户 2026-11-12 授权三项夜间任务已完成并验收（share4 环境通过/失效分析接收/调研修订后通过路径以本轮修订为准）
 - `gpu_budget`: 0 卡小时（E2 未启动；启动后按 e2_budget）
-- `max_scored_pairs`: 0（E2 未启动；启动后 ≤16,092 新前向）
+- `max_scored_pairs`: 0（E2 未启动；启动后精确 32,461 对新前向）
 - `deliverables`: `experiments/submissions/idea01_next_phase_20261112/`（ENV_SETUP / TEXT2CAD_FAILURE_ANALYSIS / CAD_GENERATION_RETRIEVAL_BENCHMARK_SURVEY，均含 2026-11-12 验收订正）
 - `share4_env`: `experiments/configs/idea01_yunnao_share4_env.json`（解释器 `/home/ma-user/anaconda3/envs/cadretrieval-glm-torch271/bin/python`，验收订正）；24/24 固定资产 SHA 复核通过（验收 witness）
 - `failure_diag`: `experiments/scripts/analyze_text2cad_failure_factors_20261112.py`（执行记录已补全于失效分析 §4.1；全部 exploratory）

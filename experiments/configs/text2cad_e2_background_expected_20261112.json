@@ -29,11 +29,11 @@
     },
     "replay": {
       "texts_sha256": "bcdebdbe5e02c8dbdf5c22664edf91a947b50f30004afcffa8cd65b44902ea1c",
-      "cad_store_sha256": "52e34b3ad89121f639cfe0d322cf545211ce86beb655193bdfb0ddd33d0a35f0",
-      "cad_length_index_sha256": "34fdbefa7b52c0a48f4087fafe558dd555fd46e087cc729403775098e26e1c89",
-      "pair_manifest_sha256": "22c5b22a6cd5e7b1ce8f5ab9ee3313da8a8f4db2c2b863cbe19e4c564acb6517",
+      "cad_store_sha256": "34d52871b8a473f48be31d6cc0f41579e1b6fa6d091e8a49bde414417fb68962",
+      "cad_length_index_sha256": "7e419081f1bfe45e68912266e88c05b1c2deb6567774e139a84f6c9d07de05ac",
+      "pair_manifest_sha256": "5026ae513eb7d4962b293ed6140fb3e134c89976240d136657c4c0bb61f0d89e",
       "n_unique_text": 8,
-      "n_gallery": 1024
+      "n_gallery": 2046
     }
   },
   "original_cad_store_sha256": "2f441110f013bb614b0bd2fdb7a3b49569a231bbf3f8eaa2c03ac1d725cb1380",
@@ -79,7 +79,7 @@
       "text_sha256": "ffc72b12fe232ea56d692545bc15b626dfcd0d5c9c3854810a437ac3583c9426"
     }
   ],
-  "replay_n_cads": 1024,
+  "replay_n_cads": 2046,
   "cad_seq_zip_sha256": "9f3a8bb85f9ceb078c19bc43f750fe596d3323631f2e846a7f541e47af7e7eaa",
-  "budget_note": "caps live in ACTIVE_TASK e2_* fields at launch; totals >= 24,285 pairs / <= 900 card-seconds / deadline e2_deadline_utc"
+  "budget_note": "caps live in ACTIVE_TASK e2_* fields at launch; exact totals = smoke 1 + b0 8,046 + b1 8,046 + replay 16,368 = 32,461 pairs / <= 900 card-seconds / deadline e2_deadline_utc"
 }

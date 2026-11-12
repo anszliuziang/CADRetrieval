@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 import time
@@ -53,6 +54,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from idea01.p1_runner import (  # noqa: E402
     active_task_field,
     fetch_authorized_active_task,
+    head_is_detached,
 )
 from idea01.text2cad_pair_index import (  # noqa: E402
     CAD_STORE_FILE,
@@ -71,6 +73,8 @@ B1_TEXT = "a CAD model."
 #: expected background text per manifest (replay uses the general load_texts)
 EXPECTED_TEXT = {"b0": B0_TEXT, "b1": B1_TEXT, "smoke_b0": B0_TEXT}
 BATCH_SIZE = 16  # G4 protocol (honest tail)
+REPLAY_TOLERANCE_ABS = 1e-3
+REPLAY_TOLERANCE_REL = 1e-6
 
 
 class E2Error(RuntimeError):
@@ -220,10 +224,10 @@ def parse_e2_authorization(text: str, approved_sha: str) -> dict:
     max_card_seconds = active_task_field(text, "e2_max_card_seconds")
     try:
         caps["max_card_seconds"] = float(str(max_card_seconds or "").replace(",", "").strip())
-        if caps["max_card_seconds"] <= 0:
+        if not math.isfinite(caps["max_card_seconds"]) or caps["max_card_seconds"] <= 0:
             raise ValueError
     except ValueError:
-        problems.append(f"e2_max_card_seconds missing/non-positive: {max_card_seconds!r}")
+        problems.append(f"e2_max_card_seconds missing/non-finite/non-positive: {max_card_seconds!r}")
     deadline = active_task_field(text, "e2_deadline_utc")
     try:
         dt = datetime.strptime(deadline or "", "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -260,6 +264,87 @@ def _ensure_outside_checkout(out_dir: Path, repo_root: Path) -> None:
     repo_resolved = Path(repo_root).resolve()
     if out_resolved == repo_resolved or repo_resolved in out_resolved.parents:
         raise E2Error(f"out_dir {out_resolved} is inside the Git checkout {repo_resolved}")
+
+
+SMOKE_NOTE = "e2_smoke_b0_ok"
+
+
+def verify_smoke_done(run_root: Path, ledger) -> dict:
+    """b0/b1/replay may only start after the contractual 1-pair smoke completed:
+    the shared ledger must contain a finalized, successful smoke invocation and
+    the smoke chunk file must exist."""
+    run_root = Path(run_root)
+    chunk_files = sorted((run_root / "smoke_b0").glob("chunk_*.jsonl")) if (run_root / "smoke_b0").is_dir() else []
+    if not chunk_files:
+        raise E2Error("smoke gate: no smoke_b0 chunk found under <run-root>/smoke_b0")
+    rows = [json.loads(l) for l in chunk_files[0].read_text(encoding="utf-8").splitlines() if l.strip()]
+    pair_rows = [r for r in rows if r.get("record_type") != "chunk_header"]
+    if len(pair_rows) != 1 or pair_rows[0].get("status") != "scored":
+        raise E2Error("smoke gate: smoke chunk must contain exactly one scored pair")
+    invs = ledger.data.get("invocations", [])
+    ok = [i for i in invs if i.get("finalized") and i.get("exit_code") == 0
+          and str(i.get("note", "")).startswith(SMOKE_NOTE) and int(i.get("forwards", 0)) >= 1]
+    if not ok:
+        raise E2Error("smoke gate: shared ledger has no finalized successful smoke invocation")
+    return {"smoke_invocations": [i["invocation_id"] for i in ok], "smoke_chunk": chunk_files[0].name}
+
+
+def verify_replay_gate(run_root: Path, cfg: dict, auth: dict) -> dict:
+    """b0/b1 may only start after the cross-machine REPLAY tolerance gate PASSED:
+    replay_gate_record.json must exist in the run root, be bound to the same
+    approved SHA, pass=true, cover every replay pair, and its pinned replay
+    chunk hashes must match the actual chunk files on disk."""
+    run_root = Path(run_root)
+    rec_path = run_root / "replay_gate_record.json"
+    if not rec_path.is_file():
+        raise E2Error(
+            "replay gate: replay_gate_record.json missing — REPLAY must be scored and "
+            "compared against the share2 G4 records (tolerance |ds| <= max(1e-3, 1e-6*|s|), "
+            "n_valid equality) BEFORE any batch background scoring"
+        )
+    rec = json.loads(rec_path.read_text(encoding="utf-8"))
+    if rec.get("schema") != "text2cad-e2-replay-gate-v1":
+        raise E2Error("replay gate: record schema mismatch")
+    if rec.get("approved_sha") != auth["approved_sha"]:
+        raise E2Error(f"replay gate: record bound to {rec.get('approved_sha')}, not this approval")
+    if rec.get("pass") is not True:
+        raise E2Error(f"replay gate: recorded verdict is pass={rec.get('pass')}")
+    want = int(cfg["backgrounds"]["replay"]["n_unique_text"]) * int(cfg["backgrounds"]["replay"]["n_gallery"])
+    if int(rec.get("n_pairs_compared", 0)) < want:
+        raise E2Error(f"replay gate: compared {rec.get('n_pairs_compared')} < {want} replay pairs")
+    replay_dir = run_root / "replay"
+    for fname, pin in (rec.get("replay_chunk_sha256") or {}).items():
+        f = replay_dir / fname
+        if not f.is_file() or sha256_file(f) != pin:
+            raise E2Error(f"replay gate: chunk {fname} missing or hash drift vs gate record")
+    return {"compared": rec["n_pairs_compared"], "max_abs_delta": rec["max_abs_delta"]}
+
+
+def require_prerequisite_gates(run_root: Path, which: str, cfg: dict, auth: dict, ledger) -> dict:
+    """Execution order enforced here: smoke_b0 first, then REPLAY + its
+    tolerance-gate record, only then the b0/b1 batches."""
+    gates: dict[str, Any] = {}
+    if which != "smoke_b0":
+        gates["smoke"] = verify_smoke_done(run_root, ledger)
+    if which in ("b0", "b1"):
+        gates["replay_gate"] = verify_replay_gate(run_root, cfg, auth)
+    return gates
+
+
+class DeadlineLedgerProxy:
+    """Delegates to the shared ledger but enforces the wall-clock deadline
+    inside the scorer's per-batch heartbeat (review round 3, item 3)."""
+
+    def __init__(self, ledger, auth: dict):
+        self._ledger = ledger
+        self._auth = auth
+
+    def heartbeat(self, invocation_id: str) -> None:
+        check_deadline(self._auth)
+        self._ledger.heartbeat(invocation_id)
+
+    def __getattr__(self, name):  # delegate everything else
+        return getattr(self._ledger, name)
 
 
 def dry_run_e2(cfg: dict, dirs: dict[str, Path], original_manifest_dir: Path, bert_dir: Path,
@@ -304,6 +389,7 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
         check_revision_paths,
         chunk_file_name,
         environment_record,
+        load_gated_model_and_store,
         new_invocation_id,
         plan_chunks,
     )
@@ -315,13 +401,16 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
         raise E2Error(f"--which must be one of {sorted(known)}, got {which!r}")
     if git_dirty(repo_root):
         raise E2Error(f"git worktree not clean:\n{git_dirty(repo_root)}")
+    detached, branch = head_is_detached(repo_root)
+    if not detached:
+        raise E2Error(f"HEAD is not detached (on branch {branch!r}); plan requires a detached approved SHA")
     run_root = Path(out_dir).resolve()
     _ensure_outside_checkout(run_root, repo_root)
 
     # 1. input validation — the SAME functions as dry-run
     validation = validate_e2_manifests(cfg, dirs, dirs["_original"])
 
-    # 2. authorization (fetched ref, allowlisted origin)
+    # 2. authorization (fetched ref, allowlisted origin, stale-tracking-ref safe)
     auth = authorize_e2_run(repo_root, cfg)
 
     # 3. shared canonical ledger: OUTSIDE checkout, keyed by the approved SHA —
@@ -337,6 +426,9 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
             f"shared E2 ledger {ledger_path} has pending invocation(s) {pending}: previous run "
             "crashed or was killed; stop and report — no automatic resume with uncertain cost"
         )
+
+    # 4. prerequisite execution-order gates (smoke -> replay-gate -> batches)
+    gates = require_prerequisite_gates(run_root, which, cfg, auth, ledger)
 
     manifest_dir = Path(dirs[which])
     pins = cfg["backgrounds"][which]
@@ -376,6 +468,8 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
         "spec_version": SCORE_SPEC_VERSION,
     }
     invocation_id = new_invocation_id()
+    # deadline must also bind the scorer's per-batch heartbeat (review item 3)
+    guarded_ledger = DeadlineLedgerProxy(ledger, auth)
     stale_problems = ledger.begin_invocation(invocation_id, shard_id=0, cards_used=1)
     if stale_problems:
         ledger.finalize_invocation(invocation_id, exit_code=2, note="ledger_refused_start")
@@ -384,9 +478,11 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
     exit_code, note, failure, published = 0, "ok", None, 0
     load_report = preload_report = None
     scorer_stats: dict = {}
+    spent: Any = None
     try:
         model, load_report, store, preload_report = load_gated_model_and_store(cfg_run, members)
-        scorer = FrozenMatrixScorer(cfg_run, model, texts, store, pair_space, ledger, invocation_id, binding)
+        check_deadline(auth)  # a load straddling the deadline refuses BEFORE scoring
+        scorer = FrozenMatrixScorer(cfg_run, model, texts, store, pair_space, guarded_ledger, invocation_id, binding)
         which_dir = run_root / which
         which_dir.mkdir(parents=True, exist_ok=True)
         for t0, t1, _p in todo:
@@ -399,7 +495,17 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
     except Exception as exc:  # noqa: BLE001
         exit_code, note, failure = 2, "aborted", f"{type(exc).__name__}: {exc}"
     finally:
+        if which == "smoke_b0" and exit_code == 0:
+            note = SMOKE_NOTE
         ledger.finalize_invocation(invocation_id, exit_code=exit_code, note=note)
+        # settle honestly: any cumulative overshoot IS a failure (review item 3)
+        try:
+            spent = ledger.card_seconds_spent()
+        except Exception:  # noqa: BLE001
+            spent = None
+        if spent is not None and spent > auth["max_card_seconds"] + 1e-6 and exit_code == 0:
+            exit_code, note = 2, "card_seconds_exceeded"
+            failure = f"cumulative card-seconds {spent:.2f} exceed cap {auth['max_card_seconds']}"
 
     env_record = environment_record(cfg_run, extra={
         "e2_background": which,
@@ -412,6 +518,8 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
         "completed_before": len(completed),
         "published_chunks": published,
         "resume": resume,
+        "settlement": {"card_seconds_spent": spent,
+                        "max_card_seconds": auth["max_card_seconds"], "failure": failure},
         "command_flags": {"device": device, "batch_size": BATCH_SIZE, "which": which},
     })
     atomic_publish(run_root / f"environment_{invocation_id}.json",
@@ -478,3 +586,87 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
+
+
+def compare_replay_to_g4(replay_run_dir: Path, g4_raw_dir: Path, cfg: dict,
+                         approved_sha: str, out_path: Path) -> dict:
+    """Cross-machine tolerance gate (review item 2): compare every REPLAY pair
+    scored on share4 against the certified share2 G4 chunk records.
+
+    Mapping: replay text k (0..7) corresponds to original unique-text index
+    cfg['replay_texts'][k]['original_text_index']; G4 chunks live at
+    <g4_raw_dir>/card{0 if orig<1822 else 1}/chunk_s{shard:02d}_t{orig:05d}_{orig+1:05d}.jsonl
+    and replay candidates are a PREFIX (0..n_cads) so cad_index is identical.
+    Per pair: |dscore_total| <= max(TOLERANCE_ABS, TOLERANCE_REL*|g4|) AND
+    n_valid_total equality. Writes replay_gate_record.json (pass/fail + all
+    pins) and returns it. torch-free; run where the G4 matrix exists.
+    """
+    import numpy as np  # local analysis dependency only
+
+    replay_dir = Path(replay_run_dir)
+    g4_raw = Path(g4_raw_dir)
+    rows_out: list[dict] = []
+    max_abs = 0.0
+    n_compared = 0
+    n_valid_mismatch = 0
+    n_violations = 0
+    chunk_pins: dict[str, str] = {}
+    n_cads = int(cfg["backgrounds"]["replay"]["n_gallery"])
+    for k, meta in enumerate(cfg["replay_texts"]):
+        orig = int(meta["original_text_index"])
+        card = 0 if orig < 1822 else 1
+        shard = card
+        g4_name = f"chunk_s{shard:02d}_t{orig:05d}_{orig + 1:05d}.jsonl"
+        g4_path = g4_raw / f"card{card}" / g4_name
+        replay_name = f"chunk_s00_t{k:05d}_{k + 1:05d}.jsonl"
+        replay_path = replay_dir / replay_name
+        chunk_pins[replay_name] = sha256_file(replay_path)
+        g4_by_cad: dict[int, dict] = {}
+        with open(g4_path, "r", encoding="utf-8") as f:
+            f.readline()  # header
+            for line in f:
+                r = json.loads(line)
+                if r.get("cad_index", n_cads) < n_cads:
+                    g4_by_cad[int(r["cad_index"])] = r
+        new_rows = [json.loads(l) for l in replay_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        header_ok = new_rows and new_rows[0].get("record_type") == "chunk_header"
+        body = new_rows[1:] if header_ok else new_rows
+        for r in body:
+            cad = int(r["cad_index"])
+            g = g4_by_cad.get(cad)
+            if g is None:
+                n_violations += 1
+                rows_out.append({"text_index": k, "cad_index": cad, "error": "no_g4_counterpart"})
+                continue
+            ds = abs(float(r["score_total"]) - float(g["score_total"]))
+            tol = max(REPLAY_TOLERANCE_ABS, REPLAY_TOLERANCE_REL * abs(float(g["score_total"])))
+            max_abs = max(max_abs, ds)
+            ok = ds <= tol and int(r["n_valid_total"]) == int(g["n_valid_total"]) and r.get("status") == g.get("status") == "scored"
+            if int(r["n_valid_total"]) != int(g["n_valid_total"]):
+                n_valid_mismatch += 1
+            if not ok:
+                n_violations += 1
+                rows_out.append({"text_index": k, "cad_index": cad, "delta": ds, "tolerance": tol,
+                                  "error": "tolerance_or_valid_mismatch"})
+            n_compared += 1
+    passed = n_violations == 0 and n_compared == len(cfg["replay_texts"]) * n_cads
+    record = {
+        "schema": "text2cad-e2-replay-gate-v1",
+        "approved_sha": approved_sha,
+        "pass": passed,
+        "n_pairs_expected": len(cfg["replay_texts"]) * n_cads,
+        "n_pairs_compared": n_compared,
+        "max_abs_delta": max_abs,
+        "tolerance_abs": REPLAY_TOLERANCE_ABS,
+        "tolerance_rel": REPLAY_TOLERANCE_REL,
+        "n_valid_mismatch": n_valid_mismatch,
+        "n_violations": n_violations,
+        "replay_chunk_sha256": chunk_pins,
+        "violations": rows_out[:50],
+        "g4_source_dir": str(g4_raw),
+        "comparator": "idea01.text2cad_e2_runner.compare_replay_to_g4",
+        "generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_path).write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return record

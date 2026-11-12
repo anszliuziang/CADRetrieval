@@ -46,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from idea01.envspec import env_spec_hashes  # noqa: E402
 from idea01.prompts import build_prefix  # noqa: E402
 from idea01.p1_runner import (  # noqa: E402
+    EXPECTED_ORIGIN_URL,
     EXIT_ANOMALY,
     EXIT_BUDGET,
     EXIT_OK,
@@ -207,7 +208,7 @@ def main() -> int:
     sel_sha = file_sha256(selection_path)
     # R3 (review addendum): authorization comes from the fetched origin/master,
     # never from the detached HEAD's working tree; validated + audited here.
-    at_text, at_meta = fetch_authorized_active_task(REPO_ROOT)
+    at_text, at_meta = fetch_authorized_active_task(REPO_ROOT, expected_origin=EXPECTED_ORIGIN_URL)
     write_environment(out_dir, cfg, sys.argv, device, invocation_id, args.pair_ids, sel_sha, at_meta)
 
     try:

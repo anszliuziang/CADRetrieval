@@ -307,17 +307,20 @@ def origin_allowed(url: str, allowed_origins=EXPECTED_ORIGIN_URLS) -> bool:
 
 
 def fetch_authorized_active_task(repo_root: Path, expected_origin: str | None = None, ref: str = AUTHORIZATION_REF) -> tuple[str | None, dict]:
-    """R3 (review addendum): read the authorization from the Codex-controlled
-    origin ref AFTER `git fetch`, never from the detached HEAD's working tree
-    (a commit cannot contain its own approved_sha; the working-tree file could
-    be stale or self-authored). Validates the origin remote URL first.
+    """Read the authorization from the Codex-controlled origin ref AFTER a
+    fetch OF THAT REF, never from the detached HEAD's working tree (a commit
+    cannot contain its own approved_sha). Validates the origin remote URL
+    against the trusted allowlist (or an explicitly required origin).
 
-    `expected_origin=None` (production default) validates against the trusted
-    allowlist `EXPECTED_ORIGIN_URLS` (CNB + GitHub mirror); an explicit value
-    requires an exact match (toy/test usage).
+    Review round 3 fix: a bare `git fetch origin` succeeds even when the
+    remote branch was DELETED, silently leaving a stale remote-tracking ref.
+    We therefore fetch the exact refspec `+refs/heads/<branch>:refs/remotes/
+    origin/<branch>` and refuse unless that fetch succeeds AND the tracking
+    ref resolves; the blob is then read from the explicitly captured commit
+    SHA, not from the movable symbolic ref.
 
     Returns (text, meta): text is None on refusal; meta carries audit fields
-    (origin url, ref sha, blob sha256, fetch rc) and problems."""
+    (origin url, fetched commit sha, blob sha256, fetch rc) and problems."""
     meta: dict = {"expected_origin": expected_origin, "ref": ref, "problems": []}
     repo_root = Path(repo_root)
 
@@ -340,28 +343,50 @@ def fetch_authorized_active_task(repo_root: Path, expected_origin: str | None = 
     if not origin_ok:
         meta["problems"].append(f"origin remote {url!r} not authorized (expected {expected_desc})")
         return None, meta
+    if not ref.startswith("origin/"):
+        meta["problems"].append(f"authorization ref must name an origin tracking branch: {ref!r}")
+        return None, meta
+    branch = ref[len("origin/"):]
     try:
-        r = git("fetch", "origin", timeout=300)
+        r = git("fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}", timeout=300)
         meta["fetch_returncode"] = r.returncode
+        meta["fetch_refspec"] = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
         if r.returncode != 0:
-            meta["problems"].append(f"git fetch origin failed: {r.stderr.strip()[:300]}")
+            meta["problems"].append(
+                f"fetching authorization branch failed (branch missing on remote or network): "
+                f"{r.stderr.strip()[:300]}"
+            )
             return None, meta
     except Exception as e:  # noqa: BLE001
-        meta["problems"].append(f"git fetch origin error: {type(e).__name__}: {e}")
+        meta["problems"].append(f"git fetch error: {type(e).__name__}: {e}")
         return None, meta
     try:
-        meta["origin_ref_sha"] = git("rev-parse", ref).stdout.strip()
-        r = git("show", f"{ref}:{ACTIVE_TASK_BLOB}", text=False)
+        resolved = git("rev-parse", f"refs/remotes/origin/{branch}^{{commit}}").stdout.strip()
+        if len(resolved) != 40 or any(c not in "0123456789abcdef" for c in resolved):
+            raise ValueError(f"unresolved commit: {resolved!r}")
+        meta["origin_ref_sha"] = resolved
+        r = git("show", f"{resolved}:{ACTIVE_TASK_BLOB}", text=False)
         if r.returncode != 0:
-            meta["problems"].append(f"cannot read {ref}:{ACTIVE_TASK_BLOB}")
+            meta["problems"].append(f"cannot read {resolved}:{ACTIVE_TASK_BLOB}")
             return None, meta
         blob = r.stdout
-        meta["active_task_source"] = f"{ref}:{ACTIVE_TASK_BLOB} @ {meta['origin_ref_sha']}"
+        meta["active_task_source"] = f"origin/{branch}:{ACTIVE_TASK_BLOB} @ {resolved}"
         meta["active_task_blob_sha256"] = hashlib.sha256(blob).hexdigest()
         return blob.decode("utf-8"), meta
     except Exception as e:  # noqa: BLE001
         meta["problems"].append(f"error reading authorized ACTIVE_TASK: {type(e).__name__}: {e}")
         return None, meta
+
+
+def head_is_detached(repo_root: Path) -> tuple[bool, str]:
+    """True iff HEAD is detached (plan requires a clean detached approved SHA)."""
+    repo_root = Path(repo_root)
+    r = subprocess.run(
+        ["git", "symbolic-ref", "-q", "HEAD"], cwd=repo_root, capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        return True, ""
+    return False, r.stdout.strip()
 
 
 def active_task_field(text: str, key: str) -> str | None:

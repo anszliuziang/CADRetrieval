@@ -14,8 +14,9 @@ Derived manifests (schema text2cad-pair-manifest-v1, same as v4):
   b1/      texts = ["a CAD model."]        same as b0
   smoke_b0/ texts = [""]                   cad_store/lengths = FIRST 1 row (1x1 pair;
            the contractual one-pair smoke, charged to the shared ledger)
-  replay/  texts = 8 pinned original texts cad_store/lengths = FIRST 1,024 rows of v4
-           (a prefix, so replay cad_index equals the G4 cad_index)
+  replay/  texts = 8 pinned original texts cad_store/lengths = FIRST 2,046 rows of v4
+           (a prefix, so replay cad_index equals the G4 cad_index; 2,046 = 127*16+14
+           exercises the same tail-14 batch shape as the 8,046-cad G4 gallery)
 
 The expected-config pins every artifact sha256, the original cad_store sha
 (the b0/b1 candidate-store equality reference), the replay text mapping, the
@@ -48,7 +49,7 @@ from idea01.text2cad_pair_index import (  # noqa: E402
 B0_TEXT = ""
 B1_TEXT = "a CAD model."
 REPLAY_ORIGINAL_TEXT_INDICES = [0, 1, 2, 3, 1000, 2000, 3000, 3643]
-REPLAY_N_CADS = 1024
+REPLAY_N_CADS = 2046  # = 127*16 + 14: exercises the same tail-14 batch shape as G4 (8,046 = 502*16 + 14)
 AUTHORIZATION_REF = "origin/glm-night-20261112"
 
 
@@ -159,7 +160,7 @@ def main() -> int:
         "replay_texts": replay_meta,
         "replay_n_cads": REPLAY_N_CADS,
         "cad_seq_zip_sha256": CAD_SEQ_ZIP_SHA256,
-        "budget_note": "caps live in ACTIVE_TASK e2_* fields at launch; totals >= 24,285 pairs / <= 900 card-seconds / deadline e2_deadline_utc",
+        "budget_note": "caps live in ACTIVE_TASK e2_* fields at launch; exact totals = smoke 1 + b0 8,046 + b1 8,046 + replay 16,368 = 32,461 pairs / <= 900 card-seconds / deadline e2_deadline_utc",
     }
     Path(args.config_out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.config_out).write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
