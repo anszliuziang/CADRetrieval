@@ -429,27 +429,41 @@ def start_deadline_supervision(auth: dict, ledger_path: Path, ready_event=None):
 
 def amend_ledger_verdict_on_disk(ledger_path: Path, ledger, invocation_id: str,
                                   exit_code: int, note: str) -> None:
-    """Settlement correction WITHOUT clobbering concurrent invocations
-    (review round 9, item 1): re-read the ledger file FRESH, patch ONLY the
-    matching invocation's verdict, and atomically replace the file
-    (tmp + os.replace, same persistence format as the reviewed ledger).
-    The in-memory ledger.data is refreshed from the corrected file so the
-    gates read the true state. A concurrent pending invocation and the
-    cumulative pairs_charged totals are preserved untouched."""
-    fresh = json.loads(Path(ledger_path).read_text(encoding="utf-8"))
-    hit = None
-    for inv in reversed(fresh.get("invocations", [])):
-        if inv.get("invocation_id") == invocation_id:
-            hit = inv
-            break
-    if hit is None:
-        raise E2Error(f"amend: invocation {invocation_id!r} not found in ledger")
-    hit["exit_code"] = int(exit_code)
-    hit["note"] = str(note)
-    tmp = Path(ledger_path).with_name(Path(ledger_path).name + ".amend.tmp")
-    tmp.write_text(json.dumps(fresh, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(tmp, Path(ledger_path))
-    ledger.data = fresh  # refresh the in-memory view for downstream gates
+    """Settlement correction holding the LEDGER'S OWN LOCK for the whole
+    read-modify-write (review round 9, item 1): a concurrent stage's
+    charge/begin can only run before or after the amendment, never between
+    its read and write, so no lost updates are possible. Inside the lock the
+    freshest on-disk state is re-read, ONLY the matching invocation's verdict
+    is patched, and the reviewed `_persist_locked()` publishes atomically
+    (tmp + fsync + os.replace). The in-memory ledger.data is refreshed from
+    the corrected state so the gates read the truth. Uses the existing
+    `_locked()`/`_persist_locked()` of the reviewed ledger class - the class
+    file itself is NOT modified."""
+    with ledger._locked():
+        ledger.data = ledger._load_or_init()
+        hit = None
+        for inv in reversed(ledger.data.get("invocations", [])):
+            if inv.get("invocation_id") == invocation_id:
+                hit = inv
+                break
+        if hit is None:
+            raise E2Error(f"amend: invocation {invocation_id!r} not found in ledger")
+        hit["exit_code"] = int(exit_code)
+        hit["note"] = str(note)
+        # interleave defence (round 9): re-read the file INSIDE the lock right
+        # before persisting and merge in any invocation a non-locking writer
+        # landed between our read and this write; our patched verdict wins for
+        # the amended invocation, everything else from the file is preserved
+        disk_now = json.loads(Path(ledger_path).read_text(encoding="utf-8")) \
+            if Path(ledger_path).exists() else {}
+        known = {i.get("invocation_id") for i in ledger.data.get("invocations", [])}
+        for inv in reversed(disk_now.get("invocations", [])):
+            if inv.get("invocation_id") not in known:
+                ledger.data.setdefault("invocations", []).append(inv)
+        disk_pairs = int(disk_now.get("pairs_charged", 0))
+        if disk_pairs > int(ledger.data.get("pairs_charged", 0)):
+            ledger.data["pairs_charged"] = disk_pairs
+        ledger._persist_locked()
 
 
 def check_deadline(auth: dict, now: Optional[float] = None) -> None:

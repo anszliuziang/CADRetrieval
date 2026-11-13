@@ -485,6 +485,55 @@ class TestE2CpuRegression(unittest.TestCase):
             # in-memory view refreshed so downstream gates read the truth
             self.assertEqual(L1.data["invocations"][1]["finalized"], False)
 
+    def test_amend_interleave_charge_during_rmw_survives(self):
+        # review round 9 interleave regression: the concurrent stage's charge
+        # lands BETWEEN the amendment's fresh read and its persist (simulated
+        # by injecting the pending entry into the file right after the read).
+        # Because the amendment holds the ledger's own lock for the whole RMW
+        # and re-merges the freshest file state at persist time, the injected
+        # pending invocation must survive with its charge.
+        import idea01.text2cad_frozen_runner as fr
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "led.json"
+            L1 = fr.SharedBudgetLedger(path, approved_sha="a" * 40,
+                                       max_pairs=416, max_card_seconds=900.0)
+            L1.begin_invocation("I1", 0, 1)
+            L1.charge_pairs("I1", 1)
+            L1.finalize_invocation("I1", exit_code=0,
+                                    note=e2.SUCCESS_NOTE["smoke_b0"])
+
+            class RaceInjectingLedger(fr.SharedBudgetLedger):
+                """Re-reads the file (fresh) then injects a concurrent pending
+                invocation into the FILE, simulating another process whose
+                charge completed inside the amendment's read-write window."""
+
+                def _load_or_init(self):
+                    data = super()._load_or_init()
+                    disk = json.loads(self.path.read_text(encoding="utf-8"))                         if self.path.exists() else data
+                    if not any(i.get("invocation_id") == "I2" for i in disk.get("invocations", [])):
+                        disk.setdefault("invocations", []).append({
+                            "invocation_id": "I2", "finalized": False,
+                            "started_epoch": time.time(), "cards_used": 1,
+                            "pairs_charged": 1})
+                        disk["pairs_charged"] = disk.get("pairs_charged", 0) + 1
+                        self.path.write_text(json.dumps(disk, indent=2, sort_keys=True),
+                                              encoding="utf-8")
+                    return data
+
+            e2.amend_ledger_verdict_on_disk(path, RaceInjectingLedger(
+                path, approved_sha="a" * 40, max_pairs=416,
+                max_card_seconds=900.0), "I1", 2, "card_seconds_exceeded")
+
+            fresh = json.loads(path.read_text(encoding="utf-8"))
+            ids = [i["invocation_id"] for i in fresh["invocations"]]
+            self.assertIn("I2", ids)
+            i2 = next(i for i in fresh["invocations"] if i["invocation_id"] == "I2")
+            self.assertIs(i2["finalized"], False)
+            self.assertEqual(fresh["pairs_charged"], 2)
+            i1 = next(i for i in fresh["invocations"] if i["invocation_id"] == "I1")
+            self.assertEqual(i1["exit_code"], 2)
+
     def test_g4_sums_pin_mismatch_refuses_replay(self):
         # review round 5, item 3: a comparator run against files that do not
         # match the PINNED certified G4 SHA256SUMS is refused outright
