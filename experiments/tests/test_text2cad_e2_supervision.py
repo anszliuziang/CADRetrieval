@@ -93,6 +93,68 @@ class TestSupervisionProcess(unittest.TestCase):
                                  max_card_seconds=5.0)
         self.assertLess(elapsed, 12.0, "card arm must fire promptly (~5s)")
 
+    def test_registration_race_kills_by_card_deadline(self):
+        # review round 8, item 1 regression: the ledger is EMPTY when the
+        # supervisor starts; the invocation is registered only at +0.125s.
+        # The supervisor must re-read FAST (not on a 5s tick) so the absolute
+        # card deadline is registration+2s and the TERM-ignoring child is
+        # SIGKILLed right there - NOT at the old 5-second polling tick.
+        import multiprocessing as mp
+        import threading
+
+        ctx = mp.get_context("fork")
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        ledger = Path(td.name) / "led.json"
+        ledger.write_text(json.dumps({"invocations": [], "card_seconds_spent": 0.0}),
+                          encoding="utf-8")
+
+        child = subprocess.Popen(
+            [sys.executable, "-c", CHILD_CODE],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        t0 = time.time()
+
+        def register():
+            data = json.loads(ledger.read_text(encoding="utf-8"))
+            data["invocations"].append({"invocation_id": "RACE", "finalized": False,
+                                         "started_epoch": time.time()})
+            ledger.write_text(json.dumps(data), encoding="utf-8")
+
+        threading.Timer(0.125, register).start()
+        sup = ctx.Process(target=e2mod._supervise_loop,
+                          args=(child.pid, str(ledger), time.time() + 600.0, 2.0, 1),
+                          daemon=True)
+        sup.start()
+
+        died_at = None
+        status = None
+        t_end = time.time() + 4.5
+        while time.time() < t_end:
+            w, st = os.waitpid(child.pid, os.WNOHANG)
+            if w != 0:
+                died_at = time.time()
+                status = st
+                break
+            time.sleep(0.05)
+        if died_at is None:
+            try:
+                os.kill(child.pid, 9)
+            except ProcessLookupError:
+                pass
+            try:
+                os.waitpid(child.pid, 0)
+            except ChildProcessError:
+                pass
+        self.assertIsNotNone(died_at, "child survived past 4.5s (old 5s-tick bug)")
+        self.assertIsNotNone(status)
+        self.assertTrue(os.WIFSIGNALED(status))
+        self.assertEqual(os.WTERMSIG(status), 9)
+        # registration(+0.125) + cap(2s) = ~2.125s; must land well before 4.5s
+        self.assertLess(died_at - t0, 4.0)
+        if sup.is_alive():
+            sup.terminate()
+
     def test_wall_arm_kills_by_wall_deadline(self):
         from idea01 import text2cad_e2_runner as e2mod
 

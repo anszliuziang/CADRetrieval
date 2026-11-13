@@ -362,6 +362,96 @@ class TestE2CpuRegression(unittest.TestCase):
                         resume=False)
         self.assertIn("smoke_b0", str(ctx.exception))
 
+    def test_wall_crossing_at_finalize_real_ledger(self):
+        # review round 8, item 2: the ledger's OWN billing clock (ended_epoch)
+        # crosses the wall deadline AFTER settle #2 passed - the authoritative
+        # settlement must amend the ledger to exit 2 and the next stage must
+        # be refused. The ledger's clock is injected to run 500s ahead; the
+        # supervisor is disabled (this path is enforced in-process).
+        sha = "8" * 40
+        base = time.time()
+        auth = self._auth(sha)
+        auth["deadline_epoch"] = base + 400.0
+        self._patch_runner_edges(auth)
+        e2.start_deadline_supervision = lambda a, l, ready_event=None: None
+
+        import idea01.text2cad_frozen_runner as fr
+
+        class FastClockLedger(fr.SharedBudgetLedger):
+            def __init__(self, path, **kw):
+                super().__init__(path, now_fn=lambda: base + 500.0, **kw)
+
+        original_ledger_cls = fr.SharedBudgetLedger
+        fr.SharedBudgetLedger = FastClockLedger
+        original_sup = e2.start_deadline_supervision
+        e2.start_deadline_supervision = lambda a, l, ready_event=None: None
+        try:
+            rc = e2.score_e2(REPO, self.CFG, "smoke_b0", self._dirs(), self.CHECKPOINT, self.BERT,
+                             self.ZIP, self.RUN_ROOT / "wall_cross_finalize", "cpu", resume=False)
+        finally:
+            fr.SharedBudgetLedger = original_ledger_cls
+            e2.start_deadline_supervision = original_sup
+        self.assertEqual(rc, 2)
+        ledger = self._ledger(sha)
+        inv = ledger.data["invocations"][-1]
+        self.assertEqual(inv["exit_code"], 2)
+        self.assertEqual(inv["note"], "deadline_exceeded")
+        fin = json.loads((self.RUN_ROOT / "wall_cross_finalize"
+                          / f"final_settlement_{inv['invocation_id']}.json").read_text(encoding="utf-8"))
+        self.assertIs(fin["wall_crossed"], True)
+        self.assertIs(fin["settle_ok"], False)
+        # replay refused by the failed smoke settlement
+        self._patch_runner_edges(self._auth(sha))
+        e2.start_deadline_supervision = lambda a, l, ready_event=None: None
+        with self.assertRaises(e2.E2Error) as ctx:
+            e2.score_e2(REPO, self.CFG, "replay", self._dirs(), self.CHECKPOINT, self.BERT,
+                        self.ZIP, self.RUN_ROOT / "wall_cross_finalize", "cpu", resume=False)
+        self.assertIn("smoke_b0", str(ctx.exception))
+
+    def test_final_settlement_write_failure_real_ledger(self):
+        # review round 8, item 2 (second repro): if the final settlement record
+        # cannot be published, the ledger verdict is amended to a failure and
+        # the next stage is refused - no provisional success survives
+        sha = "7" * 40
+        auth = self._auth(sha)
+        self._patch_runner_edges(auth)
+        import idea01.text2cad_frozen_runner as fr
+
+        original_publish = fr.atomic_publish
+
+        def failing_publish(path, lines):
+            if "final_settlement_" in str(path):
+                raise OSError("simulated final settlement write failure")
+            return original_publish(path, lines)
+
+        fr.atomic_publish = failing_publish
+        e2_target = sys.modules["idea01.text2cad_e2_runner"]
+        # score_e2 binds atomic_publish from frozen_runner at call time
+        try:
+            rc = e2.score_e2(REPO, self.CFG, "smoke_b0", self._dirs(), self.CHECKPOINT, self.BERT,
+                             self.ZIP, self.RUN_ROOT / "settlement_write_fail", "cpu",
+                             resume=False)
+        finally:
+            fr.atomic_publish = original_publish
+        self.assertEqual(rc, 2)
+        ledger = self._ledger(sha)
+        inv = ledger.data["invocations"][-1]
+        self.assertEqual(inv["exit_code"], 2)
+        self.assertEqual(inv["note"], "final_settlement_write_failed")
+        # next stage refused
+        self._patch_runner_edges(self._auth(sha))
+        import idea01.text2cad_e2_runner as e2mod
+        original_sup = e2mod.start_deadline_supervision
+        e2mod.start_deadline_supervision = lambda a, l, ready_event=None: None
+        try:
+            with self.assertRaises(e2.E2Error) as ctx:
+                e2mod.score_e2(REPO, self.CFG, "replay", self._dirs(), self.CHECKPOINT,
+                               self.BERT, self.ZIP,
+                               self.RUN_ROOT / "settlement_write_fail", "cpu", resume=False)
+        finally:
+            e2mod.start_deadline_supervision = original_sup
+        self.assertIn("smoke_b0", str(ctx.exception))
+
     def test_g4_sums_pin_mismatch_refuses_replay(self):
         # review round 5, item 3: a comparator run against files that do not
         # match the PINNED certified G4 SHA256SUMS is refused outright
