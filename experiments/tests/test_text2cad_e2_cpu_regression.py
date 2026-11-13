@@ -452,6 +452,39 @@ class TestE2CpuRegression(unittest.TestCase):
             e2mod.start_deadline_supervision = original_sup
         self.assertIn("smoke_b0", str(ctx.exception))
 
+    def test_amend_preserves_concurrent_charges_real_ledger(self):
+        # review round 9, item 1 with TWO REAL ledger instances: the amendment
+        # must re-read the file fresh and patch only the matching invocation,
+        # preserving the concurrent instance's pending entry and the
+        # cumulative pairs_charged totals
+        import idea01.text2cad_frozen_runner as fr
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "led.json"
+            L1 = fr.SharedBudgetLedger(path, approved_sha="a" * 40,
+                                       max_pairs=416, max_card_seconds=900.0)
+            L2 = fr.SharedBudgetLedger(path, approved_sha="a" * 40,
+                                       max_pairs=416, max_card_seconds=900.0)
+            L1.begin_invocation("I1", 0, 1)
+            L1.charge_pairs("I1", 1)
+            L1.finalize_invocation("I1", exit_code=0,
+                                    note=e2.SUCCESS_NOTE["smoke_b0"])
+            L2.begin_invocation("I2", 0, 1)
+            L2.charge_pairs("I2", 1)  # pending: concurrent stage mid-flight
+
+            e2.amend_ledger_verdict_on_disk(path, L1, "I1", 2,
+                                             "card_seconds_exceeded")
+
+            fresh = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(fresh["pairs_charged"], 2)
+            i1, i2 = fresh["invocations"]
+            self.assertEqual(i1["exit_code"], 2)
+            self.assertEqual(i1["note"], "card_seconds_exceeded")
+            self.assertIs(i2["finalized"], False)  # pending preserved
+            self.assertEqual(i2["pairs_charged"], 1)
+            # in-memory view refreshed so downstream gates read the truth
+            self.assertEqual(L1.data["invocations"][1]["finalized"], False)
+
     def test_g4_sums_pin_mismatch_refuses_replay(self):
         # review round 5, item 3: a comparator run against files that do not
         # match the PINNED certified G4 SHA256SUMS is refused outright
