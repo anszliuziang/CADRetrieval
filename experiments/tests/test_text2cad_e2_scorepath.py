@@ -190,9 +190,14 @@ class TestScorePath(unittest.TestCase):
     def _prepare(self):
         repo = self.root / "repo"
         (repo / "experiments" / "configs").mkdir(parents=True)
+        original_store_bytes = jl([
+            {"cad_index": i, "member": f"cad_seq/0000/{i:08d}/seq/{i:08d}.pth"} for i in range(2)
+        ])
+        original = self.root / "v4"
+        original.mkdir(parents=True, exist_ok=True)
+        (original / CAD_STORE_FILE).write_bytes(original_store_bytes)
         (self.root / "cad_seq.zip").write_bytes(b"PK-STUB")
         (self.root / "ckpt.pth").write_bytes(b"stub")
-        original = self.root / "v4"
         cfg = {
             "schema": "text2cad-e2-background-expected-v1",
             "authorization_ref": "origin/glm-night-20261112",
@@ -202,7 +207,7 @@ class TestScorePath(unittest.TestCase):
                 "smoke_b0": {**make_manifest(self.root / "msmoke", [""], 1), "n_unique_text": 1, "n_gallery": 1},
                 "replay": {**make_manifest(self.root / "mreplay", ["t0", "t1"], 2), "n_unique_text": 2, "n_gallery": 2},
             },
-            "original_cad_store_sha256": sha((original_store_dir(self.root) / CAD_STORE_FILE).read_bytes()),
+            "original_cad_store_sha256": sha(original_store_bytes),
             "replay_texts": [
                 {"original_text_index": 0, "text": "t0", "text_sha256": sha256_text("t0")},
                 {"original_text_index": 1, "text": "t1", "text_sha256": sha256_text("t1")},
@@ -333,7 +338,9 @@ class TestScorePath(unittest.TestCase):
         (run / "summary_S1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
         (run / "final_settlement_S1.json").write_text(json.dumps(
             {"settle_ok": True, "breach": False, "ledger_card_seconds": 36.81,
-             "exit_code": 0}), encoding="utf-8")
+             "exit_code": 0, "wall_crossed": False, "card_crossed": False,
+             "ended_epoch": time.time(), "wall_deadline_epoch": time.time() + 3600}),
+            encoding="utf-8")
         with self.assertRaises(e2.E2Error) as ctx2:
             e2.score_e2(repo, cfg, "b0", dirs, self.root / "ckpt.pth", self.root / "bert",
                         self.root / "cad_seq.zip", run, "npu:0")
@@ -341,29 +348,43 @@ class TestScorePath(unittest.TestCase):
 
 
     def test_settle2_catches_deadline_crossing_during_evidence(self):
-        # deterministic settle #2 coverage (round 6 item 2): the wall-clock
-        # deadline is crossed DURING the evidence writes -> the invocation
-        # settles as a failure and the success note is never written
+        # deterministic settle #2 coverage (round 6+9): the wall-clock deadline
+        # is moved to fire DURING the evidence phase (mutated at the summary
+        # publish, mirroring a concurrent wall-clock crossing) -> settle #2
+        # catches it, the invocation settles as a failure, the success note is
+        # never written, and the failure evidence lands on disk
         repo, cfg, dirs, auth = self._prepare()
-        base = time.time()
-        auth["deadline_epoch"] = base + 3.0  # crossed exactly at settle #2 (clock 2.7 -> 3.6)
         e2.git_dirty = lambda repo_root: ""
         e2.head_is_detached = lambda repo_root: (True, "")
         e2.authorize_e2_run = lambda repo_root, cfg: auth
 
         calls = {"n": 0}
+        base = time.time()
 
         def fake_now():
             calls["n"] += 1
-            return base + calls["n"] * 0.9  # 0.9s per NOW_FN call
+            return base + calls["n"] * 0.9
 
         original_now = e2.NOW_FN
         e2.NOW_FN = fake_now
+
+        stub_mod = sys.modules.get("idea01.text2cad_frozen_runner")
+        original_publish = stub_mod.atomic_publish
+
+        def deadline_moving_publish(path, lines):
+            rc = original_publish(path, lines)
+            if "summary_" in str(path):
+                # the wall deadline crosses while the evidence writes run
+                auth["deadline_epoch"] = fake_now() + 0.5
+            return rc
+
+        stub_mod.atomic_publish = deadline_moving_publish
         try:
             rc = e2.score_e2(repo, cfg, "smoke_b0", dirs, self.root / "ckpt.pth",
                              self.root / "bert", self.root / "cad_seq.zip",
                              self.root / "run_settle2", "npu:0")
         finally:
+            stub_mod.atomic_publish = original_publish
             e2.NOW_FN = original_now
         self.assertEqual(rc, 2)
         ledger = self.records["ledger"]
@@ -376,16 +397,19 @@ class TestScorePath(unittest.TestCase):
         fin = json.loads(fin_path.read_text(encoding="utf-8"))
         self.assertIs(fin["settle_ok"], False)
         self.assertEqual(fin["exit_code"], 2)
+        self.assertIs(fin["wall_crossed"], True)
 
+    def test_nonfinite_caps_refused(self):
+        text = (
+            "- `state`: `pilot_authorized`\n"
+            "- `e2_approved_sha`: `" + "a" * 40 + "`\n"
+            "- `e2_max_pairs`: 32461\n"
+            "- `e2_max_card_seconds`: inf\n"
+            "- `e2_deadline_utc`: 2026-11-12T18:00:00Z\n"
+        )
+        with self.assertRaises(e2.E2Error):
+            e2.parse_e2_authorization(text, "a" * 40)
 
-def original_store_dir(root: Path) -> Path:
-    d = root / "v4"
-    if not (d / CAD_STORE_FILE).exists():
-        d.mkdir(parents=True, exist_ok=True)
-        (d / CAD_STORE_FILE).write_bytes(jl([
-            {"cad_index": i, "member": f"cad_seq/0000/{i:08d}/seq/{i:08d}.pth"} for i in range(2)
-        ]))
-    return d
 
 
 class TestGates(unittest.TestCase):
@@ -410,24 +434,26 @@ class TestGates(unittest.TestCase):
             (run / "replay").mkdir(parents=True)
             (run / "replay" / "chunk_s00_t00000_00001.jsonl").write_bytes(payload)
 
-            # a) successful replay WITHOUT evidence records -> refused
             with self.assertRaises(e2.E2Error) as ctx:
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("evidence records missing", str(ctx.exception))
 
-            # b) evidence without settle_ok=true -> refused
             (run / "environment_R1.json").write_text("{}", encoding="utf-8")
             (run / "summary_R1.json").write_text("{}", encoding="utf-8")
             with self.assertRaises(e2.E2Error) as ctx_b:
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("final_settlement_R1.json", str(ctx_b.exception))
 
-            # c) valid evidence but no gate record -> refused
-            (run / "environment_R1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
-            (run / "summary_R1.json").write_text(json.dumps({"settle_ok": True}), encoding="utf-8")
-            (run / "final_settlement_R1.json").write_text(json.dumps({
-                "settle_ok": True, "breach": False,
-                "ledger_card_seconds": 16.0, "exit_code": 0}), encoding="utf-8")
+            ok_fin = {"settle_ok": True, "breach": False, "exit_code": 0,
+                      "ledger_card_seconds": 16.0, "wall_crossed": False,
+                      "card_crossed": False, "ended_epoch": time.time(),
+                      "wall_deadline_epoch": time.time() + 3600}
+            (run / "environment_R1.json").write_text(json.dumps({"settle_ok": True}),
+                                                      encoding="utf-8")
+            (run / "summary_R1.json").write_text(json.dumps({"settle_ok": True}),
+                                                  encoding="utf-8")
+            (run / "final_settlement_R1.json").write_text(json.dumps(ok_fin),
+                                                           encoding="utf-8")
             with self.assertRaises(e2.E2Error) as ctx_c:
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("replay_gate_record.json missing", str(ctx_c.exception))
@@ -442,35 +468,30 @@ class TestGates(unittest.TestCase):
             }
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
 
-            # d) wrong approved sha
             with self.assertRaises(e2.E2Error) as ctx_d:
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("bound to", str(ctx_d.exception))
             rec["approved_sha"] = "a" * 40
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
 
-            # e) disk hash mismatch (pins exist and are checked against disk)
             with self.assertRaises(e2.E2Error) as ctx_e:
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("missing or hash drift", str(ctx_e.exception))
             rec["replay_chunk_sha256"] = {"chunk_s00_t00000_00001.jsonl": sha(payload)}
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
 
-            # f) incomplete certified-G4 pin set
             rec["g4_chunk_sha256"] = {"some/other_name.jsonl": "g0"}
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
             with self.assertRaises(e2.E2Error) as ctx_f:
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("certified sources", str(ctx_f.exception))
 
-            # g) certified value mismatch
             rec["g4_chunk_sha256"] = {"card0/chunk_s00_t00000_00001.jsonl": "WRONG"}
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
             with self.assertRaises(e2.E2Error) as ctx_g:
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("certified value", str(ctx_g.exception))
 
-            # h) mapping drift
             rec["g4_chunk_sha256"] = dict(cfg["g4_chunk_sha256"])
             rec["dense_to_original_cad_index"] = [0, 1, 2, 3]
             (run / "replay_gate_record.json").write_text(json.dumps(rec), encoding="utf-8")
@@ -478,27 +499,13 @@ class TestGates(unittest.TestCase):
                 e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertIn("mapping differs", str(ctx_h.exception))
 
-            # i) fully correct record + final settlement passes
-            (run / "final_settlement_R1.json").write_text(json.dumps({
-                "settle_ok": True, "breach": False,
-                "ledger_card_seconds": 16.0, "exit_code": 0,
-            }), encoding="utf-8")
+            (run / "final_settlement_R1.json").write_text(json.dumps(ok_fin),
+                                                           encoding="utf-8")
             (run / "replay_gate_record.json").write_text(
                 json.dumps({**rec, "dense_to_original_cad_index":
                             cfg["replay_dense_to_original_cad_index"]}), encoding="utf-8")
             info = e2.verify_replay_gate(run, cfg, auth, FakeLedger())
             self.assertEqual(info["compared"], 4)
-
-    def test_nonfinite_caps_refused(self):
-        text = (
-            "- `state`: `pilot_authorized`\n"
-            "- `e2_approved_sha`: `" + "a" * 40 + "`\n"
-            "- `e2_max_pairs`: 32461\n"
-            "- `e2_max_card_seconds`: inf\n"
-            "- `e2_deadline_utc`: 2026-11-12T18:00:00Z\n"
-        )
-        with self.assertRaises(e2.E2Error):
-            e2.parse_e2_authorization(text, "a" * 40)
 
 
 class TestComparator(unittest.TestCase):

@@ -333,19 +333,23 @@ def _supervise_loop(parent_pid: int, ledger_path: str, wall_deadline: float,
             pass  # ledger not written yet; retry on the next tick
         if first is None:
             if now >= wall_deadline:
+                if ready_event is not None:
+                    ready_event.set()  # report the wall-only fallback schedule
                 hard_kill_at("wall deadline while ledger unreadable", now)
             # readable-but-unregistered means the scorer is mid-registration:
             # retry FAST so the absolute deadline reflects the real start
             # (round 8, item 1); only a truly unreadable ledger backs off 5s
             sleep_fn(0.1 if readable else min(5.0, max(0.05, wall_deadline - now)))
             continue
-        if ready_event is not None:
-            ready_event.set()
 
     snap_t, snap_spent = first
     card_deadline = snap_t + max(0.0, max_card_seconds - snap_spent) / cards_used
     hard = min(wall_deadline, card_deadline)
     term_at = hard - GRACE_S
+    # readiness is signalled ONLY after the absolute schedule (term_at/hard)
+    # is computed (review round 9, item 2)
+    if ready_event is not None:
+        ready_event.set()
     now = now_fn()
     if now >= hard:
         hard_kill_at("hard deadline already passed at supervision start", hard)
@@ -421,6 +425,31 @@ def start_deadline_supervision(auth: dict, ledger_path: Path, ready_event=None):
     )
     proc.start()
     return proc
+
+
+def amend_ledger_verdict_on_disk(ledger_path: Path, ledger, invocation_id: str,
+                                  exit_code: int, note: str) -> None:
+    """Settlement correction WITHOUT clobbering concurrent invocations
+    (review round 9, item 1): re-read the ledger file FRESH, patch ONLY the
+    matching invocation's verdict, and atomically replace the file
+    (tmp + os.replace, same persistence format as the reviewed ledger).
+    The in-memory ledger.data is refreshed from the corrected file so the
+    gates read the true state. A concurrent pending invocation and the
+    cumulative pairs_charged totals are preserved untouched."""
+    fresh = json.loads(Path(ledger_path).read_text(encoding="utf-8"))
+    hit = None
+    for inv in reversed(fresh.get("invocations", [])):
+        if inv.get("invocation_id") == invocation_id:
+            hit = inv
+            break
+    if hit is None:
+        raise E2Error(f"amend: invocation {invocation_id!r} not found in ledger")
+    hit["exit_code"] = int(exit_code)
+    hit["note"] = str(note)
+    tmp = Path(ledger_path).with_name(Path(ledger_path).name + ".amend.tmp")
+    tmp.write_text(json.dumps(fresh, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, Path(ledger_path))
+    ledger.data = fresh  # refresh the in-memory view for downstream gates
 
 
 def check_deadline(auth: dict, now: Optional[float] = None) -> None:
@@ -743,15 +772,47 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
     #    load/forward is killed BY the deadline; a hard kill leaves the ledger
     #    pending - recovery is a reviewer decision)
     ready_event = None
+    supervisor = None
     if os.name == "posix":
         import multiprocessing as _mp
         ready_event = _mp.Event()
     supervisor = start_deadline_supervision(auth, ledger_path, ready_event=ready_event)
-    # 3. confirm the supervisor is ready (snapshot taken / deadline computed)
-    #    BEFORE the model load
-    if ready_event is not None:
+    # 3. confirm the supervisor is ready (snapshot taken / absolute deadline
+    #    computed) BEFORE the model load
+    if supervisor is not None and ready_event is not None:
         if not ready_event.wait(timeout=30.0):
             raise E2Error("deadline supervisor did not become ready within 30s")
+
+    # 4. post-readiness re-check of BOTH caps BEFORE the model load (round 9,
+    #    item 2): the schedule is now fixed, so this instant is authoritative
+    now_r = NOW_FN()
+    projected_r = float(ledger.data.get("card_seconds_spent", 0.0)) + max(
+        0.0, now_r - float(started_epoch)) * 1
+    if projected_r > auth["max_card_seconds"] - 0.05 or now_r > auth["deadline_epoch"]:
+        fail_note = ("card_seconds_exceeded" if projected_r > auth["max_card_seconds"] - 0.05
+                      else "deadline_exceeded")
+        failure = (f"post-readiness re-check: projected card-seconds "
+                    f"{projected_r:.2f}/{auth['max_card_seconds']}, "
+                    f"wall now {now_r:.3f} vs deadline {auth['deadline_epoch']:.3f}")
+        ledger.finalize_invocation(invocation_id, exit_code=2, note=fail_note)
+        final_settlement = {
+            "schema": "text2cad-e2-final-settlement-v1",
+            "invocation_id": invocation_id, "e2_background": which,
+            "approved_sha": auth["approved_sha"], "exit_code": 2,
+            "note": fail_note, "settle_ok": False, "breach": True,
+            "card_crossed": projected_r > auth["max_card_seconds"] - 0.05,
+            "wall_crossed": now_r > auth["deadline_epoch"],
+            "ledger_card_seconds": float(ledger.data.get("card_seconds_spent", 0.0)),
+            "max_card_seconds": auth["max_card_seconds"],
+            "wall_deadline_epoch": auth["deadline_epoch"],
+            "ended_epoch": float(ledger.data["invocations"][-1].get("ended_epoch", 0.0)),
+            "failure": failure, "phase": "pre_load",
+            "generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        atomic_publish(run_root / f"final_settlement_{invocation_id}.json",
+                       [json.dumps(final_settlement, indent=2, sort_keys=True, ensure_ascii=False)])
+        print(f"E2 FATAL: {failure}", file=sys.stderr)
+        return 2
 
     exit_code, note, failure, published = 0, "ok", None, 0
     load_report = preload_report = None
@@ -846,27 +907,12 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
     # one settlement judges card-seconds AND wall clock)
     ledger.finalize_invocation(invocation_id, exit_code=exit_code, note=note)
 
-    def _amend_ledger_last(corrected_exit: int, corrected_note: str) -> None:
-        """Round-7/8 settlement correction WITHOUT touching the reviewed
-        ledger class: the amendment is written to the ledger FILE in the
-        exact persistence format (json.dumps(indent=2, sort_keys=True)) that
-        SharedBudgetLedger._persist_locked uses, and mirrored into the
-        in-memory ledger.data the gates read. The correction is derived from
-        the invocation's OWN stored started/ended epochs - no new clock read."""
-        nonlocal exit_code
-        inv = next(i for i in ledger.data["invocations"]
-                   if i["invocation_id"] == invocation_id)
-        inv["exit_code"] = int(corrected_exit)
-        inv["note"] = corrected_note
-        ledger_path.write_text(json.dumps(ledger.data, indent=2, sort_keys=True) + "\n",
-                               encoding="utf-8")
-
     inv_final = next(i for i in ledger.data["invocations"]
                      if i["invocation_id"] == invocation_id)
     authoritative = float(ledger.data.get("card_seconds_spent", 0.0))
     ended_epoch = float(inv_final.get("ended_epoch", 0.0))
-    card_crossed = authoritative > auth["max_card_seconds"] + 1e-6
-    wall_crossed = ended_epoch > float(auth["deadline_epoch"]) + 1e-6
+    card_crossed = authoritative > auth["max_card_seconds"] + 1e-6 or note == "card_seconds_exceeded"
+    wall_crossed = ended_epoch > float(auth["deadline_epoch"]) + 1e-6 or note == "deadline_exceeded"
     breach = exit_code == 0 and (card_crossed or wall_crossed)
     if breach:
         note_name = "card_seconds_exceeded" if card_crossed else "deadline_exceeded"
@@ -875,7 +921,7 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
                     f"(card={authoritative:.2f}/{auth['max_card_seconds']}, "
                     f"ended={ended_epoch:.3f} vs deadline {auth['deadline_epoch']:.3f}); "
                     f"verdict corrected")
-        _amend_ledger_last(2, note_name)
+        amend_ledger_verdict_on_disk(ledger_path, ledger, invocation_id, 2, note_name)
         exit_code, note = 2, note_name
 
     # independent FINAL SETTLEMENT record: authoritative post-finalize billing
@@ -906,7 +952,7 @@ def score_e2(repo_root: Path, cfg: dict, which: str, dirs: dict[str, Path],
                        [json.dumps(final_settlement, indent=2, sort_keys=True, ensure_ascii=False)])
     except Exception as exc:  # noqa: BLE001
         # the ledger verdict MUST reflect that the settlement record is missing
-        _amend_ledger_last(2, "final_settlement_write_failed")
+        amend_ledger_verdict_on_disk(ledger_path, ledger, invocation_id, 2, "final_settlement_write_failed")
         exit_code, note = 2, "final_settlement_write_failed"
         final_settlement.update({"exit_code": 2, "note": note, "settle_ok": False,
                                   "failure": f"{type(exc).__name__}: {exc}"})
