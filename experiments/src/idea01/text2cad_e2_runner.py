@@ -404,29 +404,6 @@ def start_deadline_supervision(auth: dict, ledger_path: Path, ready_event=None):
     return proc
 
 
-def start_deadline_supervision(auth: dict, ledger_path: Path, ready_event=None):
-    """Spawn the independent supervisor process (POSIX only; elsewhere the
-    in-loop checks and the operator's outer timeout remain, recorded honestly).
-    `ready_event` (multiprocessing.Event) is set once the supervisor has taken
-    its first snapshot / computed the absolute deadline. Returns the process
-    handle or None."""
-    import multiprocessing as mp
-
-    if os.name != "posix":
-        if ready_event is not None:
-            ready_event.set()
-        return None
-    proc = mp.Process(
-        target=_supervise_loop,
-        args=(os.getpid(), str(ledger_path), float(auth["deadline_epoch"]),
-              float(auth["max_card_seconds"]), 1),
-        kwargs={"ready_event": ready_event},
-        daemon=True,
-    )
-    proc.start()
-    return proc
-
-
 def amend_ledger_verdict_on_disk(ledger_path: Path, ledger, invocation_id: str,
                                   exit_code: int, note: str) -> None:
     """Settlement correction holding the LEDGER'S OWN LOCK for the whole
