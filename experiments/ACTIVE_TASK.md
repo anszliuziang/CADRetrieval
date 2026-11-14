@@ -11,7 +11,8 @@
 - `e2_positioning`: 已探索 test 图库上的机制诊断；非方法确认；B0/B1 差异明显时结论写作"结果对背景文本选择敏感"
 - `night_tasks`: 用户 2026-11-12 授权三项夜间任务已完成并验收（share4 环境通过/失效分析接收/调研修订后通过路径以本轮修订为准）
 - `gpu_budget`: 单张空闲 NPU；**累计上限 900 卡秒**（e2_max_card_seconds=900）
-- `e2_max_pairs`: **32461**（smoke 1 + REPLAY 16,368 + B0 8,046 + B1 8,046，精确总数）
+- `e2_max_pairs`: `32461`（smoke 1 + REPLAY 16,368 + B0 8,046 + B1 8,046，精确总数）
+- `e2_max_card_seconds`: `900`（累计上限；先到即停非零）
 - `e2_deadline_utc`: `2026-11-14T13:26:03Z`（共同墙钟窗口，自授权写入起 6 小时）
 - `e2_run_root`: `$RT/runs/idea01_text2cad_e2_background_20261112/`（checkout 外；final_settlement 与预算台账为权威结算记录）
 - `max_scored_pairs`: 0（E2 未启动；启动后精确 32,461 对新前向）
