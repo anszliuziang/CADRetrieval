@@ -1,6 +1,6 @@
 # 当前任务：E2 空文本背景小试（2026-11-12，计划已提交待执行授权）
 
-- `state`: `implementation`（E2 本地实现 **r7**：fresh review C1/I1/I2/I3 已修——canonical 共享台账（按批准 SHA 唯一、跨 smoke/b0/b1/replay 累计）、pending 拒绝不自动续跑、分背景 chunk 子目录、smoke_b0 专用 1×1 清单、score 模式 environment_record+load/preload/stats 证据、守卫前置；**本地 CPU dry-run r2 通过**（4 清单+候选对账+tokenizer 证据，零前向）；E2 测试 22/22；本地 torch-free 套件 380 passed + 6 个 torch 依赖失败（服务器跑）；待：评审复审 r7（ae92af7→本轮提交）→ 镜像同步 → share4 CPU 预检（全测+dry-run+POSIX 监督回归）→ 用户批准启动后按门控顺序执行）+ REPLAY 跨机复算 + 用户批准启动）
+- `state`: `implementation`（E2 r9 修复过审 `a4f152e`；镜像已同步 `125c401`/`398dae6`；**share4 CPU 预检完成**：全测 708 passed（3 个失败为 master 即有的 share4 环境问题——speed_bench 双卡 npu-init ×2、frozen_runner 套件顺序交互，单测隔离均通过；g5_archive 为 Windows 本机路径用例不适用）+ **dry-run exit 0**（四清单+候选对账+tokenizer B0=[101,102]，零前向）+ **POSIX 监督回归 2/2 PASSED**（忽略 SIGTERM 的真子进程：卡时臂 ~5s KILL、墙钟臂 +32s KILL）；REPLAY/B0/B1 批量执行待用户批准启动）
 - `ownership`: 用户 2026-11-11 指定 GLM 5.3 接手；**GLM 负责实施，NPU 正式前向由用户批准启动**（2026-11-12 二次验收订正）；计划先行、独立审码、SHA、预算纪律保留；评审按需参与
 - `plan`: `experiments/plans/IDEA01_E2_EMPTY_TEXT_BACKGROUND_2026-11-12.md`（v2，含验收四点修正）
 - `acceptance`: 2026-11-12 验收（runtime/glm_night_acceptance_codex_20261112/EXPERIMENT_AUDIT.md）：E2 研究方向通过，进入本地实现与 CPU 预检；正式 NPU 前向待用户批准
