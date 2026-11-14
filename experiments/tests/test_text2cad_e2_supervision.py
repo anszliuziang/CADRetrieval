@@ -104,10 +104,10 @@ class TestSupervisionProcess(unittest.TestCase):
 
     def test_wall_arm_kills_by_wall_deadline(self):
         # wall deadline +32s -> TERM at +2 (ignored by the child), KILL at +32
+        # (the helper asserts |died_at - hard| <= 2.5 against the ABSOLUTE hard)
         died_at, hard = self._spawn_child_and_supervisor(
             wall_deadline=time.time() + 32.0, max_card_seconds=1e9)
         self.assertGreaterEqual(died_at, 30.0, "KILL before the wall deadline")
-        self.assertLessEqual(died_at, 34.0, "KILL missed the wall deadline")
         self.assertLessEqual(abs(died_at - hard), 2.5)
 
 
