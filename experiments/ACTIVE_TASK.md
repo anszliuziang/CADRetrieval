@@ -9,7 +9,10 @@
 - `e2_prerequisites`: ①URL 允许集合 + 显式授权 ref + refspec 强制更新（防陈旧 tracking ref）②`load_background_texts` 专用准入 ③E2 单卡执行路径（dry-run/score 校验一致；四清单对账）④share4 CPU dry-run 预检 ⑤**强制执行顺序**：smoke → REPLAY → 容差门记录 → B0 → B1（runner 拒绝绕序）⑥detached HEAD 检查 ⑦caps 拒绝非有限值 ⑧结算后超支记失败
 - `e2_positioning`: 已探索 test 图库上的机制诊断；非方法确认；B0/B1 差异明显时结论写作"结果对背景文本选择敏感"
 - `night_tasks`: 用户 2026-11-12 授权三项夜间任务已完成并验收（share4 环境通过/失效分析接收/调研修订后通过路径以本轮修订为准）
-- `gpu_budget`: 0 卡小时（E2 未启动；启动后按 e2_budget）
+- `gpu_budget`: 单张空闲 NPU；**累计上限 900 卡秒**（e2_max_card_seconds=900）
+- `e2_max_pairs`: **32461**（smoke 1 + REPLAY 16,368 + B0 8,046 + B1 8,046，精确总数）
+- `e2_deadline_utc`: `2026-11-14T13:26:03Z`（共同墙钟窗口，自授权写入起 6 小时）
+- `e2_run_root`: `$RT/runs/idea01_text2cad_e2_background_20261112/`（checkout 外；final_settlement 与预算台账为权威结算记录）
 - `max_scored_pairs`: 0（E2 未启动；启动后精确 32,461 对新前向）
 - `deliverables`: `experiments/submissions/idea01_next_phase_20261112/`（ENV_SETUP / TEXT2CAD_FAILURE_ANALYSIS / CAD_GENERATION_RETRIEVAL_BENCHMARK_SURVEY，均含 2026-11-12 验收订正）
 - `share4_env`: `experiments/configs/idea01_yunnao_share4_env.json`（解释器 `/home/ma-user/anaconda3/envs/cadretrieval-glm-torch271/bin/python`，验收订正）；24/24 固定资产 SHA 复核通过（验收 witness）
