@@ -1,6 +1,7 @@
 # 当前任务：E2 空文本背景小试（2026-11-12，计划已提交待执行授权）
 
-- `state`: `implementation`（E2 r9 修复过审 `a4f152e`；镜像已同步 `125c401`/`398dae6`；**share4 CPU 预检完成**：全测 708 passed（3 个失败为 master 即有的 share4 环境问题——speed_bench 双卡 npu-init ×2、frozen_runner 套件顺序交互，单测隔离均通过；g5_archive 为 Windows 本机路径用例不适用）+ **dry-run exit 0**（四清单+候选对账+tokenizer B0=[101,102]，零前向）+ **POSIX 监督回归 2/2 PASSED**（忽略 SIGTERM 的真子进程：卡时臂 ~5s KILL、墙钟臂 +32s KILL）；REPLAY/B0/B1 批量执行待用户批准启动）
+- `state`: `pilot_authorized`（用户 2026-11-14 批准单卡 E2 正式执行；E2 r9 修复过审 `a4f152e`；**share4 CPU 预检完成**：全测 708 passed（3 个失败为 master 即有的 share4 环境问题）+ dry-run exit 0 + POSIX 监督回归 2/2 PASSED（在 `398dae6` 独立复跑 34+2 项通过））
+- `e2_approved_sha`: `71951046852302b411d45c60c5402ba1ab089e97`（运行 HEAD 必须 detached 到此完整 SHA 且工作树干净。**批准基线为用户预检的 `398dae63af5bea43601448e33d192ba0d505657a`**；其后差异全部披露：`495cbb7` 仅文档、`10b35d7` 删除从未被 Python 调用的重复 `start_deadline_supervision` 首定义（纯死代码删除，行为不变，POSIX/scorepath 回归针对现行定义）、`52990dd` 授权记录、`7195104` 授权分支 fetch 的 3 次有界重试（工程故障持续授权范围；失败仍 fail-closed，attempt 返回码入授权 meta）。评分语义、预算门、监督与执行顺序零改动）
 - `ownership`: 用户 2026-11-11 指定 GLM 5.3 接手；**GLM 负责实施，NPU 正式前向由用户批准启动**（2026-11-12 二次验收订正）；计划先行、独立审码、SHA、预算纪律保留；评审按需参与
 - `plan`: `experiments/plans/IDEA01_E2_EMPTY_TEXT_BACKGROUND_2026-11-12.md`（v2，含验收四点修正）
 - `acceptance`: 2026-11-12 验收（runtime/glm_night_acceptance_codex_20261112/EXPERIMENT_AUDIT.md）：E2 研究方向通过，进入本地实现与 CPU 预检；正式 NPU 前向待用户批准
