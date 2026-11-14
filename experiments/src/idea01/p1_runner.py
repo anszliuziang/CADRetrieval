@@ -348,13 +348,23 @@ def fetch_authorized_active_task(repo_root: Path, expected_origin: str | None = 
         return None, meta
     branch = ref[len("origin/"):]
     try:
-        r = git("fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}", timeout=300)
+        # bounded retry for TRANSIENT network failures (flaky proxy 503/HTTP2):
+        # a branch genuinely missing on the remote fails all attempts and we
+        # still refuse — the gate is not relaxed, only hardened against noise
+        r = None
+        for attempt in range(1, 4):
+            r = git("fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}", timeout=300)
+            meta[f"fetch_attempt_{attempt}_returncode"] = r.returncode
+            if r.returncode == 0:
+                break
+            if attempt < 3:
+                time.sleep(20 * attempt)
         meta["fetch_returncode"] = r.returncode
         meta["fetch_refspec"] = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
         if r.returncode != 0:
             meta["problems"].append(
-                f"fetching authorization branch failed (branch missing on remote or network): "
-                f"{r.stderr.strip()[:300]}"
+                f"fetching authorization branch failed after 3 attempts (branch missing on "
+                f"remote or network): {r.stderr.strip()[:300]}"
             )
             return None, meta
     except Exception as e:  # noqa: BLE001
