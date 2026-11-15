@@ -1,24 +1,18 @@
-# 三方法接入盘点与资产预检（2026-11-15）
+# 三方法接入盘点与资产预检（2026-11-15 首版；同日追加真实转换/渲染/CLIP 编码探针结果，见 §6）
 
-计划 §2 第 3 项交付。本轮零模型前向、零大文件下载；以下"已核实"均指本地文件/官方仓库/官方 HF 页面级核查，运行覆盖由首轮评分测定。
-
-## 0. 关键结论
-
-1. **几何源头已备齐**：Text2CAD v1.0 数据集自带 `misc/minimal_json/minimal_json_0000_0099.zip`（110MB，176,019 个 DeepCAD 风格参数化 JSON；SHA 见 §4）。**8,046 个测试 UID 交集 = 8,046/8,046，缺失 0**（本地 zip 实测，2026-11-15）。gallery.jsonl 每行带 `minimal_json_member` 字段（`n_representations=3` 全库一致），UID→文件路径连接零成本。
-2. **官方转换工具已具备**：Text2CAD 官方仓库（本地镜像 Git SHA `669a81472ede2269837c22a4d00070eaac360c82`，LICENSE CC BY-NC-SA 4.0）的 `CadSeqProc/` 提供 `json2step.py`（JSON→STEP B-Rep）、`json2stl_skt3d.py`（JSON→STL mesh）、`cad_sequence.create_mesh/sample_surface`（B-Rep→mesh→点云采样）、`OCCUtils/`（pythonocc 辅助）。依赖：pythonocc-core/OCP、trimesh、loguru/rich。
-3. **结构探针通过**：按 G4 有效长度四分位（cuts 27/40/70）抽 4 个 UID 实测 JSON 解析——parts/sketch loop/`extrusion` 键结构完整（探针记录见 RESULTS 附录）。深度转换（STEP/STL/点云）需先安装 OCC 环境，见各方法"启动条件"。
+计划 §2 第 3 项交付。首版为零模型前向、零大文件下载的桌面核查；**2026-11-15 追加**：按验收意见在隔离环境（checkout 外 conda env `cadclip`）完成 32 UID 的真实 **JSON→几何→固定视角渲染→CLIP 编码** 批，成功率 **100%（32/32）**（§6）。
 
 ## 1. CLIP + 固定视角渲染（顺序 1，首选）
 
 | 项 | 状态 |
 |---|---|
-| 建议权重 | `openai/clip-vit-base-patch32`（HF，MIT 许可）。**本地 HF 缓存仅有 ref 指针（1KB），权重本体未下载**；需下载 model.safetensors ≈605MB |
-| 本地运行时 | CPython 3.14 已有 torch（2.x CPU）+ transformers 4.x，`CLIPModel` 可直接用；CPU 编码 8,046 图 + 3,644 文本可行（估 1–2 小时量级）；NPU 路径未验证，不默认 |
-| 渲染资产 | **不存在现成渲染**（数据集只有几何 JSON 与 token 序列）。转换链：minimal_json → CadSeqProc `json2stl_skt3d.py`（OCC）→ STL → 离屏渲染（matplotlib/trimesh+pyrender）→ 224×224 |
-| 视角规范（建议，方法轮冻结） | 首选单张固定等轴测视图（azimuth 45°/elevation 30°，STL 归一化到单位立方后正交投影）做首轮；多视图聚合（4 视角均值池化）作为第二轮对照。两版都要在配置里写死并记 SHA |
-| 预处理 | CLIP 官方 `CLIPImageProcessor`（224×224 resize+center crop+归一化），文本侧 BPE tokenize ≤77 token |
-| UID 对应 | 渲染文件名 = cad_id（`0000/00000093.png` 风格）；评价端经 gallery.jsonl 连接 |
-| 缺项 | ①CLIP 权重下载（~605MB）②OCC 渲染环境安装 ③渲染脚本本身需新写（CadSeqProc 无现成 render-to-image 入口） |
+| 建议权重 | `openai/clip-vit-base-patch32`（HF，MIT 许可）。**已下载至 HF 默认缓存（2026-11-15，589MB 实测）** |
+| 本地运行时 | 隔离 env `cadclip`（python 3.10 + pythonocc-core 7.7.2 + transformers + torch 2.14.1+cpu）已建并实测跑通；CPU 编码 8,046 图量级按探针外推约 8 分钟；NPU 路径未验证，不默认 |
+| 渲染资产 | 数据集无现成渲染；**探针已实测渲染 32 件**（matplotlib 等轴测，`clip_probe_20261115/renders/`）。转换链：minimal_json → `CADSequence.from_minimal_json` → OCC B-Rep → mesh → 固定视角渲染 |
+| 视角规范（建议，方法轮冻结） | 探针用单张固定等轴测（azim 45°/elev 30°，白底，网格几何归一化）；多视图聚合（4 视角均值池化）作为方法轮对照。生产规格（含光照）待冻结 |
+| 预处理 | CLIP 官方 `CLIPImageProcessor`（224×224），文本侧 BPE ≤77 token（已实测文本编码 0.618s/条） |
+| UID 对应 | 渲染文件名 = cad_id（`0000__00000915.png` 风格）；评价端经 gallery.jsonl 连接 |
+| 缺项 | ①生产渲染规格与光照待冻结（含 normalize/bbox 集成缺口，见 §6）②多视图聚合决策 ③编码输出格式（f32 向量工件，经统一评价入口的 binary artifact 通道） |
 
 ## 2. OpenShape PointBERT（顺序 2）
 
@@ -61,3 +55,15 @@
 | 评价 | 统一入口（本轮已交付） | 就绪 |
 
 三条方法共同的开工前置：**一次明确授权的依赖安装清单**（OCC 系 + 各方法权重下载），建议作为下一轮的第一步，与渲染脚本评审一并处理。
+
+## 6. 真实探针批（2026-11-15 追加；验收意见授权的隔离环境批）
+
+按验收意见：①补齐 Q2 探针（首版 4 个探针按正确边界规则实际落在 Q1/Q1/Q3/Q4——`np.searchsorted(cuts, L, 'left')` 边界归下四分位；本次按每四分位 8 个 UID 重新抽样，共 32 个，Q1–Q4 各 8）；②在隔离环境跑真实全链路。**结果：32/32 成功（100%）**。
+
+- 环境：conda env `cadclip`（checkout 外）：python 3.10 + **pythonocc-core 7.7.2（conda-forge；CadSeqProc 绑定 `OCC.Core.*`，不兼容 pip 的 cadquery-ocp/OCP）** + pip：trimesh/pandas/scikit-learn/plyfile/joblib/networkx/matplotlib/transformers/**torch 2.14.1+cpu**。完整规格与已知缺口见 `experiments/configs/clip_probe_env_20261115.json`。
+- 脚本：`experiments/scripts/probe_clip_render_20261115.py`（每 UID 分阶段计时与失败原因落盘）。
+- 产物：`CADRetrievalIdea1_runtime/clip_probe_20261115/`（32 张固定等轴测渲染 PNG、32 个 STEP、summary/per_uid JSON）+ 冒烟 `clip_probe_smoke_20261115/`（4 UID，几何+渲染）。
+- CLIP 权重：`openai/clip-vit-base-patch32` 已下载至 HF 默认缓存（589MB 实测缓存占用）。
+- 每件平均耗时（32 件实测）：OCC B-Rep 0.025s、STEP 导出 0.010s、mesh 0.009s、渲染 0.056s、CLIP 图像编码 0.058s（CPU）——**全库 8,046 件外推约 21 分钟单进程**（仅作规划参考）；文本塔 3,644 条 0.618s/条 → 数分钟级。
+- 新发现的集成缺口（方法轮冻结决策）：①minimal_json 不含 `properties.bounding_box`，CadSeqProc `CADSequence.normalize()` 依赖它（`from_minimal_json` 返回 bbox=None 即崩溃）——生产管线需改为从生成的 B-Rep 取 bbox（BRepBndLib）或复刻 json2vec 量化路径；②探针渲染为 matplotlib 平面色（无光照），生产渲染规格（光照/分辨率/视角数）待方法轮冻结；③本版 transformers `get_image_features` 返回 ModelOutput（投影向量在 `pooler_output`），已适配。
+- CLIP 权重下载耗时实测 ~26 分钟（慢代理），一次性成本。

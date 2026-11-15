@@ -1,0 +1,35 @@
+{
+  "schema": "clip-probe-env-spec-v1",
+  "date": "2026-11-15",
+  "purpose": "CLIP prep probe env (plan IDEA01_G5_EXTERNAL_BASELINES_2026-11-15 section 3); isolated conda env OUTSIDE the project checkout; zero NPU",
+  "env_name": "cadclip",
+  "env_path": "D:/miniconda/envs/cadclip",
+  "create_command": "D:/miniconda/python.exe -m conda create -n cadclip python=3.10 pythonocc-core=7.7.2 numpy -c conda-forge -y",
+  "pip_install_command": "D:/miniconda/envs/cadclip/python.exe -m pip install plyfile scipy joblib networkx pandas scikit-learn trimesh pillow matplotlib loguru rich tqdm transformers torch --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cpu",
+  "key_versions": {
+    "python": "3.10",
+    "pythonocc-core": "7.7.2 (conda-forge; CadSeqProc binds OCC.Core.*, NOT cadquery-ocp/OCP)",
+    "torch": "2.14.1+cpu",
+    "transformers": "installed via pip (get_image_features returns vision ModelOutput with pooler_output replaced by projected image embeds in this version)",
+    "extra_pip_deps": ["plyfile", "scipy", "joblib", "networkx", "pandas", "scikit-learn", "trimesh", "matplotlib", "pillow", "loguru", "rich", "tqdm"]
+  },
+  "model_weights": {
+    "openai/clip-vit-base-patch32": {
+      "location": "~/.cache/huggingface/hub/models--openai--clip-vit-base-patch32",
+      "bytes_cached": 589000000,
+      "note": "downloaded 2026-11-15 during the probe (HF default cache); ~605MB model.safetensors"
+    }
+  },
+  "probe_scripts": [
+    "experiments/scripts/probe_clip_render_20261115.py"
+  ],
+  "probe_outputs": [
+    "D:/projects/IdeaSpark/CADRetrievalIdea1_runtime/clip_probe_smoke_20261115/ (4 UID, geometry+render only)",
+    "D:/projects/IdeaSpark/CADRetrievalIdea1_runtime/clip_probe_20261115/ (32 UID stratified Q1-Q4, full chain incl. CLIP)"
+  ],
+  "known_gaps": [
+    "minimal_json lacks properties.bounding_box; CadSeqProc CADSequence.normalize() requires it (from_minimal_json leaves bbox=None) - production pipeline must compute the bbox from the created B-Rep (BRepBndLib) or replicate the json2vec quantization path; decision frozen at the method round",
+    "probe renders use matplotlib Poly3DCollection (flat color, no lighting); production render spec (shading/resolution/views) frozen at the method round",
+    "this transformers version's get_image_features returns ModelOutput; probe reads .pooler_output (= projected image embeds)"
+  ]
+}
