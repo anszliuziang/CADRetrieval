@@ -336,6 +336,12 @@ def main() -> int:
                        cad_subset=cad_subset_arg, paired_sum_set=sum_set,
                        bootstrap=dict(seed=20261112, replicates=5000))
 
+    def missing_cad_queries():
+        missing_set = set(missing)
+        return [qid for qid, p in zip(protocol["linked"]["query_ids"],
+                                      protocol["linked"]["positive_cads"])
+                if cad_ids[int(p)] in missing_set]
+
     # SUM arm vs certified history: full mode requires query-by-query equality
     # with the certified ranks; sub-library mode re-ranks on the covered axis
     # (ranks legitimately differ), so instead verify the SLICE came from the
@@ -368,12 +374,6 @@ def main() -> int:
     if not ok:
         log(dict(phase="SUM_ARM_MISMATCH", **g5_assert))
         return 1
-
-    def missing_cad_queries():
-        missing_set = set(missing)
-        return [qid for qid, p in zip(protocol["linked"]["query_ids"],
-                                      protocol["linked"]["positive_cads"])
-                if cad_ids[int(p)] in missing_set]
 
     lines = []
     for p in sorted(out.rglob("*")):
