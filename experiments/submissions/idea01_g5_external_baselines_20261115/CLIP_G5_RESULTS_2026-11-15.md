@@ -1,6 +1,8 @@
-# CLIP G5 全量评测结果（2026-11-15）
+# CLIP G5 全量评测结果（2026-11-15 首版；同日数值复审通过 + 收尾订正）
 
-计划 `IDEA01_G5_EXTERNAL_BASELINES_2026-11-15.md` §3 顺序 1 的正式交付。用户 2026-11-15 授权全量。**零 NPU；隔离 env `cadclip`（CPU）；一次启动自动完成。**
+计划 `IDEA01_G5_EXTERNAL_BASELINES_2026-11-15.md` §3 顺序 1 的正式交付。用户 2026-11-15 授权全量。**零 NPU；隔离 env `cadclip`（CPU）。**
+
+**复审与订正（2026-11-15，Codex 数值复审通过）**：审查者从原始分数独立复算两种方法 15,840 个正例名次与 5,000 次配对重抽样，全部一致（审计 `CADRetrievalIdea1_runtime/clip_g5_codex_review_20261115/EXPERIMENT_AUDIT.md`）。收尾订正：①"一次启动 784 秒"订正为"**第五次续跑成功，耗时 784.4 秒**"（故障链见 §4）；②SUM 源矩阵与切片的逐位核验来自本次复审；③**权重版本回执补录**：日志只记录了模型仓库名，实际加载权重经本地缓存钉定——`openai/clip-vit-base-patch32` 权重快照 `c237dc49a33fc61debc9276459120b7eac67e7ef`，`model.safetensors` SHA256 `99d28a652e6ec466…`（605,157,884 字节），回执 `runtime/idea01_clip_g5_20261115/weights_version_receipt.json`；方法轮改进：`from_pretrained` 显式传 `revision` 钉定。
 
 ## 1. 执行记录
 
@@ -8,9 +10,14 @@
 |---|---|
 | 命令 | `D:/miniconda/envs/cadclip/python.exe experiments/scripts/run_clip_g5_20261115.py --out-dir D:/projects/IdeaSpark/CADRetrievalIdea1_runtime/idea01_clip_g5_20261115` |
 | 实际退出 | **0**（`runtime/clip_g5_exit.txt`；日志 `runtime/clip_g5_run.log`→`clip_g5_run5.log`——工程故障链见 §4） |
-| 总耗时 | 784.4 s（渲染全复用 1.5s + CLIP 加载 4.3s + 图像编码 585.2s + 文本编码 83.7s + 评价含 5,000 次 bootstrap） |
+| **执行口径** | **第五次续跑成功，耗时 784.4 秒**（渲染全复用 1.5s + CLIP 加载 4.3s + 图像编码 585.2s + 文本编码 83.7s + 评价含 5,000 次 bootstrap） |
 | 冻结规格 | `experiments/configs/clip_g5_render_spec_20261115.json`（SHA `938b800c50f31130…`）：单视角等轴测 azim45/elev30、平面色、白底 448px、CLIP 224 预处理、77 token 截断、L2 归一化余弦 |
+| 权重 | `openai/clip-vit-base-patch32`，加载快照 `c237dc49…`，`model.safetensors` SHA256 `99d28a652e6ec466…`（回执见上） |
 | 运行目录 | `runtime/idea01_clip_g5_20261115/`（SHA256SUMS 24 项 OK；entry_evaluation 3 项 OK） |
+
+## 3b. 分层读出（复审补充，证据 `clip_g5_codex_review_20261115/deterministic_checks.json`）
+
+复审分层复算显示 Top-20 差距几乎全部来自**最短 CAD 四分位**：SUM 命中 144 条 vs CLIP 37 条；而**最长四分位 CLIP 反超**：CLIP 29 条 vs SUM 6 条。这与"CLIP 对短 CAD（渲染信息量小）判别弱、对长 CAD 的全局形状匹配反而占优"一致——该分层假设值得在下一个模型上验证。
 
 ## 2. 覆盖（诚实口径）
 
