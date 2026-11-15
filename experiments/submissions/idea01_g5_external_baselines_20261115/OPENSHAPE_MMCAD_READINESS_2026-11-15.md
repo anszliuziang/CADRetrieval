@@ -22,7 +22,7 @@
 |---|---|
 | 转换路径验证 | **实测通过**：探针 STEP（`clip_probe_20261115/steps/`，51 faces/222 edges）→ 官方 `scripts/step_to_brep.py`（pythonocc 7.7.2，cadclip 环境直接可用）→ 输出张量与官方文档逐项吻合：`face_features(192,16)/face_centroids(192,3)/edge_to_faces(512,2)/face_mask(192,)/face_normals(192,3)/num_faces/num_edges`，全部有限（`runtime/mmcad_prep_20261115/test_brep.npz`）。官方 repo 已克隆至 `.cache/MMCAD-official/`（commit 见本地镜像） |
 | B-Rep 归一化 | 必须用官方 `brep_norm_stats_v4.npz`（182,131 训练件统计）+ `inference.prepare_brep()`；**stats 文件随 checkpoint 下载**，未自算 |
-| 权重 | HF `exanos/MMCAD`：`baseline_trimodal_v4.pth`（text=EmbeddingGemma-300M + BRepFormer + DGCNN）+ norm stats + EmbeddingGemma-300M。**可达性实测（2026-11-15）：整仓 401 Unauthorized（`resolve`/`tree` API 均拒）**——权重获取需要用户 HF 账号取得该 repo 访问权（接受条款/授权后经安全渠道提供 token；token 不入 Git/日志）。代码 MIT，派生资产 CC BY-NC 4.0，权重许可待取得访问后核 |
+| 权重 | **实际位置是 HF 数据集仓库 `datasets/exanos/MMCAD`**（模型 repo `exanos/MMCAD` 不存在；无 token 时 401）。用户 2026-11-15 提供 HF token（仅以进程环境变量使用，存于 runtime 未跟踪文件，不入 Git/日志/文档），**下载已实测打通**：`checkpoints/baseline_trimodal_v4.pth`（1,349.7 MB）+ `brep_norm_stats_v4.npz` + `checkpoints/brep_reference/`（官方参考件）后台下载中；`google/embeddinggemma-300m`（gated=manual，用户账号已可访问）同样下载中。代码 MIT，派生资产 CC BY-NC 4.0，权重许可待下载后核（`LICENSES.md` 在数据集仓库内） |
 | 文本塔 | EmbeddingGemma-300M——3,644 条文本 CPU 可行（分钟级） |
 | STEP 全量生成 | **已完成（2026-11-15 复审收尾）**：`run_mmcad_step_export_20261115.py` 按 CLIP 覆盖清单补导 **8,032/8,032，零失败，288s**（`runtime/mmcad_steps_20261115/`，skip-existing）；抽查新导出 STEP → step_to_brep 张量结构/有限性通过（12 faces 样件）。14 个渲染失败 UID 的 **B-Rep 本身无效**（`create_cad_model` 即抛 "Invalid Model"）——MM-CAD 覆盖上限同为 8,032，公共子库与 CLIP 一致 |
 | 预计全量耗时 | STEP 已由 CLIP 运行顺带完成（0.010s/件）；step_to_brep ~0.3s/件 ×8,046 ≈ 40 分钟；BRepFormer+EmbeddingGemma 编码 CPU 分钟级 |
