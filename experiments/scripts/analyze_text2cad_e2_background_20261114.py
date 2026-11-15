@@ -316,7 +316,9 @@ def compute_results(ranks, pos_ranks, linked, s_b0, s_b1, candidate_mean, totals
             "r0_sum": "S(q,c) (certified SUM, recomputed for verification)",
             "r1_minus_b0": "S(q,c) - S_B0(empty, c)",
             "r1b_minus_b1": "S(q,c) - S_B1('a CAD model.', c)",
-            "r2_minus_cand_mean": "S(q,c) - mean_t S(t,c) (v3)",
+            "r2_minus_cand_mean": "S(q,c) - mean over ALL 3644 test texts of S(t,c) "
+                                  "(full-test-text candidate mean; historical v2 — NOT the plan's "
+                                  "half-split v3; correction registered 2026-11-15)",
         },
         "float64": True, "tie_rule": "exact score then cad_index ascending",
         "zero_npu": True, "score_forwards": 0,
