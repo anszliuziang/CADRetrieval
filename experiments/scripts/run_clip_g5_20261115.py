@@ -109,6 +109,7 @@ def main() -> int:
     assert g5_ok
     sys.path.insert(0, str(repo / "experiments" / "src"))
 
+    log = lambda obj: print(json.dumps(obj, ensure_ascii=False, default=str), flush=True)
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
     spec_sha = sha256_file(SPEC)
     resuming = out.exists()
@@ -122,7 +123,6 @@ def main() -> int:
     renders.mkdir(exist_ok=True)
     steps = out / "steps"
     steps.mkdir(exist_ok=True)
-    log = lambda obj: print(json.dumps(obj, ensure_ascii=False, default=str), flush=True)
 
     # reuse accepted probe renders (same frozen spec) -----------------------
     reused = 0
