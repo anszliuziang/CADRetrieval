@@ -66,42 +66,48 @@ def main() -> int:
              stats_keys=list(stats_np.files)))
 
     # ---- stage A: official reference round-trip ---------------------------
-    ref_raw = None
-    expected = None
-    for p in sorted(ref_dir.rglob("*")):
-        if p.suffix == ".npz" and "raw" in p.name.lower():
-            ref_raw = p
-        if p.suffix in (".json", ".npy") and "embed" in p.name.lower():
-            expected = p
-    log(dict(phase="reference_found", raw=str(ref_raw), expected=str(expected)))
-    stage_a = dict(passed=False)
-    if ref_raw is not None:
-        raw = dict(np.load(ref_raw))
-        prepared = mm.prepare_brep(raw, ff_mean, ff_std)
-        with torch.no_grad():
-            z = mm.embed_brep(model, prepared, dim=768, device="cpu")
-        stage_a["our_embed_dim"] = int(z.shape[-1])
-        stage_a["our_embed_norm"] = round(float(np.linalg.norm(z.numpy())), 6)
-        if expected is not None and expected.suffix == ".json":
-            exp = json.loads(expected.read_text(encoding="utf-8"))
-            for key in ("embedding", "vector", "embed", "z"):
-                if isinstance(exp, dict) and key in exp:
-                    exp = np.asarray(exp[key], dtype=np.float64)
-                    break
-            if isinstance(exp, np.ndarray):
-                e = exp.reshape(-1)
-                zo = z.numpy().reshape(-1).astype(np.float64)
-                cos = float(zo @ e / (np.linalg.norm(zo) * np.linalg.norm(e) + 1e-12))
-                stage_a["official_dim"] = int(e.shape[0])
-                stage_a["cosine_vs_official"] = round(cos, 6)
-                stage_a["passed"] = bool(cos > 0.999)
-        elif expected is not None and expected.suffix == ".npy":
-            e = np.load(expected).reshape(-1).astype(np.float64)
+    # brep_reference/*.npz carries raw_* extractor fields, in_* model-ready
+    # fields, and the official embedding(768) — run OUR prepare+embed path on
+    # the raw fields and compare cosines against both the official final
+    # embedding and (sanity) the in_* direct path.
+    ref_npzs = sorted(p for p in ref_dir.rglob("*.npz"))
+    log(dict(phase="reference_found", files=[p.name for p in ref_npzs]))
+    stage_a = dict(passed=True, per_file=[])
+    for p in ref_npzs:
+        zr = np.load(p)
+        raw = {k[len("raw_"):]: zr[k] for k in zr.files if k.startswith("raw_")}
+        rec = dict(file=p.name)
+        if set(("face_features", "face_centroids", "edge_to_faces", "face_mask")) <= set(raw):
+            prepared = mm.prepare_brep(raw, ff_mean, ff_std)
+            with torch.no_grad():
+                z = mm.embed_brep(model, prepared, dim=768, device="cpu")
             zo = z.numpy().reshape(-1).astype(np.float64)
-            cos = float(zo @ e / (np.linalg.norm(zo) * np.linalg.norm(e) + 1e-12))
-            stage_a["official_dim"] = int(e.shape[0])
-            stage_a["cosine_vs_official"] = round(cos, 6)
-            stage_a["passed"] = bool(cos > 0.999)
+            rec["our_embed_dim"] = int(zo.shape[0])
+            rec["our_embed_norm"] = round(float(np.linalg.norm(zo)), 6)
+            for tag, key in (("official_embedding", "embedding"), ("official_embedding_raw", "embedding_raw")):
+                if key in zr.files:
+                    e = zr[key].reshape(-1).astype(np.float64)
+                    rec[f"cosine_{tag}"] = round(float(zo @ e / (np.linalg.norm(zo) * np.linalg.norm(e) + 1e-12)), 6)
+        # sanity: in_* fields are the model-ready inputs — embed directly
+        if all(k in zr.files for k in ("in_face_features", "in_face_centroids",
+                                       "in_edge_to_faces", "in_face_mask", "in_face_normals")):
+            direct = {
+                "face_features": torch.as_tensor(zr["in_face_features"]).unsqueeze(0),
+                "face_centroids": torch.as_tensor(zr["in_face_centroids"]).unsqueeze(0),
+                "edge_to_faces": torch.as_tensor(zr["in_edge_to_faces"]).unsqueeze(0),
+                "face_mask": torch.as_tensor(zr["in_face_mask"]).unsqueeze(0),
+                "face_normals": torch.as_tensor(zr["in_face_normals"]).unsqueeze(0),
+            }
+            with torch.no_grad():
+                zd = mm.embed_brep(model, direct, dim=768, device="cpu")
+            zdr = zd.numpy().reshape(-1).astype(np.float64)
+            if "embedding" in zr.files:
+                e = zr["embedding"].reshape(-1).astype(np.float64)
+                rec["cosine_direct_in_fields_vs_official"] = round(
+                    float(zdr @ e / (np.linalg.norm(zdr) * np.linalg.norm(e) + 1e-12)), 6)
+        rec["passed"] = bool(rec.get("cosine_official_embedding", 0) > 0.999)
+        stage_a["per_file"].append(rec)
+        stage_a["passed"] = stage_a["passed"] and rec["passed"]
     log(dict(phase="stage_a_reference_roundtrip", **stage_a))
 
     # ---- stage B: gallery batch timing ------------------------------------
