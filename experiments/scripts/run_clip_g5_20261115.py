@@ -111,11 +111,17 @@ def main() -> int:
 
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
     spec_sha = sha256_file(SPEC)
-    out.mkdir(parents=True, exist_ok=False)
+    resuming = out.exists()
+    out.mkdir(parents=True, exist_ok=True)
+    if resuming:
+        log(dict(phase="resume", dir=str(out),
+                 note="existing run dir: renders/steps are reused via skip-existing; "
+                      "a stale entry_evaluation must be removed manually (evaluate "
+                      "refuses existing output)"))
     renders = out / "renders"
-    renders.mkdir()
+    renders.mkdir(exist_ok=True)
     steps = out / "steps"
-    steps.mkdir()
+    steps.mkdir(exist_ok=True)
     log = lambda obj: print(json.dumps(obj, ensure_ascii=False, default=str), flush=True)
 
     # reuse accepted probe renders (same frozen spec) -----------------------
