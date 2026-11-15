@@ -1,0 +1,53 @@
+{
+  "schema": "clip-g5-render-spec-v1",
+  "date": "2026-11-15",
+  "plan": "experiments/plans/IDEA01_G5_EXTERNAL_BASELINES_2026-11-15.md section 3 row 1",
+  "frozen_before_full_run": true,
+  "method": "clip_vit_b_32_single_view",
+  "weights": {
+    "hf_repo": "openai/clip-vit-base-patch32",
+    "license": "MIT",
+    "cache": "~/.cache/huggingface/hub/models--openai--clip-vit-base-patch32",
+    "load": "transformers CLIPModel + CLIPImageProcessor + CLIPTokenizerFast, eval mode, CPU"
+  },
+  "geometry": {
+    "source": "Text2CAD v1.0 dataset misc/minimal_json/minimal_json_0000_0099.zip (gallery.jsonl minimal_json_member per UID)",
+    "loader": "CadSeqProc CADSequence.from_minimal_json (official Text2CAD repo, local mirror git 669a81472ede2269837c22a4d00070eaac360c82)",
+    "brep": "CADSequence.create_cad_model() (OCC, pythonocc-core 7.7.2)",
+    "mesh": "CADSequence.create_mesh(mode='ascii', linear_deflection=0.001, angular_deflection=0.5) (CadSeqProc defaults)",
+    "normalize_note": "CadSeqProc CADSequence.normalize() is NOT used: minimal_json lacks properties.bounding_box (logged integration gap); geometric normalization happens on the mesh instead",
+    "mesh_normalization": "center = vertex mean; scale = max vertex distance from center -> unit sphere (identical to the 32/32 probe batch)"
+  },
+  "camera": {
+    "renderer": "matplotlib 3.8+ Agg (offscreen, no GL), Poly3DCollection",
+    "view": "single fixed canonical isometric: azim=45 deg, elev=30 deg",
+    "framing": "box_aspect (1,1,1); axis cube centered at mesh center with radius = max vertex radius",
+    "lighting": "none (flat facecolor #9db8d9, no edge) - identical to the probe batch",
+    "background": "white",
+    "resolution": "figsize 2.24x2.24 inch at dpi 200 -> 448x448 px, bbox_inches tight, pad_inches 0"
+  },
+  "image_preprocessing": "CLIPImageProcessor defaults: resize 224 shortest side, center crop 224, CLIP normalization",
+  "text_preprocessing": {
+    "input": "canonical unique stripped text from pair_manifest_v4_worker/texts.jsonl (the G5 frozen text axis)",
+    "tokenizer": "CLIPTokenizerFast, truncation=True, max_length=77 (CLIP standard context)",
+    "truncation_stats_required": true
+  },
+  "scoring": {
+    "embeddings": "projected image / text features (get_image_features / get_text_features); L2-normalized; cosine similarity = dot product",
+    "precision": "encode float32, matrix stored float64 little-endian",
+    "direction": "higher (cosine, larger = more similar)",
+    "matrix_layout": "rows = unique text_index 0..3643 (canonical stripped-text order), cols = cad_index 0..8045 (frozen gallery order)"
+  },
+  "first_batch_gate": {
+    "uids": "8 per gallery-length quartile (G5 boundary rule searchsorted-left), 32 total",
+    "checks": [
+      "renders exist, non-empty, PNG decodable",
+      "image and text vectors finite and non-zero (L2 norm > 0)",
+      "UID alignment: every render maps to exactly one frozen gallery cad_index",
+      "truncation: count unique texts exceeding 77 CLIP tokens; encode 2 of them; vectors finite"
+    ],
+    "reuse": "probe renders from runtime/clip_probe_20261115/renders and clip_probe_smoke_20261115/renders are copied in and reused (same frozen spec)"
+  },
+  "engineering_policy": "per-UID failures retried once; persistent failures recorded with reasons; coverage < 8046 triggers sub-library mode (entry supports kept-query ceilings) and the failure list is a hard deliverable",
+  "zero_npu": true
+}
