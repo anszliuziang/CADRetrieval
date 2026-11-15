@@ -40,6 +40,11 @@ def main() -> int:
     ap.add_argument("--data-root", default=".")
     ap.add_argument("--runtime-root", default="D:/projects/IdeaSpark/CADRetrievalIdea1_runtime")
     ap.add_argument("--output", required=True)
+    ap.add_argument("--scores-npy", default=None,
+                    help="existing binary score artifact to reuse (skips the G4 chunk read; "
+                         "requires --scores-sidecar); the reconciliation then loads scores AND "
+                         "axis straight from disk")
+    ap.add_argument("--scores-sidecar", default=None)
     a = ap.parse_args()
     repo, output = Path(a.repo), Path(a.output)
     started = time.time()
@@ -50,51 +55,47 @@ def main() -> int:
     lengths = linked["lengths"]
     config = protocol["config"]
 
-    entries = g5.manifest_entries(repo / G4_RUN / "SHA256SUMS")
-    g5.require(g5.sha256(repo / G4_RUN / "final_ledger.json") ==
-               g5.read_json(repo / config["certificate_path"])["final_ledger_sha256"],
-               "final score ledger differs")
     g5.require(a.output and not Path(a.output).exists(), "existing output directory")
 
-    totals = np.empty((3644, 8046), dtype=np.float64)
-    for t in range(3644):
-        shard = t // 1822
-        name = f"card{shard}/chunk_s{shard:02d}_t{t:05d}_{t + 1:05d}.jsonl"
-        total, _mean, _n = g5.load_chunk(repo / G4_RUN / name, entries[name], t, 8046,
-                                         config["inputs"]["pair_manifest"]["sha256"],
-                                         config["checkpoint_sha256"], lengths)
-        totals[t] = total
-        if (t + 1) % 400 == 0 or t == 3643:
-            print(json.dumps(dict(phase="matrix_read", completed_texts=t + 1,
-                                  seconds=round(time.time() - started, 1))), flush=True)
+    if (a.scores_npy is None) != (a.scores_sidecar is None):
+        raise SystemExit("--scores-npy and --scores-sidecar must be given together")
+    if a.scores_npy is not None:
+        npy, side = Path(a.scores_npy), Path(a.scores_sidecar)
+        score_set = ScoreSet.from_binary_artifact(npy, side)
+    else:
+        entries = g5.manifest_entries(repo / G4_RUN / "SHA256SUMS")
+        g5.require(g5.sha256(repo / G4_RUN / "final_ledger.json") ==
+                   g5.read_json(repo / config["certificate_path"])["final_ledger_sha256"],
+                   "final score ledger differs")
 
-    # export the SUM scores as an external artifact and reload it through the
-    # entry — the evaluator must consume the artifact, not the reader's memory
-    output = Path(a.output)
-    output.mkdir(parents=True)
-    npy = output / "sum_scores_full_axis_f64.npy"
-    npy.write_bytes(np.ascontiguousarray(totals, dtype="<f8").tobytes())
-    sidecar = dict(schema="text2cad-method-scores-sidecar-v1", method="text2cad_sum_replay",
-                   direction="higher", dtype="float64",
-                   text_indices=list(range(3644)), cad_indices=list(range(8046)),
-                   matrix_sha256=hashlib.sha256(npy.read_bytes()).hexdigest(),
-                   matrix_bytes=npy.stat().st_size,
-                   source_manifest_sha256=g5.MANIFEST_SHA,
-                   source_certificate_sha256=g5.CERTIFICATE_SHA,
-                   zero_npu=True, score_forwards=0)
-    side = output / "sum_scores_sidecar.json"
-    side.write_text(json.dumps(sidecar, indent=1) + "\n", encoding="utf-8", newline="\n")
-    reloaded = np.fromfile(npy, dtype="<f8").reshape(3644, 8046)
-    g5.require(hashlib.sha256(npy.read_bytes()).hexdigest() == sidecar["matrix_sha256"],
-               "external score artifact SHA differs after reload")
-    score_set = ScoreSet.from_matrix(
-        reloaded, sidecar["text_indices"], sidecar["cad_indices"],
-        direction=sidecar["direction"], dtype=sidecar["dtype"],
-        meta=dict(name="text2cad_sum_replay", sidecar=str(side),
-                  sidecar_sha256=hashlib.sha256(side.read_bytes()).hexdigest(),
-                  matrix_sha256=sidecar["matrix_sha256"],
-                  source_manifest_sha256=g5.MANIFEST_SHA,
-                  source_certificate_sha256=g5.CERTIFICATE_SHA))
+        totals = np.empty((3644, 8046), dtype=np.float64)
+        for t in range(3644):
+            shard = t // 1822
+            name = f"card{shard}/chunk_s{shard:02d}_t{t:05d}_{t + 1:05d}.jsonl"
+            total, _mean, _n = g5.load_chunk(repo / G4_RUN / name, entries[name], t, 8046,
+                                             config["inputs"]["pair_manifest"]["sha256"],
+                                             config["checkpoint_sha256"], lengths)
+            totals[t] = total
+            if (t + 1) % 400 == 0 or t == 3643:
+                print(json.dumps(dict(phase="matrix_read", completed_texts=t + 1,
+                                      seconds=round(time.time() - started, 1))), flush=True)
+
+        # export the SUM scores as a fixed-format external artifact (raw <f8
+        # row-major matrix + axis sidecar with the matrix sha256 pinned), then
+        # reload BOTH FROM DISK through from_binary_artifact — the evaluator
+        # consumes the files, never the reader's memory (review round 4)
+        output.mkdir(parents=True)
+        npy = output / "sum_scores_full_axis_f64.npy"
+        side = output / "sum_scores_sidecar.json"
+        ScoreSet.write_binary_artifact(
+            totals, side, npy, direction="higher",
+            text_indices=list(range(3644)), cad_indices=list(range(8046)),
+            dtype="float64",
+            meta=dict(method="text2cad_sum_replay",
+                      source_manifest_sha256=g5.MANIFEST_SHA,
+                      source_certificate_sha256=g5.CERTIFICATE_SHA,
+                      zero_npu=True, score_forwards=0))
+        score_set = ScoreSet.from_binary_artifact(npy, side)
 
     eval_out = output / "entry_evaluation"
     results = evaluate(score_set, protocol=protocol, output=eval_out,

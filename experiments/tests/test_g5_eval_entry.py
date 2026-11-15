@@ -154,27 +154,140 @@ class TestEvalEntry(unittest.TestCase):
         with self.assertRaises(EntryError):
             ScoreSet.from_jsonl(path)
 
-    def test_jsonl_row_order_mismatch_refused(self):
-        # row 2 declares a PERMUTED cad axis while others are dense — the
-        # axis comparison at evaluation time refuses it
-        path = Path(self.tmp.name) / "bad_perm.jsonl"
+    def test_jsonl_row_permuted_axis_placed_correctly(self):
+        # row 2 declares a REVERSED cad axis with correspondingly reversed
+        # scores — review fix 1: the entry places scores at their declared
+        # cad's canonical position, so ranks must equal the dense-order run
+        path = Path(self.tmp.name) / "perm.jsonl"
+        header = dict(record_type="method_score_header", schema="text2cad-method-scores-v1",
+                      method="stub", direction="higher", dtype="float64",
+                      n_texts=3, n_cads_per_text=N_CAD)
+        scores = [10.0 - i for i in range(N_CAD)]
+        with path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(header) + "\n")
+            for t in range(3):
+                ci, sc = list(range(N_CAD)), list(scores)
+                if t == 2:
+                    ci = list(reversed(ci))
+                    sc = list(reversed(sc))
+                f.write(json.dumps(dict(record_type="method_scores",
+                                        text_index=t, cad_indices=ci, scores=sc)) + "\n")
+        ss = ScoreSet.from_jsonl(path)
+        out = Path(self.tmp.name) / "perm_eval"
+        evaluate(ss, protocol=dict(linked=self.linked, fingerprints={}),
+                 output=out, method_meta=dict(name="stub"))
+        qr = {json.loads(l)["query_id"]: json.loads(l)
+              for l in (out / "query_ranks.jsonl").read_text(encoding="utf-8").splitlines()}
+        self.assertEqual(qr["q2"]["ranks"]["stub"], 1)      # c000 best either way
+        self.assertEqual(qr["q0"]["ranks"]["stub"], 4)
+        self.assertEqual(qr["q1"]["ranks"]["stub"], 8)
+        self.assertEqual(qr["q3"]["ranks"]["stub"], 12)
+
+    def test_jsonl_row_set_mismatch_refused(self):
+        # a row that DROPS a cad from its identity set is a real misalignment
+        path = Path(self.tmp.name) / "bad_set.jsonl"
         header = dict(record_type="method_score_header", schema="text2cad-method-scores-v1",
                       method="stub", direction="higher", dtype="float64",
                       n_texts=3, n_cads_per_text=N_CAD)
         with path.open("w", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(header) + "\n")
             for t in range(3):
-                ci, sc = list(range(N_CAD)), [float(x) for x in range(N_CAD)]
+                ci, sc = list(range(N_CAD)), [1.0] * N_CAD
                 if t == 2:
-                    ci = list(reversed(ci))
-                    sc = list(reversed(sc))  # same mapping, wrong declared order
+                    ci = ci[:-1]
+                    sc = sc[:-1]
                 f.write(json.dumps(dict(record_type="method_scores",
                                         text_index=t, cad_indices=ci, scores=sc)) + "\n")
-        ss = ScoreSet.from_jsonl(path)          # loads: lengths line up
+        with self.assertRaises(EntryError):
+            ScoreSet.from_jsonl(path)      # header n_cads_per_text mismatch
+
+    def test_unsorted_axis_tie_break_and_kept_ceilings(self):
+        # review fix 1 + 2 in one: axis declared [3, 0] with EQUAL scores —
+        # canonical order [0, 3] means c000 ranks 1 and c003 ranks 2; and the
+        # duplicate ceiling must use KEPT group sizes (each kept group has
+        # exactly 1 query here -> R@1 ceiling 100%, not the original-library
+        # 2-query group's 50%)
+        subset = [3, 0]                    # unsorted on purpose
+        scores = [5.0, 5.0]                # exact tie on the unsorted axis
+        ss = _score_set_for_texts(self.linked, self.idx_of,
+                                  {t: scores for t in TEXTS}, cad_axis=subset)
+        out = Path(self.tmp.name) / "ties_subset"
+        res = evaluate(ss, protocol=dict(linked=self.linked, fingerprints={}),
+                       output=out, method_meta=dict(name="stub"), cad_subset=subset)
+        qr = {json.loads(l)["query_id"]: json.loads(l)
+              for l in (out / "query_ranks.jsonl").read_text(encoding="utf-8").splitlines()}
+        self.assertEqual(qr["q2"]["ranks"]["stub"], 1)          # cad 0 wins the tie
+        self.assertEqual(qr["q0"]["ranks"]["stub"], 2)          # cad 3 second
+        self.assertEqual(res["duplicate_uid_ceilings"]["R@1"], 1.0)
+        self.assertEqual(res["axis"]["cad_subset"], [0, 3])     # saved canonically
+        self.assertIsNotNone(res["axis"]["cad_subset_sha256"])
+        self.assertEqual(res["kept_queries"], 2)
+        self.assertEqual(res["dropped_queries"], 2)
+
+    def test_paired_name_collision_refused(self):
+        scores = [1.0] * N_CAD
+        s_method = _score_set_for_texts(self.linked, self.idx_of,
+                                        {t: scores for t in TEXTS}, name="same")
+        s_sum = _score_set_for_texts(self.linked, self.idx_of,
+                                     {t: scores for t in TEXTS}, name="same")
+        with self.assertRaises(EntryError):
+            evaluate(s_method, protocol=dict(linked=self.linked, fingerprints={}),
+                     output=Path(self.tmp.name) / "collide", method_meta=dict(name="same"),
+                     paired_sum_set=s_sum)
+
+    def test_nonintegral_index_refused(self):
+        ss = ScoreSet(direction="higher", dtype="float64", meta=dict(name="frac"),
+                      rows=((1.5, list(range(N_CAD)), [1.0] * N_CAD),))
         with self.assertRaises(EntryError):
             evaluate(ss, protocol=dict(linked=self.linked, fingerprints={}),
-                     output=Path(self.tmp.name) / "bad_perm_eval",
-                     method_meta=dict(name="stub"))
+                     output=Path(self.tmp.name) / "frac_text",
+                     method_meta=dict(name="frac"))
+        ss2 = _score_set_for_texts(self.linked, self.idx_of,
+                                   {t: [1.0] * N_CAD for t in TEXTS})
+        ss2._rows = ((self.idx_of[t], [0, 1.5] + list(range(2, N_CAD)), [1.0] * N_CAD)
+                     for t in TEXTS)
+        with self.assertRaises(EntryError):
+            evaluate(ss2, protocol=dict(linked=self.linked, fingerprints={}),
+                     output=Path(self.tmp.name) / "frac_cad",
+                     method_meta=dict(name="frac"))
+
+    def test_binary_artifact_roundtrip_and_tamper(self):
+        from text2cad_g5_eval_entry import ARTIFACT_SIDECAR_SCHEMA
+        d = Path(self.tmp.name) / "artifact"
+        d.mkdir()
+        npy, side = d / "m.f64", d / "m.sidecar.json"
+        scores = [10.0 - i for i in range(N_CAD)]
+        written = ScoreSet.write_binary_artifact(
+            np.array([scores] * 3, dtype=np.float64), side, npy,
+            direction="higher", text_indices=[0, 1, 2], cad_indices=list(range(N_CAD)))
+        self.assertEqual(written["schema"], ARTIFACT_SIDECAR_SCHEMA)
+        ss = ScoreSet.from_binary_artifact(npy, side)
+        out = Path(self.tmp.name) / "artifact_eval"
+        res = evaluate(ss, protocol=dict(linked=self.linked, fingerprints={}),
+                       output=out, method_meta=dict(name="artifact"))
+        qr = {json.loads(l)["query_id"]: json.loads(l)
+              for l in (out / "query_ranks.jsonl").read_text(encoding="utf-8").splitlines()}
+        self.assertEqual(qr["q2"]["ranks"]["artifact"], 1)
+        self.assertEqual(res["fingerprints"]["score_source"]["format"], "binary_artifact")
+        # tampering with the matrix bytes must be refused via the sidecar pin
+        raw = bytearray(npy.read_bytes())
+        raw[0] ^= 0xFF
+        npy.write_bytes(bytes(raw))
+        with self.assertRaises(EntryError):
+            ScoreSet.from_binary_artifact(npy, side)
+
+    def test_binary_artifact_shape_mismatch_refused(self):
+        d = Path(self.tmp.name) / "artifact_bad"
+        d.mkdir()
+        npy, side = d / "m.f64", d / "m.sidecar.json"
+        ScoreSet.write_binary_artifact(
+            np.zeros((3, N_CAD)), side, npy,
+            direction="higher", text_indices=[0, 1, 2], cad_indices=list(range(N_CAD)))
+        side_obj = json.loads(side.read_text(encoding="utf-8"))
+        side_obj["cad_indices"] = list(range(N_CAD - 1))   # axis implies fewer cells
+        side.write_text(json.dumps(side_obj), encoding="utf-8")
+        with self.assertRaises(EntryError):
+            ScoreSet.from_binary_artifact(npy, side)
 
     # -- 4. missing / non-finite ------------------------------------------
     def test_missing_text_refused(self):
