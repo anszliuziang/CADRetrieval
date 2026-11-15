@@ -1,6 +1,12 @@
-# OpenShape 与 MM-CAD 启动准备清单（2026-11-15 首版；同日复审收尾更新：STEP 补导 8,032、权重可达性实测）
+# OpenShape 与 MM-CAD 启动准备清单（2026-11-15/16；MM-CAD 已达可全量状态）
 
-计划 §3 顺序 2/3 的并行准备。两条转换路径已在隔离环境 `cadclip` 用同一批 G5 UID 实测打通。**MM-CAD 优先推进（复审指示）**。
+计划 §3 顺序 2/3 的并行准备。两条转换路径已在隔离环境 `cadclip` 用同一批 G5 UID 实测打通。**MM-CAD 优先推进（复审指示）——官方参考件回环验证通过，全量只待启动令。**
+
+## 0. MM-CAD 验证结论（2026-11-16，`runtime/mmcad_encode_probe_20261115_v2/summary.json`）
+
+- **官方参考件回环（Stage A）：3/3 通过**——我们的 STEP→npz→`prepare_brep`(官方 stats)→`embed_brep` 路径输出与官方发布 768 维 embedding **余弦 = 1.0**（三件全部，含 `embedding_raw` 与 `in_*` 直嵌两个对照臂）。
+- **批次耗时（Stage B，CPU，16 件实测）**：step_to_brep 0.761s/件 + prepare 0.002s + embed 0.113s ≈ **0.88s/件 → 全库 8,032 件 ≈ 2.0 小时**；文本塔 0.13s/条 → 3,644 条 ≈ 8 分钟。
+- 权重版本：`baseline_trimodal_v4.pth`（1,349.7 MB，HF 数据集仓库 `datasets/exanos/MMCAD`，用户 token 下载，HF_HUB_DISABLE_XET=1 绕过慢代理 xet 故障）+ 官方 `brep_norm_stats_v4.npz`。
 
 ## 1. OpenShape PointBERT（顺序 2）——转换路径已验证 32/32
 
