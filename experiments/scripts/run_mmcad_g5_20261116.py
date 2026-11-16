@@ -92,7 +92,11 @@ def main() -> int:
         eg_dir = Path(a.embeddinggemma_dir)
         g5.require((eg_dir / "config.json").exists() and (eg_dir / "modules.json").exists(),
                    "EmbeddingGemma local snapshot incomplete (config.json/modules.json)")
-        mm.Config.TEXT_MODEL = str(eg_dir)  # SentenceTransformer accepts local dirs
+        mm.Config.TEXT_MODEL = str(eg_dir)
+        # the encoder's default argument was bound at class-definition time —
+        # patching Config alone cannot reach it; replace the bound default so
+        # SentenceTransformer loads the local snapshot instead of the hub id
+        mm.EmbeddingGemmaEncoder.__init__.__defaults__ = (str(eg_dir),)
 
     t0 = time.time()
     model = mm.load_joint_model(str(ck), device="cpu")
