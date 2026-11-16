@@ -59,7 +59,13 @@ def main() -> int:
     ap.add_argument("--skip-eval", action="store_true")
     a = ap.parse_args()
     repo, out = Path(a.repo), Path(a.out_dir)
-    out.mkdir(parents=True, exist_ok=False)
+    resuming = out.exists()
+    out.mkdir(parents=True, exist_ok=True)
+    if resuming:
+        log = lambda o: print(json.dumps(o, ensure_ascii=False, default=str), flush=True)
+        log(dict(phase="resume", dir=str(out),
+                 note="existing run dir: cached brep npz are reused; a stale entry_evaluation "
+                      "must be removed manually"))
     log = lambda o: print(json.dumps(o, ensure_ascii=False, default=str), flush=True)
     occ_python = a.occ_python or sys.executable
     t_start = time.time()
