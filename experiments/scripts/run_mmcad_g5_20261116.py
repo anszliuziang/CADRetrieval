@@ -240,6 +240,11 @@ def main() -> int:
         log(dict(phase="artifact_reused", n_cads=len(covered_idx)))
         gate = dict(reference="see previous attempt log / probe", passed=True)
         timing = dict(resumed=True, note="gallery/text stages skipped: score artifact reused")
+        fail2 = {}
+        covered = []
+        emb = np.empty((0, 768), dtype=np.float64)
+        T = np.empty((0, 768), dtype=np.float64)
+        n_ok = 0
     else:
         # ---- artifact + evaluation ----------------------------------------------
         En = emb[ok_idx]
