@@ -53,11 +53,15 @@ def main() -> int:
     ap.add_argument("--embeddinggemma-dir", default=None,
                     help="local EmbeddingGemma-300m snapshot dir; overrides Config.TEXT_MODEL "
                          "so the SentenceTransformer loads offline from this path")
+    ap.add_argument("--occ-python", default=None,
+                    help="python executable that has pythonocc (step_to_brep subprocess); "
+                         "defaults to this script's interpreter")
     ap.add_argument("--skip-eval", action="store_true")
     a = ap.parse_args()
     repo, out = Path(a.repo), Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=False)
     log = lambda o: print(json.dumps(o, ensure_ascii=False, default=str), flush=True)
+    occ_python = a.occ_python or sys.executable
     t_start = time.time()
 
     # ---- stage 0: pins ------------------------------------------------------
@@ -124,7 +128,7 @@ def main() -> int:
     for s in steps_all[: a.n_gate]:
         npz = out / "brep_cache" / (s.stem + ".npz")
         npz.parent.mkdir(exist_ok=True)
-        r = subprocess.run([sys.executable, str(Path(a.mmcad_repo) / "scripts" / "step_to_brep.py"),
+        r = subprocess.run([occ_python, str(Path(a.mmcad_repo) / "scripts" / "step_to_brep.py"),
                             str(s), "-o", str(npz)], capture_output=True, text=True)
         if r.returncode != 0 or not npz.exists():
             gate["gallery_fail"].append(s.name)
@@ -153,7 +157,7 @@ def main() -> int:
         npz = cache / (s.stem + ".npz")
         try:
             if not npz.exists():
-                r = subprocess.run([sys.executable, str(Path(a.mmcad_repo) / "scripts" / "step_to_brep.py"),
+                r = subprocess.run([occ_python, str(Path(a.mmcad_repo) / "scripts" / "step_to_brep.py"),
                                     str(s), "-o", str(npz)], capture_output=True, text=True)
                 if r.returncode != 0 or not npz.exists():
                     raise RuntimeError(r.stderr[-160:])
