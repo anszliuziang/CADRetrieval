@@ -134,12 +134,13 @@ def main() -> int:
     for s in steps_all[: a.n_gate]:
         npz = out / "brep_cache" / (s.stem + ".npz")
         npz.parent.mkdir(exist_ok=True)
-        r = subprocess.run([occ_python, str(Path(a.mmcad_repo) / "scripts" / "step_to_brep.py"),
-                            str(s), "-o", str(npz)], capture_output=True, text=True)
-        if r.returncode != 0 or not npz.exists():
-            gate["gallery_fail"].append(s.name)
-            gate["passed"] = False
-            continue
+        if not npz.exists():
+            r = subprocess.run([occ_python, str(Path(a.mmcad_repo) / "scripts" / "step_to_brep.py"),
+                                str(s), "-o", str(npz)], capture_output=True, text=True)
+            if r.returncode != 0 or not npz.exists():
+                gate["gallery_fail"].append(s.name)
+                gate["passed"] = False
+                continue
         z = embed_prepared(mm.prepare_brep(dict(np.load(npz)), ff_mean, ff_std))
         if np.isfinite(z).all() and np.linalg.norm(z) > 0:
             gate["gallery_ok"] += 1
