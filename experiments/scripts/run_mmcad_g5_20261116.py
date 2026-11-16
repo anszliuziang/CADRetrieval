@@ -172,13 +172,19 @@ def main() -> int:
     log(dict(phase="gallery_done", ok=n_ok, failures=len(fail2),
              seconds=round(time.time() - t0, 1)))
 
-    cad_ids_full = [r["cad_id"] for r in
-                    (json.loads(l) for l in open(Path(a.runtime_root) / "pair_manifest_v4_worker" / "cad_store.jsonl",
-                                                 encoding="utf-8"))]
-    # cad_store rows carry cad_id? fall back to gallery via mapping if needed
-    if any(not c for c in cad_ids_full):
+    cad_ids_full = None
+    try:
+        cand = [r["cad_id"] for r in
+                (json.loads(l) for l in open(Path(a.runtime_root) / "pair_manifest_v4_worker" / "cad_store.jsonl",
+                                             encoding="utf-8"))]
+        if all(c for c in cand):
+            cad_ids_full = cand
+    except KeyError:
+        cad_ids_full = None
+    if cad_ids_full is None:
         mp = json.loads((Path(a.runtime_root) / "pair_manifest_v4" / "evaluation_map.json").read_text(encoding="utf-8"))
         cad_ids_full = mp["cad_index_to_cad_id"]
+    g5.require(len(cad_ids_full) == 8046 and all(cad_ids_full), "cad axis resolution failed")
     stem_of = {c.replace("/", "__"): i for i, c in enumerate(cad_ids_full)}
     covered_idx = sorted(stem_of[Path(s).stem] for s in steps_all if Path(s).stem not in fail2)
 
