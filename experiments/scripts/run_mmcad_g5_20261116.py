@@ -121,131 +121,148 @@ def main() -> int:
             z = mm.embed_brep(model, prepared, dim=768, device="cpu")
         return z.numpy().astype(np.float64).reshape(-1)
 
-    # ---- stage 1: first-batch gate -----------------------------------------
-    gate = dict(reference=[], gallery_ok=0, gallery_fail=[], passed=True)
-    for p in refs:
-        zr = np.load(p)
-        raw = {k[len("raw_"):]: zr[k] for k in zr.files if k.startswith("raw_")}
-        z = embed_prepared(mm.prepare_brep(raw, ff_mean, ff_std))
-        e = zr["embedding"].reshape(-1).astype(np.float64)
-        cos = float(z @ e / (np.linalg.norm(z) * np.linalg.norm(e) + 1e-12))
-        gate["reference"].append(dict(file=p.name, cosine=round(cos, 6)))
-        gate["passed"] = gate["passed"] and cos > 0.999
-    steps_all = sorted(Path(a.steps_dir).glob("*.step"))
-    for s in steps_all[: a.n_gate]:
-        npz = out / "brep_cache" / (s.stem + ".npz")
-        npz.parent.mkdir(exist_ok=True)
-        if not npz.exists():
-            r = subprocess.run([occ_python, str(Path(a.mmcad_repo) / "scripts" / "step_to_brep.py"),
-                                str(s), "-o", str(npz)], capture_output=True, text=True)
-            if r.returncode != 0 or not npz.exists():
-                gate["gallery_fail"].append(s.name)
-                gate["passed"] = False
-                continue
-        z = embed_prepared(mm.prepare_brep(dict(np.load(npz)), ff_mean, ff_std))
-        if np.isfinite(z).all() and np.linalg.norm(z) > 0:
-            gate["gallery_ok"] += 1
-        else:
-            gate["gallery_fail"].append(s.name)
-            gate["passed"] = False
-    log(dict(phase="first_batch_gate", **gate))
-    if not gate["passed"]:
-        log(dict(phase="GATE_FAILED"))
-        return 1
+    # artifact resume: if the score artifact already exists (a previous run
+    # crashed during evaluation), skip the ~2h gallery/text stages entirely
+    npy = out / "mmcad_scores_subset_axis_f64.npy"
+    side = out / "mmcad_scores_sidecar.json"
+    artifact_ready = npy.exists() and side.exists()
+    if artifact_ready:
+        log(dict(phase="artifact_resume", matrix_sha256=sha256_file(npy)[:16],
+                 note="score artifact reused from a previous attempt; stages 1-3 skipped"))
 
-    # ---- stage 2: full covered gallery --------------------------------------
-    covered = [s for s in steps_all if s.name not in set(gate["gallery_fail"])]
-    emb = np.empty((len(steps_all), 768), dtype=np.float64)
-    fail2 = {}
-    cache = out / "brep_cache"
-    cache.mkdir(exist_ok=True)
-    t0 = time.time()
-    n_ok = 0
-    for i, s in enumerate(steps_all):
-        npz = cache / (s.stem + ".npz")
-        try:
+    if not artifact_ready:
+        # ---- stage 1: first-batch gate -----------------------------------------
+        gate = dict(reference=[], gallery_ok=0, gallery_fail=[], passed=True)
+        for p in refs:
+            zr = np.load(p)
+            raw = {k[len("raw_"):]: zr[k] for k in zr.files if k.startswith("raw_")}
+            z = embed_prepared(mm.prepare_brep(raw, ff_mean, ff_std))
+            e = zr["embedding"].reshape(-1).astype(np.float64)
+            cos = float(z @ e / (np.linalg.norm(z) * np.linalg.norm(e) + 1e-12))
+            gate["reference"].append(dict(file=p.name, cosine=round(cos, 6)))
+            gate["passed"] = gate["passed"] and cos > 0.999
+        steps_all = sorted(Path(a.steps_dir).glob("*.step"))
+        for s in steps_all[: a.n_gate]:
+            npz = out / "brep_cache" / (s.stem + ".npz")
+            npz.parent.mkdir(exist_ok=True)
             if not npz.exists():
                 r = subprocess.run([occ_python, str(Path(a.mmcad_repo) / "scripts" / "step_to_brep.py"),
                                     str(s), "-o", str(npz)], capture_output=True, text=True)
                 if r.returncode != 0 or not npz.exists():
-                    raise RuntimeError(r.stderr[-160:])
+                    gate["gallery_fail"].append(s.name)
+                    gate["passed"] = False
+                    continue
             z = embed_prepared(mm.prepare_brep(dict(np.load(npz)), ff_mean, ff_std))
-            if not (np.isfinite(z).all() and np.linalg.norm(z) > 0):
-                raise RuntimeError("non-finite/zero embedding")
-            emb[i] = z
-            n_ok += 1
-        except Exception as e:  # noqa: BLE001
-            fail2[s.stem] = f"{type(e).__name__}: {str(e)[:120]}"
-            emb[i] = 0.0
-        if (i + 1) % 200 == 0 or i == len(steps_all) - 1:
-            log(dict(phase="gallery_progress", done=i + 1, total=len(steps_all),
-                     ok=n_ok, failures=len(fail2), seconds=round(time.time() - t0, 1)))
-    ok_idx = [i for i, s in enumerate(steps_all) if s.stem not in fail2]
-    log(dict(phase="gallery_done", ok=n_ok, failures=len(fail2),
-             seconds=round(time.time() - t0, 1)))
+            if np.isfinite(z).all() and np.linalg.norm(z) > 0:
+                gate["gallery_ok"] += 1
+            else:
+                gate["gallery_fail"].append(s.name)
+                gate["passed"] = False
+        log(dict(phase="first_batch_gate", **gate))
+        if not gate["passed"]:
+            log(dict(phase="GATE_FAILED"))
+            return 1
 
-    cad_ids_full = None
-    try:
-        cand = [r["cad_id"] for r in
-                (json.loads(l) for l in open(Path(a.runtime_root) / "pair_manifest_v4_worker" / "cad_store.jsonl",
-                                             encoding="utf-8"))]
-        if all(c for c in cand):
-            cad_ids_full = cand
-    except KeyError:
+        # ---- stage 2: full covered gallery --------------------------------------
+        covered = [s for s in steps_all if s.name not in set(gate["gallery_fail"])]
+        emb = np.empty((len(steps_all), 768), dtype=np.float64)
+        fail2 = {}
+        cache = out / "brep_cache"
+        cache.mkdir(exist_ok=True)
+        t0 = time.time()
+        n_ok = 0
+        for i, s in enumerate(steps_all):
+            npz = cache / (s.stem + ".npz")
+            try:
+                if not npz.exists():
+                    r = subprocess.run([occ_python, str(Path(a.mmcad_repo) / "scripts" / "step_to_brep.py"),
+                                        str(s), "-o", str(npz)], capture_output=True, text=True)
+                    if r.returncode != 0 or not npz.exists():
+                        raise RuntimeError(r.stderr[-160:])
+                z = embed_prepared(mm.prepare_brep(dict(np.load(npz)), ff_mean, ff_std))
+                if not (np.isfinite(z).all() and np.linalg.norm(z) > 0):
+                    raise RuntimeError("non-finite/zero embedding")
+                emb[i] = z
+                n_ok += 1
+            except Exception as e:  # noqa: BLE001
+                fail2[s.stem] = f"{type(e).__name__}: {str(e)[:120]}"
+                emb[i] = 0.0
+            if (i + 1) % 200 == 0 or i == len(steps_all) - 1:
+                log(dict(phase="gallery_progress", done=i + 1, total=len(steps_all),
+                         ok=n_ok, failures=len(fail2), seconds=round(time.time() - t0, 1)))
+        ok_idx = [i for i, s in enumerate(steps_all) if s.stem not in fail2]
+        log(dict(phase="gallery_done", ok=n_ok, failures=len(fail2),
+                 seconds=round(time.time() - t0, 1)))
+
         cad_ids_full = None
-    if cad_ids_full is None:
-        mp = json.loads((Path(a.runtime_root) / "pair_manifest_v4" / "evaluation_map.json").read_text(encoding="utf-8"))
-        cad_ids_full = mp["cad_index_to_cad_id"]
-    g5.require(len(cad_ids_full) == 8046 and all(cad_ids_full), "cad axis resolution failed")
-    stem_of = {c.replace("/", "__"): i for i, c in enumerate(cad_ids_full)}
-    covered_idx = sorted(stem_of[Path(s).stem] for s in steps_all if Path(s).stem not in fail2)
+        try:
+            cand = [r["cad_id"] for r in
+                    (json.loads(l) for l in open(Path(a.runtime_root) / "pair_manifest_v4_worker" / "cad_store.jsonl",
+                                                 encoding="utf-8"))]
+            if all(c for c in cand):
+                cad_ids_full = cand
+        except KeyError:
+            cad_ids_full = None
+        if cad_ids_full is None:
+            mp = json.loads((Path(a.runtime_root) / "pair_manifest_v4" / "evaluation_map.json").read_text(encoding="utf-8"))
+            cad_ids_full = mp["cad_index_to_cad_id"]
+        g5.require(len(cad_ids_full) == 8046 and all(cad_ids_full), "cad axis resolution failed")
+        stem_of = {c.replace("/", "__"): i for i, c in enumerate(cad_ids_full)}
+        covered_idx = sorted(stem_of[Path(s).stem] for s in steps_all if Path(s).stem not in fail2)
 
-    # ---- stage 3: text tower -------------------------------------------------
-    text_rows = [json.loads(l) for l in open(Path(a.runtime_root) / "pair_manifest_v4_worker" / "texts.jsonl",
-                                             encoding="utf-8")]
-    texts = [r["text"] for r in text_rows]
-    assert len(texts) == 3644
-    T = np.empty((3644, 768), dtype=np.float64)
-    t0 = time.time()
-    for i in range(0, 3644, BATCH):
-        chunk = [TEXT_PROMPT.format(q=t) for t in texts[i:i + BATCH]]
-        tokd = model.text_encoder.tokenizer(chunk, padding=True, truncation=True,
-                                            max_length=mm.Config.TEXT_MAX_LENGTH,
-                                            return_tensors="pt").to("cpu")
-        with torch.no_grad():
-            z = model.text_encoder(tokd["input_ids"], tokd["attention_mask"])
-        z = mm.truncate(z, 768).numpy().astype(np.float64)
-        T[i:i + len(chunk)] = z
-        if (i // BATCH) % 20 == 0:
-            log(dict(phase="text_progress", done=i + len(chunk), seconds=round(time.time() - t0, 1)))
-    text_s = round(time.time() - t0, 1)
-    g5.require(bool(np.isfinite(T).all() and (np.linalg.norm(T, axis=1) > 0).all()),
-               "text embeddings non-finite/zero")
+        # ---- stage 3: text tower -------------------------------------------------
+        text_rows = [json.loads(l) for l in open(Path(a.runtime_root) / "pair_manifest_v4_worker" / "texts.jsonl",
+                                                 encoding="utf-8")]
+        texts = [r["text"] for r in text_rows]
+        assert len(texts) == 3644
+        T = np.empty((3644, 768), dtype=np.float64)
+        t0 = time.time()
+        for i in range(0, 3644, BATCH):
+            chunk = [TEXT_PROMPT.format(q=t) for t in texts[i:i + BATCH]]
+            tokd = model.text_encoder.tokenizer(chunk, padding=True, truncation=True,
+                                                max_length=mm.Config.TEXT_MAX_LENGTH,
+                                                return_tensors="pt").to("cpu")
+            with torch.no_grad():
+                z = model.text_encoder(tokd["input_ids"], tokd["attention_mask"])
+            z = mm.truncate(z, 768).numpy().astype(np.float64)
+            T[i:i + len(chunk)] = z
+            if (i // BATCH) % 20 == 0:
+                log(dict(phase="text_progress", done=i + len(chunk), seconds=round(time.time() - t0, 1)))
+        text_s = round(time.time() - t0, 1)
+        g5.require(bool(np.isfinite(T).all() and (np.linalg.norm(T, axis=1) > 0).all()),
+                   "text embeddings non-finite/zero")
+
 
     # ---- artifact + evaluation ----------------------------------------------
-    En = emb[ok_idx]
-    Tn = T / (np.linalg.norm(T, axis=1, keepdims=True) + 1e-12)
-    Enn = En / (np.linalg.norm(En, axis=1, keepdims=True) + 1e-12)
-    sim = Tn @ Enn.T  # (3644, n_covered) cosine, direction higher
-    npy = out / "mmcad_scores_subset_axis_f64.npy"
-    side = out / "mmcad_scores_sidecar.json"
-    ScoreSet.write_binary_artifact(
-        sim, side, npy, direction="higher",
-        text_indices=list(range(3644)), cad_indices=covered_idx, dtype="float64",
-        meta=dict(method="mmcad_baseline_trimodal_v4",
-                  ckpt=str(ck), ckpt_sha256=sha256_file(ck)[:16],
-                  dim=768, text_prompt=TEXT_PROMPT,
-                  coverage=dict(covered=len(covered_idx), failures=len(fail2)),
-                  zero_npu=True))
-    log(dict(phase="artifact_written", matrix_sha256=sha256_file(npy)[:16]))
-    timing = dict(model_load_s=model_load_s, gallery_s=round(time.time() - t0, 1),
-                  text_encode_s=text_s, gallery_failures=fail2,
-                  covered=len(covered_idx), failed=len(fail2))
-    (out / "encode_timing.json").write_text(json.dumps(timing, indent=1) + "\n",
-                                            encoding="utf-8", newline="\n")
-    if a.skip_eval:
-        log(dict(phase="eval_skipped"))
-        return 0
+    if artifact_ready:
+        side_obj = json.loads(side.read_text(encoding="utf-8"))
+        covered_idx = side_obj["cad_indices"]
+        log(dict(phase="artifact_reused", n_cads=len(covered_idx)))
+    else:
+        # ---- artifact + evaluation ----------------------------------------------
+        En = emb[ok_idx]
+        Tn = T / (np.linalg.norm(T, axis=1, keepdims=True) + 1e-12)
+        Enn = En / (np.linalg.norm(En, axis=1, keepdims=True) + 1e-12)
+        sim = Tn @ Enn.T  # (3644, n_covered) cosine, direction higher
+        npy = out / "mmcad_scores_subset_axis_f64.npy"
+        side = out / "mmcad_scores_sidecar.json"
+        ScoreSet.write_binary_artifact(
+            sim, side, npy, direction="higher",
+            text_indices=list(range(3644)), cad_indices=covered_idx, dtype="float64",
+            meta=dict(method="mmcad_baseline_trimodal_v4",
+                      ckpt=str(ck), ckpt_sha256=sha256_file(ck)[:16],
+                      dim=768, text_prompt=TEXT_PROMPT,
+                      coverage=dict(covered=len(covered_idx), failures=len(fail2)),
+                      zero_npu=True))
+        log(dict(phase="artifact_written", matrix_sha256=sha256_file(npy)[:16]))
+        timing = dict(model_load_s=model_load_s, gallery_s=round(time.time() - t0, 1),
+                      text_encode_s=text_s, gallery_failures=fail2,
+                      covered=len(covered_idx), failed=len(fail2))
+        (out / "encode_timing.json").write_text(json.dumps(timing, indent=1) + "\n",
+                                                encoding="utf-8", newline="\n")
+        if a.skip_eval:
+            log(dict(phase="eval_skipped"))
+            return 0
 
     clip_set = ScoreSet.from_binary_artifact(npy, side)
     clip_set.meta["name"] = "mmcad_baseline_trimodal_v4"
