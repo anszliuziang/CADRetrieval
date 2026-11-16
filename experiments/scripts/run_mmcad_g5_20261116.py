@@ -71,7 +71,8 @@ def main() -> int:
     sum_side = json.loads(Path(a.sum_sidecar).read_text(encoding="utf-8"))
     g5.require(sum_side["matrix_sha256"] == sha256_file(Path(a.sum_npy)),
                "SUM artifact matrix sha differs from sidecar pin")
-    g5.require(sum_side["meta"]["method"] == "text2cad_sum_replay", "SUM artifact provenance differs")
+    sum_method = sum_side.get("method") or sum_side.get("meta", {}).get("method")
+    g5.require(sum_method == "text2cad_sum_replay", f"SUM artifact provenance differs: {sum_method!r}")
     ck = Path(a.ckpt)
     stats_p = Path(a.stats)
     g5.require(ck.exists() and ck.stat().st_size > 1e9, "checkpoint missing or too small")
