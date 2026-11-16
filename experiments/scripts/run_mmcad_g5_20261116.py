@@ -96,6 +96,7 @@ def main() -> int:
     sys.path.insert(0, str(Path(a.mmcad_repo)))
     import inference as mm  # noqa: E402
     import torch  # noqa: E402
+    torch.set_num_threads(int(__import__('os').environ.get('MMCAD_TORCH_THREADS', '8')))
 
     eg_dir = None
     if a.embeddinggemma_dir:
