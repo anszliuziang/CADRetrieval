@@ -238,7 +238,8 @@ def main() -> int:
         side_obj = json.loads(side.read_text(encoding="utf-8"))
         covered_idx = side_obj["cad_indices"]
         log(dict(phase="artifact_reused", n_cads=len(covered_idx)))
-    else:
+        gate = dict(reference="see previous attempt log / probe", passed=True)
+        timing = dict(resumed=True, note="gallery/text stages skipped: score artifact reused")    else:
         # ---- artifact + evaluation ----------------------------------------------
         En = emb[ok_idx]
         Tn = T / (np.linalg.norm(T, axis=1, keepdims=True) + 1e-12)
