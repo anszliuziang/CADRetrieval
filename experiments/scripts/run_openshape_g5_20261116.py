@@ -75,8 +75,8 @@ def main() -> int:
     import openshape  # noqa: E402
 
     import open_clip  # noqa: E402
-    from PIL import Image  # noqa: E402
-    from ppat_rgb import PointPatchTransformer, Projected  # noqa: F401  (import check)
+    # NOTE: ppat_rgb is imported inside the openshape package itself; do not
+    # import it top-level (it lives inside openshape/, not on sys.path root)
 
     ckpt = None
     for p in Path("/home/ma-user/work/CADRetrieval_runtime/hf_home/hub").glob(
