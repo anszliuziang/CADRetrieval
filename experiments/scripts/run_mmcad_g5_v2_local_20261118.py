@@ -134,15 +134,23 @@ def main() -> int:
     # ---- stage 3: full covered gallery embed ---------------------------------
     emb = np.empty((len(steps), 768), dtype=np.float64)
     emb_fail = {}
+    embeds_cache = out / "embeds_cache"
+    embeds_cache.mkdir(exist_ok=True)
     t0 = time.time()
     n_ok = 0
     for i, s in enumerate(steps):
         npz = brep_cache / (s.stem + ".npz")
+        epath = embeds_cache / (s.stem + "_e768.npy")
         try:
+            if epath.exists() and epath.stat().st_size > 0:
+                emb[i] = np.load(epath)
+                n_ok += 1
+                continue
             zr = np.load(npz)
             g5.require(int(zr["adjacency_error_count"]) == 0, "cached npz has adjacency errors")
             z = embed_prepared(mm.prepare_brep(dict(zr), ff_mean, ff_std))
             g5.require(bool(np.isfinite(z).all() and np.linalg.norm(z) > 0), "bad embedding")
+            np.save(epath, z.astype(np.float32))
             emb[i] = z
             n_ok += 1
         except Exception as e:  # noqa: BLE001
@@ -166,12 +174,11 @@ def main() -> int:
         mp = json.loads((Path(a.runtime_root) / "pair_manifest_v4" / "evaluation_map.json").read_text(encoding="utf-8"))
         cad_ids_full = mp["cad_index_to_cad_id"]
     idx_of = {c: i for i, c in enumerate(cad_ids_full)}
+    # cad ids come from the npz names themselves (built from the gallery
+    # cad_id during conversion) — cad_store.jsonl on this host has no cad_id
     cache_names = {p.name for p in brep_cache.glob("*.npz")}
-    covered_idx = sorted(
-        idx_of[r["cad_id"]] for r in
-        (json.loads(l) for l in open(Path(a.runtime_root) / "pair_manifest_v4_worker" / "cad_store.jsonl",
-                                     encoding="utf-8"))
-        if r["cad_id"] in idx_of and (r["cad_id"].replace("/", "__") + ".npz") in cache_names)
+    covered_cad_ids = sorted(n.replace(".npz", "").replace("__", "/") for n in cache_names)
+    covered_idx = sorted(idx_of[c] for c in covered_cad_ids)
     g5.require(len(covered_idx) > 0, "covered axis empty")
 
     # ---- stage 4: text tower ---------------------------------------------------
