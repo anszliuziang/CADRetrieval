@@ -117,7 +117,10 @@ def main() -> int:
     fixed_sd = {k.replace(".auto_model.", ".model.") if k.startswith("text_encoder._pipeline.") else k: v
                 for k, v in sd.items()}
     missing, unexpected = model.load_state_dict(fixed_sd, strict=True)
-    model.eval()
+    # load_joint_model does eval().to(device) — the inlined path must too:
+    # SentenceTransformer auto-moved the text tower to npu:0 (torch_npu
+    # present), and cpu inputs then crash the text forward
+    model.eval().to("cpu")
     load_s = round(time.time() - t0, 1)
     log(dict(phase="strict_load", missing=len(missing), unexpected=len(unexpected),
              epoch=ck.get("epoch"), seconds=load_s))
