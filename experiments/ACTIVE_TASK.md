@@ -2,12 +2,14 @@
 
 ## 实验一 · Fusion 360 跨来源检索
 
-本地分支 `codex/e1-fusion360-protocol` 从已结案的 Text2CAD 提精度实验接续。E1 现阶段交接的是 v1.1 方案。首项工作是在本地 CPU 清点输入、验证 minimal 转换与两个 CAD 来源的尺度。正式评分的实现 SHA、设备及预算在实现审查后单独登记，下面的运行记录用于历史追溯。[实验一执行文档](plans/IDEA01_E1_FUSION360_RETRIEVAL_2026-11-19.md) · [48 条冻结背景索引](configs/idea01_e1_fusion360_background_48_20261119.json)
+本地分支 `codex/e1-fusion360-protocol` 接续已结案的 Text2CAD 提精度实验。v1.1 的自动清点、几何核验、两域评分、正式评价和独立复算已完成。[执行文档](plans/IDEA01_E1_FUSION360_RETRIEVAL_2026-11-19.md) · [最终结果](submissions/idea01_e1_fusion360_retrieval_20261120/CODEX_E1_FUSION360_RESULTS_2026-11-20.md) · [48 条冻结背景索引](configs/idea01_e1_fusion360_background_48_20261119.json)
 
-- E1 状态为 `pilot_authorized`。用户已授权 2026-11-20 夜间自动实施 v1.1。正式评分须封存两域输入、完成文字改写的独立复核并通过真实 G4 重放。B 编码显示明确退化时保留证据并保持 C 封存。
+- E1 状态为 `reviewed`。正式前向授权已关闭，运行进程均已退出。E1d 有 48 条匿名查询和 321 个已通过读取核验的实体，双人语义盲评待标注。当前结果衡量登记 UID 找回。
 - 本地运行标识 `idea01_e1_fusion360_20261120`。本地资产和输出使用 `CADRetrievalIdea1_runtime`。share4 使用独立 Git checkout、现有 Ascend 环境和外部运行目录，校验设备逻辑号、健康状态和进程占用后调度。
 - 源验证 64 件中 62 件通过量化后的几何核验。公开训练序列 159,049 件逐件核对。第一层筛查的 5,555 条 DeepCAD 与 1,341 条 Fusion 专家文字经实际 BERT 分词器复核，token ID 无差异。两域几何作业实际退出 0。Fusion 529 件通过独立 STEP 核验，去重及留出后有 318 个可抽样组，两域按方案冻结为 256 件。
-- 正式授权绑定实现 `cf959f3bc611bbbffe006525ba3843930a9e3755` 与冻结清单 SHA `3df2a07cdd71317b9236c028f18725cd024f680cbf3f7337be0e5ed844e3f9e5`。307,056 对最多两张空闲 Ascend 并行，累计上限 7,200 卡秒，等待及执行截止为北京时间 08:00。硬门按 G4 重放、B 编码和 C 的次序。实际启动与结果另记。
+- 历史授权 ref 为 `9044ad292eb4baaf40687c3ab1c3e98b86aebc12`，实际实现 `cf959f3bc611bbbffe006525ba3843930a9e3755`，冻结清单 SHA `3df2a07cdd71317b9236c028f18725cd024f680cbf3f7337be0e5ed844e3f9e5`。两张空闲 Ascend 共完成 307,056 对、1,853.12 卡秒、1,047.32 秒控制器墙钟。G4 重放 256 对零差。B 编码总体未决，原生分保守区间跨过容限，校正分通过，冻结执行条件放行 C 全量评分。五个评分子进程、两个评价子进程和控制器实际退出均为 0。
+- C 的 R@20 为 115/256 → 252/256，配对增益 +53.52 个百分点 [47.27, 59.77]，两者置换 Holm p 均为 0.00039992。校正后 R@1 为 207/256。字面数字规则命中 219/256，14 条隐去精确量值的合格改写使校正命中从 14 降至 9。结果适用于该筛选图库及程序派生描述。
+- 401 件完整运行原件在本地及 share4 逐字节核验，清单 SHA `9ddcc49bea01a72c0e054d31f11c4950bc4964bd16ee1d6ead2bd90d6dc1f7d2`。共享 OBS 的 125 件评分和执行证据清单 SHA `20b3a9bfce099e821e13d488b8b407f3993004a5af79af69dd80c44e0603ce2b`，上传与独立复核实际退出 0。盲评材料的匿名目录和密封映射留在完整运行原件。
 - 执行入口依次为 `prepare_text2cad_e1_inventory.py`、`prepare_text2cad_e1_geometry.py`、`prepare_text2cad_e1_freeze.py`、`run_text2cad_e1_score.py`、`eval_text2cad_e1.py`，均位于 `experiments/scripts`。
 
 ## 已完成 · Text2CAD 冻结模型检索提精度（2026-11-19）

@@ -1,0 +1,76 @@
+{
+  "acceptance_status": "provisional",
+  "audit_skill": "experiment-audit",
+  "audited_input_hashes": {
+    "independent/diagnostic_evidence.json": "sha256:91df6312829d7e78221713619f66342d2993bed8112caa436cba560d1d19b04a",
+    "independent/execution_evidence.json": "sha256:a6aef6aebdf84549e43d7c73d7a596605c2425e14d9ba8edf83556f6097337cc",
+    "independent/frozen_evidence.json": "sha256:c8da6cecca63823920c07aec935535d83f5c4df4ced2fdefa8904f211d52e23f",
+    "independent/score_evidence.json": "sha256:f112dcde605685520fcb506cfa4c89dda19f67b69e6b559e2f1bfcb8cf49803f",
+    "input/freeze.json": "sha256:3df2a07cdd71317b9236c028f18725cd024f680cbf3f7337be0e5ed844e3f9e5",
+    "obs/SHA256SUMS": "sha256:20b3a9bfce099e821e13d488b8b407f3993004a5af79af69dd80c44e0603ce2b",
+    "run/SHA256SUMS": "sha256:9ddcc49bea01a72c0e054d31f11c4950bc4964bd16ee1d6ead2bd90d6dc1f7d2",
+    "run/evaluation/metrics.json": "sha256:dfa645878be9ac6c09113b9da1458c04375c0fdc2db770c1280ce11538620007",
+    "run/evaluation/ranks.parquet": "sha256:edd3ddf2b7c3c72ddf8f644a67a99d964e5804ea32d0d5a1e0f58945529c60bc",
+    "run/evaluation/score_manifest.json": "sha256:4800c26852488184dd3d3b25ecf1af0d70d5dcaa56011f5c9be12070ef7ca5b2"
+  },
+  "auditor": "/root/e1_final_integrity_audit",
+  "blocking_integrity_issue": false,
+  "checks": {
+    "dead_code": {
+      "details": "Recorded source and final evaluator CLI executed; independent matrix, axes and scores replay.",
+      "status": "pass"
+    },
+    "eval_type": "real_gt",
+    "gt_provenance": {
+      "details": "Pinned corpus annotations, official B tensors, and Autodesk C final STEP matched.",
+      "status": "pass"
+    },
+    "pending_human_eval": {
+      "annotation_rows": 0,
+      "anonymous_geometry_units": 321,
+      "status": "pending"
+    },
+    "result_existence": {
+      "details": "401 run payloads, 406 regular transfer members, 307056 score cells, all stage and controller exits.",
+      "status": "pass"
+    },
+    "scope": {
+      "details": "One generator and 256 screened external projects with CAD-derived captions. Strong numeric baseline, inconclusive S0 source encoding gate, limited text interventions.",
+      "status": "warn"
+    },
+    "score_normalization": {
+      "details": "2044 registered positive ranks recomputed, along with B gate, C Holm, and paired intervals.",
+      "status": "pass"
+    }
+  },
+  "claims": [
+    {
+      "id": "E1-Q1",
+      "impact": "supported",
+      "scope": "registered UID ranking on the frozen external gallery"
+    },
+    {
+      "id": "E1-Q2",
+      "impact": "supported",
+      "scope": "source-selected S48 transfer and paired gain on the frozen gallery"
+    },
+    {
+      "id": "E1-Q3-semantic",
+      "impact": "pending",
+      "scope": "human geometry ratings and independent requirements"
+    }
+  ],
+  "date": "2026-11-20",
+  "deterministic_execution_and_numeric_checks_passed": true,
+  "generated_at": "2026-11-19T17:51:45.951029+00:00",
+  "integrity_status": "warn",
+  "overall_verdict": "warn",
+  "reason_code": "filtered_gallery_and_pending_semantic_evaluation",
+  "review_independence": "same-family",
+  "reviewer_family": "openai",
+  "reviewer_model": "inherited Codex",
+  "run_id": "idea01_e1_fusion360_20261120",
+  "trace_path": ".aris/traces/experiment-audit/2026-11-20_run02",
+  "verdict": "WARN",
+  "witness_root": "D:\\projects\\IdeaSpark\\CADRetrievalIdea1_runtime\\idea01_e1_fusion360_20261120\\control\\independent_integrity_audit_fnh6del0"
+}
