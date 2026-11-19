@@ -1,0 +1,15 @@
+{
+  "approved_sha": "cf959f3bc611bbbffe006525ba3843930a9e3755",
+  "authorization_basis": "用户授权今晚全自动实施 E1，设备忙则等待空闲。仅评分 v1.1 冻结清单中的输入。",
+  "deadline_epoch": 1795132800.0,
+  "deadline_local": "2026-11-20T08:00:00+08:00",
+  "freeze_sha256": "3df2a07cdd71317b9236c028f18725cd024f680cbf3f7337be0e5ed844e3f9e5",
+  "max_card_seconds": 7200,
+  "max_devices": 2,
+  "max_pairs": 307056,
+  "protocol_sha": "3613921e649e226628f8c6b116775eeb9e29af04",
+  "python": "/home/ma-user/anaconda3/envs/PyTorch-2.7.1/bin/python",
+  "run_id": "idea01_e1_fusion360_20261120",
+  "server": "yunnao-share4",
+  "status": "pilot_authorized"
+}
