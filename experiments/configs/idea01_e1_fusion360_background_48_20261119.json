@@ -1,0 +1,356 @@
+{
+  "schema_version": 1,
+  "source": "Text2CAD v1.0",
+  "dataset_revision": "422d4c93198c3cd98d5c2092c0ab214b3a76a68d",
+  "csv_file": "text2cad_v1.0.csv",
+  "csv_sha256": "32427ca7169f8b93411b64a025c387cdb0b55d9b9ce0e9cf9755ac8a3528f4a3",
+  "split_file": "train_test_val.json",
+  "split_sha256": "4ea6db9027b4cebee8f37903b6601b73b810adacd808a4874dbe847c7c508e7b",
+  "split": "validation",
+  "text_field": "abstract",
+  "text_hash_rule": "sha256(UTF-8(str.strip(abstract)))",
+  "selection_record_sha256": "58ec5b53cf75021384cfbe6fbc070bc23b19c192880578bf494560f82980513f",
+  "selected_config": "logmix_l1",
+  "count": 48,
+  "ordered_digest_rule": "sha256(ASCII(text_sha256 values joined with LF, no trailing LF))",
+  "ordered_digest": "44fa6f881cb46d9ab11dc7a1599495ba1a50b9d78551a978cc54f1e197aa8dfb",
+  "rows": [
+    {
+      "index": 0,
+      "validation_uids": [
+        "0003/00036895"
+      ],
+      "text_sha256": "143f1cb9139dbc43c1e17e847d8b22fa11ae5f80ca309a3414a8a11cf73d9090"
+    },
+    {
+      "index": 1,
+      "validation_uids": [
+        "0038/00386977"
+      ],
+      "text_sha256": "da26bf769534c3a6f8eb21d0f8248e30a96912085e1bbbba5026d3672adb492a"
+    },
+    {
+      "index": 2,
+      "validation_uids": [
+        "0091/00919392"
+      ],
+      "text_sha256": "5a52f1f18825505f309db41068f8a3befb80a20683892640cd808925e439cc5c"
+    },
+    {
+      "index": 3,
+      "validation_uids": [
+        "0000/00000354"
+      ],
+      "text_sha256": "dfb1b151a50948bcc30d5b8fa025bfba4c626aa8191f8d15e5c37de97300bf29"
+    },
+    {
+      "index": 4,
+      "validation_uids": [
+        "0017/00171340"
+      ],
+      "text_sha256": "2e11618d1e6781da29b766d2ab559eb45593eecdc04a39f66405b4579d0bba70"
+    },
+    {
+      "index": 5,
+      "validation_uids": [
+        "0015/00154608",
+        "0035/00356331"
+      ],
+      "text_sha256": "076e8851e3ba55881e4c7fa46946e97d015d36b776d506bf0b54b592fa6a6580"
+    },
+    {
+      "index": 6,
+      "validation_uids": [
+        "0036/00361458"
+      ],
+      "text_sha256": "377bc969973e3e172bb580fda1900a066bb9447bb4110298d2d5664fb8e4b625"
+    },
+    {
+      "index": 7,
+      "validation_uids": [
+        "0046/00460777"
+      ],
+      "text_sha256": "b5f5d20bcf2dbcdeeb9dc5c7b2cb9aa1548a7871d3128691767e58918a13869b"
+    },
+    {
+      "index": 8,
+      "validation_uids": [
+        "0041/00412910"
+      ],
+      "text_sha256": "5428c95410fce6c8454afcb69ad9a91573f4905ed765b2210860e3bd4086cb53"
+    },
+    {
+      "index": 9,
+      "validation_uids": [
+        "0007/00071141"
+      ],
+      "text_sha256": "21bf5b938286eafe88bd03ae2bb18ae4922a2ae959e14313f09a7c7cdd8dd034"
+    },
+    {
+      "index": 10,
+      "validation_uids": [
+        "0077/00773622"
+      ],
+      "text_sha256": "e47f3f2d31ac3e64aa90608750e9c61ad2961944b88c9846dd5dd9520196713e"
+    },
+    {
+      "index": 11,
+      "validation_uids": [
+        "0064/00642287"
+      ],
+      "text_sha256": "8a1b6e727a868266304d6c19f896e93630a05036b743322abf9b9a9b01e194c7"
+    },
+    {
+      "index": 12,
+      "validation_uids": [
+        "0008/00082461"
+      ],
+      "text_sha256": "e58a1f0e0ae909de6037945781cdb7680b24c13b9de6f23a61a6bfdaa6c1e5b1"
+    },
+    {
+      "index": 13,
+      "validation_uids": [
+        "0093/00934711"
+      ],
+      "text_sha256": "0a6a6ea307f33d830d0653b5ff3b37f722ed1f38359cc50b48038aad37768dfe"
+    },
+    {
+      "index": 14,
+      "validation_uids": [
+        "0072/00723332"
+      ],
+      "text_sha256": "501ea19dc103d0f07d10b9c947011df383fbcc114959beb637239f0f49b5e4e2"
+    },
+    {
+      "index": 15,
+      "validation_uids": [
+        "0018/00186017"
+      ],
+      "text_sha256": "b813692d12dc1c9b6f977c8b3d7f0b96d7e965b00210f0b50c2cf0f1573ef08c"
+    },
+    {
+      "index": 16,
+      "validation_uids": [
+        "0093/00938308"
+      ],
+      "text_sha256": "b07607f9840ab38e16f6e01bc90bf374cd1b50443a21b783fb9839fd499c52d5"
+    },
+    {
+      "index": 17,
+      "validation_uids": [
+        "0042/00423747"
+      ],
+      "text_sha256": "7df6ad9ce75b00c6443bb4fc3b1676a85ce29cf4073b3b51ad8fe812486cb4dd"
+    },
+    {
+      "index": 18,
+      "validation_uids": [
+        "0001/00010704"
+      ],
+      "text_sha256": "f9743111594c5b859c3bcc38f9d5119e4549e24eae99456dfa4c8a10f98e4bb5"
+    },
+    {
+      "index": 19,
+      "validation_uids": [
+        "0044/00441510"
+      ],
+      "text_sha256": "f2bbed40fb875265d119a47451d54ca8359f8774fc49ff60d792a5e290c38b1b"
+    },
+    {
+      "index": 20,
+      "validation_uids": [
+        "0080/00801514"
+      ],
+      "text_sha256": "035330cef820ad53a92e8c734267d69111577c58cc85bc5efa36bca3804d4246"
+    },
+    {
+      "index": 21,
+      "validation_uids": [
+        "0007/00071712"
+      ],
+      "text_sha256": "f68ccf179a27f1a5526558284a0269dd0dab57cb9a3f28943b4be0a5db85d54c"
+    },
+    {
+      "index": 22,
+      "validation_uids": [
+        "0017/00179945"
+      ],
+      "text_sha256": "9ea795fc48122c94bc37b4a244d6db455c9968f2061a9fe8d251c2e5de8102af"
+    },
+    {
+      "index": 23,
+      "validation_uids": [
+        "0048/00486654"
+      ],
+      "text_sha256": "80cedfcc4dd4e43bf66c72fe028aac0cdfc0415f4c948878779060fc790ffa10"
+    },
+    {
+      "index": 24,
+      "validation_uids": [
+        "0027/00272501"
+      ],
+      "text_sha256": "684b7b5c387347549fe346302c856aa8af1b5e793a99c7c540b79cd3c0c8a9b9"
+    },
+    {
+      "index": 25,
+      "validation_uids": [
+        "0055/00556730"
+      ],
+      "text_sha256": "5461f90b441fca3af3baa923b8af3ca88a32962316c9a621bdee1402e945495b"
+    },
+    {
+      "index": 26,
+      "validation_uids": [
+        "0038/00389772"
+      ],
+      "text_sha256": "531e4adac9c9ea13002ea10ba15c6f547ef38c31b40a92b7e4d7747c98a90f9d"
+    },
+    {
+      "index": 27,
+      "validation_uids": [
+        "0051/00516093"
+      ],
+      "text_sha256": "516706693d53ce8a087484116a54868e17ecffcf5cc048f383949d64c9bafdd7"
+    },
+    {
+      "index": 28,
+      "validation_uids": [
+        "0058/00589608"
+      ],
+      "text_sha256": "65f3dea00b9ed6cb40cae21e4ec6ef221d6dfbb9a0a45400b79418050ba92fc4"
+    },
+    {
+      "index": 29,
+      "validation_uids": [
+        "0028/00280443"
+      ],
+      "text_sha256": "d5164f83bd5da7896769061f39f4f5a49991ee12a8053fdd5a9804598557692a"
+    },
+    {
+      "index": 30,
+      "validation_uids": [
+        "0074/00747265"
+      ],
+      "text_sha256": "f72c313ebd6db6131445c6a416251b86ffbb9870c576cd33e1c926b14fefc91a"
+    },
+    {
+      "index": 31,
+      "validation_uids": [
+        "0052/00521437"
+      ],
+      "text_sha256": "4b245c7adf82a3b679b056ff3f48a1570c2655407de975a9dd97375ef887d486"
+    },
+    {
+      "index": 32,
+      "validation_uids": [
+        "0029/00294546"
+      ],
+      "text_sha256": "fb5e2ba89ae2ca7c29a72ae506f746b37becf83f6e6f3f49b1b1ace6067e74e8"
+    },
+    {
+      "index": 33,
+      "validation_uids": [
+        "0007/00070554"
+      ],
+      "text_sha256": "b6c7d03f1c17ff13a34835941214de1149bb599b0f7f42bce55154c0427a8d67"
+    },
+    {
+      "index": 34,
+      "validation_uids": [
+        "0099/00998698"
+      ],
+      "text_sha256": "5893991e17fa9630e7cb25738ba02babf59ff66c36180ed042db0eb4ce4432bd"
+    },
+    {
+      "index": 35,
+      "validation_uids": [
+        "0058/00587550"
+      ],
+      "text_sha256": "b17f27a307761413e66886dc59a4079df5c48248e057574e53d821d047dad562"
+    },
+    {
+      "index": 36,
+      "validation_uids": [
+        "0013/00132273"
+      ],
+      "text_sha256": "46bafe04860fe26bb48dde267f0ab30739ef995bb008675c0067284fcc752b25"
+    },
+    {
+      "index": 37,
+      "validation_uids": [
+        "0071/00715094"
+      ],
+      "text_sha256": "e1775d24ce84d75a664c7be5e2f4781364d2afe6a2b89ff54529ac6d399b33c2"
+    },
+    {
+      "index": 38,
+      "validation_uids": [
+        "0030/00307311"
+      ],
+      "text_sha256": "49ccb655e567333697b0cad94fe3b3c06318c4cd51679de1c61f7bba9c2efcd3"
+    },
+    {
+      "index": 39,
+      "validation_uids": [
+        "0036/00367317"
+      ],
+      "text_sha256": "6f2ebf7fe14e1e91cd83dbc4ce7c9cab1d3640b2b8c2d5fe5f6d693a4f7a25be"
+    },
+    {
+      "index": 40,
+      "validation_uids": [
+        "0070/00704955"
+      ],
+      "text_sha256": "052e9481e6dfce4dfceb3c01698621c7cd9619a3ad7bff49f4fe0dc11d5e5491"
+    },
+    {
+      "index": 41,
+      "validation_uids": [
+        "0098/00988626"
+      ],
+      "text_sha256": "07f19decbfa43e38541edf04239c2602e36c36fbb39170b689a0baf4f759c395"
+    },
+    {
+      "index": 42,
+      "validation_uids": [
+        "0009/00098632"
+      ],
+      "text_sha256": "6b837a36492da92d7bb60f515072e274300496125386ffd24de6a16d7dbf4068"
+    },
+    {
+      "index": 43,
+      "validation_uids": [
+        "0087/00878898"
+      ],
+      "text_sha256": "484022cb9b0d0c187b6d01f991459d3ac16a4bd94b769cd0a28fd1b6bdeeed08"
+    },
+    {
+      "index": 44,
+      "validation_uids": [
+        "0009/00096384"
+      ],
+      "text_sha256": "567100c11938602c36ec1d859dc216c8cb82390d1205bef828ca959d2a0a053c"
+    },
+    {
+      "index": 45,
+      "validation_uids": [
+        "0067/00679834"
+      ],
+      "text_sha256": "34665eac5b4ceb3f199827e5105e918e3ffb77da7213f764970f23a08e10a409"
+    },
+    {
+      "index": 46,
+      "validation_uids": [
+        "0030/00307638"
+      ],
+      "text_sha256": "f799a8ade627efe9b7185de25355c1efdef2210035c4a80fdc4e91c6baa4df17"
+    },
+    {
+      "index": 47,
+      "validation_uids": [
+        "0081/00816466"
+      ],
+      "text_sha256": "3e8d87bec16d1cf87aae9d2c4ecd98e0d0904c5064783732fb960ab94cadf1cb"
+    }
+  ]
+}
