@@ -4,6 +4,11 @@
 
 本地分支 `codex/e1-fusion360-protocol` 从已结案的 Text2CAD 提精度实验接续。E1 现阶段交接的是 v1.1 方案。首项工作是在本地 CPU 清点输入、验证 minimal 转换与两个 CAD 来源的尺度。正式评分的实现 SHA、设备及预算在实现审查后单独登记，下面的运行记录用于历史追溯。[实验一执行文档](plans/IDEA01_E1_FUSION360_RETRIEVAL_2026-11-19.md) · [48 条冻结背景索引](configs/idea01_e1_fusion360_background_48_20261119.json)
 
+- E1 状态为 `preparing`。用户已授权 2026-11-20 夜间自动实施 v1.1。正式评分须封存两域输入、完成文字改写的独立复核并通过真实 G4 重放。B 编码显示明确退化时保留证据并保持 C 封存。
+- 本地运行标识 `idea01_e1_fusion360_20261120`。本地资产和输出使用 `CADRetrievalIdea1_runtime`。share4 使用独立 Git checkout、现有 Ascend 环境和外部运行目录，校验设备逻辑号、健康状态和进程占用后调度。
+- 源验证 64 件中 62 件通过量化后的几何核验。公开训练序列 159,049 件逐件核对。第一层筛查的 5,555 条 DeepCAD 与 1,341 条 Fusion 专家文字经实际 BERT 分词器复核，token ID 无差异。两域正式几何覆盖仍待 CPU 作业结算。
+- 执行入口依次为 `prepare_text2cad_e1_inventory.py`、`prepare_text2cad_e1_geometry.py`、`prepare_text2cad_e1_freeze.py`、`run_text2cad_e1_score.py`、`eval_text2cad_e1.py`，均位于 `experiments/scripts`。
+
 ## 已完成 · Text2CAD 冻结模型检索提精度（2026-11-19）
 
 - `state`: `reviewed`。八组方案共有 37 个验证配置，25 个预注册冻结读出完成留出测试。GLM‑5.3 审方案、复审代码和只读汇报，Codex 复核原始矩阵、拟合、名次和区间。
