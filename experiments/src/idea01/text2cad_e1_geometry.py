@@ -347,10 +347,12 @@ def compare_shapes(candidate, reference, uid, probes=()):
         eligible = int(keep.sum())
         if eligible:
             disagreements = int(np.count_nonzero(occupancy(candidate,points[keep]) != occupancy(reference,points[keep])))
+    finite_p99 = bool(np.isfinite([pq, qp]).all())
     return {"candidate":cm, "reference":rm, "reference_diagonal":float(diag),
-            "candidate_to_ref_p99":pq, "ref_to_candidate_p99":qp, "rel_volume":volume_error,
+            "candidate_to_ref_p99":pq if np.isfinite(pq) else None,
+            "ref_to_candidate_p99":qp if np.isfinite(qp) else None, "rel_volume":volume_error,
             "interior_probes": eligible, "material_disagreements": disagreements,
-            "pass":bool(cm["n_solids"] == rm["n_solids"] and volume_error <= .05
+            "pass":bool(finite_p99 and cm["n_solids"] == rm["n_solids"] and volume_error <= .05
                         and max(pq,qp) <= .01 and not disagreements)}
 
 

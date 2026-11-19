@@ -241,7 +241,10 @@ def one_job(args):
                 record["reference_relpath"] = save_brep(prep,Path("solids/fusion_step")/(safe+".brep"),reference)
         record["geometry_pass"] = record["geometry"]["pass"]
         if not record["geometry_pass"]:
-            record["reason"] = "reference_geometry_threshold"
+            m = record["geometry"]
+            record["reason"] = ("reference_geometry_nonfinite" if
+                                m["candidate_to_ref_p99"] is None or m["ref_to_candidate_p99"] is None
+                                else "reference_geometry_threshold")
     except Exception as e:
         record.update(reason=("sequence_length_over_max" if "sequence_length_over_max" in str(e)
                               else phase+"_failed"), detail=f"{type(e).__name__}: {e}"[:700])

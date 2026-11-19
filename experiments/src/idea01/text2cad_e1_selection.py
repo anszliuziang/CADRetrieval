@@ -113,7 +113,8 @@ def publish_inventory(out: Path, rows: list[dict], coverage: dict) -> None:
     fields = (
         "domain", "uid", "project", "published_split", "text_sha256", "token_ids_sha256",
         "program_sha256", "token_count", "n_valid", "n_extrusions", "geometry_pass",
-        "cad_vec_sha256", "official_cad_vec_sha256", "model_input_sha256", "group_id",
+        "cad_vec_sha256", "official_cad_vec_sha256", "model_input_sha256", "exact_geometry_sha256",
+        "group_id",
         "source_train_near_status", "first_exclusion", "all_reasons",
     )
     parquet_rows = [{key: row.get(key) for key in fields} for row in rows]
@@ -201,9 +202,10 @@ def audit_and_select(prep: Path, geometry_path: Path, out: Path) -> dict:
                 all_reasons.append(reason)
             first = first or reason
         if first is None:
-            for field in ("cad_vec_sha256", "vector_relpath", "n_valid", "n_extrusions"):
+            for field in ("cad_vec_sha256", "vector_relpath", "n_valid", "n_extrusions", "geometry_relpath"):
                 if not combined.get(field):
                     raise ValueError(f"admitted row lacks {field}: {key}")
+            combined["exact_geometry_sha256"] = sha256_file(prep / combined["geometry_relpath"])
             accepted[domain].append(combined)
         combined.update(all_reasons=all_reasons, first_exclusion=first)
         inventory_rows.append(combined)
@@ -283,6 +285,7 @@ def audit_and_select(prep: Path, geometry_path: Path, out: Path) -> dict:
         "geometry_sha256": sha256_file(geometry_path),
         "inventory_seed_sha256": sha256_file(seed),
         "near_corroboration_sha256": sha256_file(corroboration_path),
+        "exact_geometry_identity": "byte-identical validated normalized OCCT BRep replay",
         "coverage": {domain: dict(counters[domain]) for domain in DOMAINS},
     }
     write_rows(out / "inventory.jsonl", inventory_rows)

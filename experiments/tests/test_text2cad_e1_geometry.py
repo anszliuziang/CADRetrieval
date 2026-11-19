@@ -4,6 +4,7 @@ import importlib.util
 import os
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +32,20 @@ def circle():
 
 
 class GeometryTests(unittest.TestCase):
+    def test_nonfinite_distance_in_either_direction_rejects_and_serializes(self):
+        import json
+        import idea01.text2cad_e1_geometry as geometry
+        measures = {"n_solids":1, "volume":1., "bbox":[0,0,0,1,1,1]}
+        triangles = np.array([[[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]]])
+        for pair in ([0.,np.nan],[np.nan,0.]):
+            with patch.object(geometry,"measures",return_value=measures), \
+                    patch.object(geometry,"mesh_triangles",return_value=triangles), \
+                    patch.object(geometry,"distances",side_effect=[np.array([x]) for x in pair]):
+                result = compare_shapes(None,None,"uid")
+                self.assertFalse(result["pass"])
+                self.assertIn(None,[result["candidate_to_ref_p99"],result["ref_to_candidate_p99"]])
+                json.dumps(result,allow_nan=False)
+
     @geometry_runtime
     def test_circle_orientation_local_grid_no_global_rescale_and_padding(self):
         arrays = encode_minimal(circle())
