@@ -42,18 +42,22 @@ def verify_received(root: Path) -> dict:
             "manifest_sha256": sha256(manifest)}
 
 
-def remote_command(kind: str, arms: list[str], methods: list[str], wait_seconds: int) -> str:
+def remote_command(kind: str, arms: list[str], methods: list[str], wait_seconds: int,
+                   *, external_phase: str = "first") -> str:
     common = f"""set -euo pipefail
 cd '{REMOTE_RUN}'
 deadline=$(( $(date +%s) + {wait_seconds} ))
 """
     if kind == "external":
+        if external_phase == "native_tail" and arms != ["l1", "l3"]:
+            raise ValueError("Native follow-up collection must contain L1 and L3 in order")
+        control = {"first": "control/external", "native_tail": "control/external_native_tail"}[external_phase]
         body = f"""
 files=()
 for m in {' '.join(methods)}; do
-    control="control/external"
+    control="{control}"
     exit_file="$control/$m.actual_exit"
-    if [[ "$m" == "mmcad_v2" && -d control/mmcad_v2_retry1 ]]; then
+    if [[ "$control" == "control/external" && "$m" == "mmcad_v2" && -d control/mmcad_v2_retry1 ]]; then
         control="control/mmcad_v2_retry1"
         exit_file="$control/actual_exit"
     fi
@@ -66,7 +70,7 @@ for m in {' '.join(methods)}; do
     for stem in gallery {' '.join("texts_" + arm for arm in arms)}; do
         files+=("external/$m/$stem.npy" "external/$m/${{stem}}_status.jsonl" "external/$m/${{stem}}_meta.json")
     done
-    if [[ "$control" == "control/external" ]]; then
+    if [[ "$control" != "control/mmcad_v2_retry1" ]]; then
         files+=("$control/$m.stdout.log" "$control/$m.stderr.log" "$control/$m.argv" "$control/$m.pid")
     else
         files+=("$control/stdout.log" "$control/stderr.log" "$control/launch_command.txt" "$control/launcher.pid")
@@ -121,7 +125,8 @@ def collect(args) -> int:
     args.output.mkdir()
     archive = args.output / "artifact.tar"
     started = time.time()
-    command = remote_command(args.kind, args.condition, args.method, args.wait_seconds)
+    command = remote_command(args.kind, args.condition, args.method, args.wait_seconds,
+                             external_phase=args.external_phase)
     with archive.open("wb") as payload, (args.output / "ssh.stderr.log").open("wb") as err:
         result = subprocess.run(
             ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30",
@@ -130,6 +135,8 @@ def collect(args) -> int:
         )
     record = {"actual_ssh_exit": result.returncode, "started_epoch": started, "ended_epoch": time.time(),
               "kind": args.kind, "conditions": args.condition, "methods": args.method}
+    if args.kind == "external":
+        record["external_phase"] = args.external_phase
     if result.returncode == 0:
         received = args.output / "raw"
         received.mkdir()
@@ -149,6 +156,7 @@ def main() -> None:
     parser.add_argument("kind", choices=("external", "text2cad"))
     parser.add_argument("--condition", action="append", choices=CONDITIONS, required=True)
     parser.add_argument("--method", action="append", choices=CORE_EXTERNAL)
+    parser.add_argument("--external-phase", choices=("first", "native_tail"), default="first")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--wait-seconds", type=int, default=0)
     args = parser.parse_args()
@@ -156,6 +164,8 @@ def main() -> None:
         args.method = list(CORE_EXTERNAL)
     if args.kind == "text2cad" and args.method:
         parser.error("--method applies only to the external methods")
+    if args.external_phase == "native_tail" and (args.kind != "external" or args.condition != ["l1", "l3"]):
+        parser.error("--external-phase native_tail is for external L1 and L3 in that order")
     if len(args.condition) != len(set(args.condition)) or (args.method and len(args.method) != len(set(args.method))):
         parser.error("refusing repeated collection selections")
     if args.wait_seconds < 0:

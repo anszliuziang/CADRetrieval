@@ -6,14 +6,47 @@ run=$1
 rt=/home/ma-user/work/CADRetrieval_runtime
 code=$(cd -- "$(dirname -- "$0")" && pwd -P)
 py=/home/ma-user/anaconda3/envs/cadretrieval-glm-torch271/bin/python
-control="$run/control/external"
+phase=${3:-first}
 
 test -x "$py"
 test -z "$(git -C "$code" status --porcelain)"
 test "$(git -C "$code" rev-parse HEAD)" = "$2"
 test -f "$run/frozen/freeze.json"
+case "$phase" in
+    first)
+        control="$run/control/external"
+        conditions=(--condition ct_deepcad --condition l2)
+        ;;
+    native_tail)
+        control="$run/control/external_native_tail"
+        conditions=(--condition l1 --condition l3)
+        if git -C "$code" symbolic-ref -q HEAD >/dev/null; then
+            printf 'The native follow-up requires a detached execution checkout\n' >&2
+            exit 2
+        fi
+        for method in clip openshape mmcad_v2; do
+            prior="$run/control/external/$method.actual_exit"
+            if [[ "$method" == mmcad_v2 && -d "$run/control/mmcad_v2_retry1" ]]; then
+                prior="$run/control/mmcad_v2_retry1/actual_exit"
+            fi
+            test "$(cat "$prior")" = 0
+            for file in gallery.npy gallery_status.jsonl gallery_meta.json l0_replay.json; do
+                test -s "$run/external/$method/$file"
+            done
+            for text_axis in texts_l1 texts_l3; do
+                for suffix in .npy _status.jsonl _meta.json; do
+                    test ! -e "$run/external/$method/$text_axis$suffix"
+                done
+            done
+        done
+        ;;
+    *) printf 'Unexpected external benchmark phase: %s\n' "$phase" >&2; exit 2 ;;
+esac
 mkdir -- "$control"
-mkdir -- "$control/cache" "$control/tmp" "$run/external"
+mkdir -- "$control/cache" "$control/tmp"
+if [[ "$phase" == first ]]; then
+    mkdir -- "$run/external"
+fi
 export PYTHONDONTWRITEBYTECODE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1
 export TORCH_DEVICE_BACKEND_AUTOLOAD=0 CUDA_VISIBLE_DEVICES="" ASCEND_RT_VISIBLE_DEVICES=""
 export HF_HOME="$control/cache" XDG_CACHE_HOME="$control/cache" TMPDIR="$control/tmp"
@@ -23,7 +56,7 @@ for method in clip openshape mmcad_v2; do
     args=(
         "$py" -B -u "$code/encode_retrieval_benchmark_external.py" encode --method "$method"
         --frozen "$run/frozen" --replay "$run/replay/$method" --output "$run/external/$method"
-        --condition ct_deepcad --condition l2
+        "${conditions[@]}"
     )
     case "$method" in
         clip)
