@@ -51,6 +51,10 @@ def read_rows(path: Path) -> list[dict]:
         return [json.loads(line) for line in stream]
 
 
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def audit_generator(runtime: Path, raw: Path, arm: str, output: Path) -> None:
     """Reconstruct all ranks by sorting rows directly from the original arrays."""
     import numpy as np
@@ -85,11 +89,43 @@ def audit_generator(runtime: Path, raw: Path, arm: str, output: Path) -> None:
         if hits != info["hits"] or np.median(ranks) != info["median_rank"]:
             raise ValueError(f"independent metrics comparison failed: {arm}/{method}")
         metrics[method] = {"n_queries": len(ranks), "hits": hits, "median_rank": info["median_rank"],
-                           "ranks_sha256": info["query_ranks_sha256"]}
+                           "rank_sha256": digest(evaluation / "query_ranks.jsonl"),
+                           "metric_sha256": digest(evaluation / "metrics.json")}
     write_status(output, condition=arm, independent_checks_passed=True, methods=metrics)
 
 
-def publish(runtime: Path, reports: Path, preview: Path, logs: Path, label: str) -> None:
+def unaudited_rows(runtime: Path) -> list[str]:
+    control = runtime / "control"
+    witnesses = list(control.glob("finish_first_batch*/audit_*.json"))
+    witnesses += list(control.glob("finish_first_batch*/*_independent_audit.json"))
+    witnesses += list(control.glob("independent_*_rank_audit.json"))
+    pins = defaultdict(set)
+    for path in witnesses:
+        report = json.loads(path.read_bytes())
+        if report.get("independent_checks_passed") is True:
+            rows = {(report["condition"], m): row for m, row in report["methods"].items()}
+        elif report.get("all_passed") is True:
+            rows = {(arm, report["method"]): row for arm, row in report["conditions"].items()}
+        else:
+            continue
+        for key, row in rows.items():
+            pins[key].add((row["metric_sha256"], row["rank_sha256"]))
+    absent = []
+    for arm in ARMS:
+        for method in ("clip", "openshape", "mmcad_v2", "sum", "s48"):
+            root = runtime / "evaluation" / arm / method
+            if (root / "metrics.json").is_file():
+                actual = (digest(root / "metrics.json"), digest(root / "query_ranks.jsonl"))
+                if actual not in pins[(arm, method)]:
+                    absent.append(f"{arm}/{method}")
+    return absent
+
+
+def publish(runtime: Path, reports: Path, preview: Path, logs: Path, label: str) -> bool:
+    pending = unaudited_rows(runtime)
+    if pending:
+        write_status(logs / f"publication_held_{label}.json", missing_independent_rows=pending)
+        return False
     evaluator = "eval_retrieval_benchmark_fill.py"
     step(logs, f"summary_{label}", python(evaluator, "--runtime", runtime, "summarize"))
     build = logs / f"preview_{label}"
@@ -128,6 +164,7 @@ def publish(runtime: Path, reports: Path, preview: Path, logs: Path, label: str)
         shutil.copyfile(source_file, staged)
         staged.replace(destination)
     write_status(build / "preview_receipt.json", pages=3, pdf_sha256=hashlib.sha256(pdf.read_bytes()).hexdigest())
+    return True
 
 
 def main() -> None:
@@ -169,8 +206,8 @@ def wait_and_finish(run: Path, args, logs: Path) -> None:
                                                         "--condition", arm, "--method", method, "--input", source))
             step(logs, f"audit_{method}", [sys.executable, "-B", run / "control/audit_external_ranks.py",
                                          run, method, source, logs / f"{method}_independent_audit.json"])
-        publish(run, args.reports, args.preview, logs, "external")
-        write_status(logs / "external_ready.json", all_passed=True, arms=list(ARMS))
+        released = publish(run, args.reports, args.preview, logs, "external")
+        write_status(logs / "external_ready.json", all_passed=True, arms=list(ARMS), tables_updated=released)
     else:
         write_status(logs / "external_incomplete.json", all_passed=False, receipt=str(external_receipt))
 
@@ -197,7 +234,9 @@ def wait_and_finish(run: Path, args, logs: Path) -> None:
         step(logs, f"eval_text2cad_{arm}", python(evaluation, "--runtime", run, "text2cad",
                                                  "--condition", arm, "--input", raw))
         audit_generator(run, raw, arm, logs / f"audit_{arm}.json")
-        publish(run, args.reports, args.preview, logs, arm)
+        released = publish(run, args.reports, args.preview, logs, arm)
+        if arm == "l2" and not released:
+            raise ValueError("first batch is scored but an independent audit required for publication is pending")
     write_status(logs / "current.json", state="completed" if external_ok else "partial_external",
                  phase="first_batch", external_all_passed=external_ok, generator_all_passed=True)
 
