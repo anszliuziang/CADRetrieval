@@ -2,9 +2,10 @@
 
 ## 当前任务 · 三张 CAD 检索对比表
 
-- `task_id: idea01_retrieval_benchmark_fill_20261120`，`state: preparing`。按用户交接先做 CadTranslator–DeepCAD 和 Text2CAD L2 的五种方法。原 256 件 E1 编码和评分已结案。[执行计划](plans/IDEA01_RETRIEVAL_BENCHMARK_FILL_2026-11-20.md)
+- `task_id: idea01_retrieval_benchmark_fill_20261120`，`state: pilot_authorized`。按用户交接先做 CadTranslator–DeepCAD 和 Text2CAD L2 的五种方法。原 256 件 E1 编码和评分已结案。[执行计划](plans/IDEA01_RETRIEVAL_BENCHMARK_FILL_2026-11-20.md)
 - 分支 `codex/retrieval-benchmark-fill`。使用主仓已冻结的 8,032 件图库，同一批 7,614 个四级查询目标，另有 7,513 条 CadTranslator–DeepCAD 查询。冻结清单 SHA-256 为 `bdd3bc14d3b585bb7ccaf06100d2266d46e5ccea71450b87182212e0a24c4785`，L0 的五个方法共 38,070 个正例名次已从原矩阵逐条对账。
-- 生成器保持官方权重、原有效字段掩码、FP32、完整 272 行和 batch size 16。首批实际前向先以 G4 固定原件验证分数和字段数，并核对原样重复的整批 BERT 输出能否按行复用。卡时和墙钟根据实测吞吐冻结。评分入口只读候选程序与去重原文，UID 对照和正例链接在本地评价。
+- 生成器保持官方权重、原有效字段掩码、FP32、完整 272 行和 batch size 16。预检实际退出 0，用 2,560 对及 62.18 卡秒核验，512 对历史分数逐位一致，同批原始 BERT 输出复用对预检分数也逐位一致。评分入口只读候选程序与去重原文，UID 对照和正例链接在本地评价。[独立代码审查和预检](reviews/IDEA01_RETRIEVAL_BENCHMARK_FILL_CODE_REVIEW_2026-11-20.md)
+- 前向实际使用 `6cd791312eefa5e575b0e56a39553fa9f92fbd3b`，授权 ref `fc71f871a8da2aa78bfcff3714ff3b5afa9d546d`，从 2026-11-20 19:39:46（北京时间）启动。主任务为 77,372,256 对，允许的中断重算预留至 77,404,384 对，卡秒上限 224,000，截止北京时间 2026-11-22 01:38:43。三张空闲逻辑卡 1、2、3 已产出并校验首行。控制器按 CadTranslator–DeepCAD、L2 顺序执行，第二阶段重新检查设备。运行中保持远端授权追踪 ref 固定。
 - 外部方法沿用 G5 固定权重与候选预处理。OpenShape 和 MM-CAD 复用经历史 L0 重放核对的既有候选向量。CLIP 用原 8,032 张渲染重编一次。Fusion 的最终图库取决于 HDF5 转码、几何和量化后排重。
 - 本地运行根为 `D:/projects/IdeaSpark/CADRetrievalIdea1_runtime/idea01_retrieval_benchmark_fill_20261120`。share4 使用干净 detached checkout、既有隔离环境和 checkout 外运行目录，全部 SSH 连接间隔至少 60 秒。原始分数、覆盖日志和汇总逐阶段留存。
 

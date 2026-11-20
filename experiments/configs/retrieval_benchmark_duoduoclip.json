@@ -1,0 +1,73 @@
+{
+  "schema": "retrieval-benchmark-duoduoclip-v1",
+  "method": "duoduoclip",
+  "training_source": "Official frozen DuoduoCLIP-B/32, trained on the four-asset mixture reported by the authors",
+  "model": {
+    "repo": "3dlg-hcvc/DuoduoCLIP-B-32",
+    "revision": "5eb499c3cbd9503240cc539a97b566e0f8f8582c",
+    "transformers": "4.57.6",
+    "dtype": "float32",
+    "attention": "eager",
+    "projection_dim": 512,
+    "files": {
+      "model.safetensors": "6447cba02eacfbaba869ed9eab9db34ed985a58100db2f267536b157b9e89c12",
+      "config.json": "c1a772a3c844331b109e8c993fb0c84dd9d2a995dca4393e6d71e8cdcd7a4297",
+      "configuration_duoduoclip.py": "30a02a0c101c9a93692ed64d00452b961926c7ac5d34396f277212fd8cd63d68",
+      "modeling_duoduoclip.py": "875ac7aed1153d3e4e07af7768c109c9553c77e647130f3ea23598411a1fed02",
+      "preprocessor_config.json": "8fb547403656e9019b0982d2310b045bef39b9d2a811a0c98756e52d48e25db6",
+      "tokenizer.json": "6d9109cc838977f3ca94a379eec36aecc7c807e1785cd729660ca2fc0171fb35",
+      "tokenizer_config.json": "c3d2a67c48a59ffa8fd92de060608524b12cae93acb4fe83e5eb03147a001f5a",
+      "special_tokens_map.json": "2cdb3b8331a60c92fc1e55a13e9fd61fd2293c5a51275fdcccd62b780052530e",
+      "merges.txt": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+      "vocab.json": "5047b556ce86ccaf6aa22b3ffccfc52d391ea4accdab9c2f2407da5b742d4363"
+    },
+    "weights_bytes": 605156676,
+    "demo_images": {
+      "assets/demo/view_000.png": "9bc065fbdda0b0a2f12d12b07cb83f2d74b07eb23a64016ae558343334f935f6",
+      "assets/demo/view_001.png": "dfeb451e392a73138a03be066338dd8b6b6e5151b88512f1410730553d3edc61",
+      "assets/demo/view_002.png": "30b381a30248802c2b1e8f34fa1d4dfb6a74b4c3a055c79a246ed1ea521bbbef"
+    },
+    "demo_texts": [
+      "a 3D model of a telephone",
+      "a 3D model of a chair",
+      "a 3D model of a sofa"
+    ],
+    "preprocessing": "Pinned CLIPProcessor, PIL RGB, bicubic shortest side 224, 224 center crop, rescale, CLIP mean/std. One BFCHW input per batch of shapes."
+  },
+  "deepcad": {
+    "freeze_sha256": "bdd3bc14d3b585bb7ccaf06100d2266d46e5ccea71450b87182212e0a24c4785",
+    "gallery_sha256": "8b9534c84ac0deebc10e6a536556a248e4d53036f9757c5419a982dd3527cdd4",
+    "gallery_count": 8032,
+    "steps_source": "mmcad_steps_20261115",
+    "steps_manifest_encoding": "UTF-8 uid TAB lowercase step SHA-256 LF, in frozen gallery order",
+    "steps_manifest_sha256": "951d9c4531bacd60d9f7c6378f3a964c16ef8da798777624b0edf69a26ae0a91",
+    "steps_bytes": 307261212,
+    "conditions": ["l0", "l1", "l2", "l3", "ct_deepcad"]
+  },
+  "render": {
+    "view_directions": [
+      [-1, -1, -1], [-1, -1, 1], [-1, 1, -1], [-1, 1, 1],
+      [1, -1, -1], [1, -1, 1], [1, 1, -1], [1, 1, 1]
+    ],
+    "world_up": [0, 0, 1],
+    "projection": "orthographic",
+    "normalize": "Exact B-Rep bounding box center and half diagonal, applied before tessellation, no rigid alignment",
+    "half_width": 1.12,
+    "size_px": 448,
+    "linear_deflection": 0.0002,
+    "angular_deflection_rad": 0.12,
+    "background_rgb": [255, 255, 255],
+    "material_rgb": [157, 184, 217],
+    "camera_relative_light_xyz": [-0.45, 0.60, 1.00],
+    "ambient": 0.56,
+    "diffuse": 0.44,
+    "png_compress_level": 3,
+    "renderer": "NumPy CPU triangle rasterizer, pixel centers, nearest depth wins, flat Lambertian shading, no edges or shadows"
+  },
+  "text": {
+    "template": "{q}",
+    "max_tokens_including_special_tokens": 77,
+    "truncation_side": "right"
+  },
+  "scoring": "Float32 frozen features, L2 normalization and dot product in float64, exact ties by frozen cad_index"
+}
