@@ -1,5 +1,13 @@
 # 实验交接
 
+## 当前任务 · 三张 CAD 检索对比表
+
+- `task_id: idea01_retrieval_benchmark_fill_20261120`，`state: preparing`。按用户交接先做 CadTranslator–DeepCAD 和 Text2CAD L2 的五种方法。原 256 件 E1 编码和评分已结案。[执行计划](plans/IDEA01_RETRIEVAL_BENCHMARK_FILL_2026-11-20.md)
+- 分支 `codex/retrieval-benchmark-fill`。使用主仓已冻结的 8,032 件图库，同一批 7,614 个四级查询目标，另有 7,513 条 CadTranslator–DeepCAD 查询。冻结清单 SHA-256 为 `bdd3bc14d3b585bb7ccaf06100d2266d46e5ccea71450b87182212e0a24c4785`，L0 的五个方法共 38,070 个正例名次已从原矩阵逐条对账。
+- 生成器保持官方权重、原有效字段掩码、FP32、完整 272 行和 batch size 16。首批实际前向先以 G4 固定原件验证分数和字段数，并核对原样重复的整批 BERT 输出能否按行复用。卡时和墙钟根据实测吞吐冻结。评分入口只读候选程序与去重原文，UID 对照和正例链接在本地评价。
+- 外部方法沿用 G5 固定权重与候选预处理。OpenShape 和 MM-CAD 复用经历史 L0 重放核对的既有候选向量。CLIP 用原 8,032 张渲染重编一次。Fusion 的最终图库取决于 HDF5 转码、几何和量化后排重。
+- 本地运行根为 `D:/projects/IdeaSpark/CADRetrievalIdea1_runtime/idea01_retrieval_benchmark_fill_20261120`。share4 使用干净 detached checkout、既有隔离环境和 checkout 外运行目录，全部 SSH 连接间隔至少 60 秒。原始分数、覆盖日志和汇总逐阶段留存。
+
 ## E1 补测 · 冻结 MM-CAD 基线
 
 - `state: reviewed`。冻结 MM-CAD v2 在 E1-A/B/C 的完整补测已完成。A/B 共用原 E1 的 256 件 DeepCAD 图库，C 使用 256 件 Fusion 图库，512 件量化重放实体全部提取与编码成功。share4 CPU 编码、本地评价均实际退出 0。
