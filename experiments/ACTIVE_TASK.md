@@ -2,8 +2,9 @@
 
 ## E1 补测 · 冻结 MM-CAD 基线
 
-- `state: cpu_authorized`。用户要求从对话里最新的对齐 benchmark 继续，现补测固定 MM-CAD v2。复用原 E1 的 A/B/C 文字、登记 UID、256 件图库和平分规则。两域 B-Rep 均从原 E1 的 8-bit 命令重放实体取得。仅用 share4 CPU 编码，本地执行几何转换和评价。
-- 运行标识 `idea01_e1_mmcad_20261120`，分支 `codex/e1-mmcad-baseline`。权重、归一化统计、分词器和官方推理代码均已指纹核对。运行前先通过发布参考样本、两个领域的候选和原生文字提示的实测检查。[补测计划](plans/IDEA01_E1_MMCAD_BASELINE_2026-11-20.md) · [审码记录](reviews/IDEA01_E1_MMCAD_CODE_REVIEW_2026-11-20.md)
+- `state: reviewed`。冻结 MM-CAD v2 在 E1-A/B/C 的完整补测已完成。A/B 共用原 E1 的 256 件 DeepCAD 图库，C 使用 256 件 Fusion 图库，512 件量化重放实体全部提取与编码成功。share4 CPU 编码、本地评价均实际退出 0。
+- C 原生窗口下的 MM-CAD/S0/S48 R@20 为 62/256、115/256、252/256，R@1 为 8/256、33/256、207/256。两模型完整读取的 245 条原文上，R@20 为 59/245、115/245、241/245。A/B 的 DeepCAD 图库有 57 件与 MM-CAD:B 公共 train 名单共享原始 ABC UID，另附移除后的共同图库诊断。
+- 运行标识 `idea01_e1_mmcad_20261120`，执行 SHA `17293e1c6bb7b840b40718203181abedf1343582`，分支 `codex/e1-mmcad-baseline`。已独立复算 196,096 个分数与 7,570 条正例名次。OBS 清单 `d153d32a080cebc6dedad8fd7cb91aad6763a2843b295aa6e166dd0a57992dbe`，43 项逐字节核回，当前 CPU 运行已结束。共同短描述和双人几何评审仍是后续条件。[补测计划](plans/IDEA01_E1_MMCAD_BASELINE_2026-11-20.md) · [结果报告](submissions/idea01_e1_fusion360_retrieval_20261120/E1_MMCAD_BASELINE_RESULTS_2026-11-20.md) · [审码记录](reviews/IDEA01_E1_MMCAD_CODE_REVIEW_2026-11-20.md) · [结果审计](reviews/IDEA01_E1_MMCAD_RESULT_AUDIT_2026-11-20.md)
 
 ## 实验一 · Fusion 360 跨来源检索
 

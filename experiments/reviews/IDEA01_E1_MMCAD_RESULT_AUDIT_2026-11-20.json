@@ -1,0 +1,40 @@
+{
+  "acceptance_status": "provisional",
+  "audit_skill": "experiment-audit",
+  "audited_input_hashes": {
+    "control/independent_recompute.json": "87e196eadf8ed8d2fd2832eeb7800c3200bbe0e8a8ec2be91dd324ac596299df",
+    "encoded/SHA256SUMS": "93203ce7938419ab109a4dcb36a8755f43ac29af401aedbfebd96c21318a8b7f",
+    "evaluation/benchmark.csv": "e2ce62571c89d055cabb6e0791f0e1581c559ba4a3b8c0cbbd34e3effb243bea",
+    "evaluation/metrics.json": "31cb0f6ffc1b5792fc530af6b258fc0cbec492b010b39a981774c19a008a4def",
+    "evaluation/query_ranks.csv": "6fdb9166877e6ace4dafad9d6f640235336c5cfa967e5ada04dc25820dd6bad3",
+    "obs/SHA256SUMS": "d153d32a080cebc6dedad8fd7cb91aad6763a2843b295aa6e166dd0a57992dbe",
+    "prepared/SHA256SUMS": "e52214f7057e4ea99a3a1b94c85bbba86838ee6cbc8f15a52e73d653917eb1a4"
+  },
+  "auditor": "/root/mmcad_result_audit",
+  "blocking_integrity_issue": false,
+  "check_states": {
+    "dead_code": "pass",
+    "eval_type": "real_gt",
+    "gt_provenance": "pass",
+    "human_relatedness": "pending",
+    "result_existence": "pass",
+    "scope": "warn",
+    "score_normalization": "pass"
+  },
+  "cosines_checked": 196096,
+  "date": "2026-11-20",
+  "deterministic_checks_passed": true,
+  "generated_at": "2026-11-20T04:09:38.318266+00:00",
+  "geometry_coverage": {
+    "deepcad": 256,
+    "fusion360": 256
+  },
+  "overall_verdict": "warn",
+  "paired_intervals_checked": 24,
+  "reason_code": "restricted_protocol_scope",
+  "registered_rank_rows": 7570,
+  "review_independence": "same-family",
+  "run_id": "idea01_e1_mmcad_20261120",
+  "trace_path": ".aris/traces/experiment-audit/2026-11-20_run03",
+  "verdict": "WARN"
+}
