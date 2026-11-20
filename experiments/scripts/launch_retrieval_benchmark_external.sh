@@ -23,7 +23,7 @@ for method in clip openshape mmcad_v2; do
     args=(
         "$py" -B -u "$code/encode_retrieval_benchmark_external.py" encode --method "$method"
         --frozen "$run/frozen" --replay "$run/replay/$method" --output "$run/external/$method"
-        --condition ct_deepcad --condition l2 --condition l1 --condition l3
+        --condition ct_deepcad --condition l2
     )
     case "$method" in
         clip)

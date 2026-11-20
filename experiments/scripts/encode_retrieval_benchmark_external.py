@@ -313,7 +313,8 @@ def hf_text_encoder(tokenizer, forward, torch, window, dim, *, template="{q}"):
 
 
 def load_clip(a, torch):
-    from transformers import CLIPConfig, CLIPImageProcessor, CLIPModel, CLIPTokenizerFast
+    from transformers import CLIPConfig, CLIPModel, CLIPTokenizerFast
+    from transformers.models.clip.image_processing_pil_clip import CLIPImageProcessorPil
 
     if a.clip_weights.name != "model.safetensors":
         raise ValueError("the frozen CLIP weight file must be named model.safetensors")
@@ -325,7 +326,8 @@ def load_clip(a, torch):
         raise ValueError("CLIP config differs from the G5 window or output dimension")
     model = CLIPModel.from_pretrained(a.clip_weights.parent, config=config, use_safetensors=True,
                                       local_files_only=True).eval().to(device="cpu", dtype=torch.float32)
-    processor = CLIPImageProcessor.from_pretrained(a.clip_processor, local_files_only=True)
+    # G5 used the PIL backend on a host without torchvision.
+    processor = CLIPImageProcessorPil.from_pretrained(a.clip_processor, local_files_only=True)
     tokenizer = CLIPTokenizerFast.from_pretrained(a.clip_processor, local_files_only=True)
     encode_text = hf_text_encoder(tokenizer, lambda tokens: model.get_text_features(**tokens),
                                   torch, 77, DIMENSIONS["clip"])
@@ -337,7 +339,8 @@ def load_clip(a, torch):
 
     weights = {"model_safetensors_sha256": CLIP_WEIGHTS, "weights_revision": "c237dc49a33fc61debc9276459120b7eac67e7ef",
                "processor_revision": "3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268",
-               "processor_files": CLIP_PROCESSOR_FILES, "render_spec_sha256": CLIP_RENDER_SPEC}
+               "processor_files": CLIP_PROCESSOR_FILES, "image_processor": type(processor).__name__,
+               "render_spec_sha256": CLIP_RENDER_SPEC}
     return encode_text, encode_image, weights, packages("transformers", "tokenizers", "Pillow")
 
 
