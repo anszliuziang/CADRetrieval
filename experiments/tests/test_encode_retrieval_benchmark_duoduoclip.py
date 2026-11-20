@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import nullcontext
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -49,6 +50,46 @@ class DuoduoCLIPEncoderTests(unittest.TestCase):
             write_text("different query with its own correct text SHA")
             with self.assertRaisesRegex(ValueError, "frozen text axis"):
                 encoder.scoring_inputs(root, pins, ["l2"])
+
+    def test_collection_cooldown_uses_actual_l2_ssh_spawn(self):
+        from collect_retrieval_benchmark_duoduoclip import waiting_for_connection
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            initial = root / "control/finish_first_batch"
+            retry = root / "control/finish_first_batch_retry1"
+            l2_pull = root / "received/text2cad_l2_first_batch_retry1"
+            output = root / "duo"
+            for directory in (initial, retry, l2_pull, output):
+                directory.mkdir(parents=True)
+            (initial / "current.json").write_text(json.dumps({"state": "failed", "utc_epoch": 60}))
+            (retry / "current.json").write_text(json.dumps({
+                "state": "running", "phase": "collect_text2cad_l2", "utc_epoch": 100,
+                "argv": ["--output", str(l2_pull)],
+            }))
+            (l2_pull / "connection_start.json").write_text(json.dumps({
+                "kind": "text2cad", "conditions": ["l2"], "started_epoch": 150, "ssh_pid": 55,
+            }))
+            packed = root / "pack_receipt.json"
+            packed.touch()
+            clock = [160.0]
+
+            def advance(seconds):
+                clock[0] += seconds
+
+            with patch("time.time", side_effect=lambda: clock[0]), patch("time.sleep", side_effect=advance):
+                waiting_for_connection(root, packed, output, 260, 0)
+            self.assertGreaterEqual(clock[0], 215)
+
+    def test_pickup_reuses_remote_outputs_without_deploying(self):
+        from collect_retrieval_benchmark_duoduoclip import remote_command
+
+        command = remote_command("a" * 40, "b" * 64, pickup=True)
+        self.assertIn("control/duoduoclip_full/actual_exit", command)
+        self.assertIn("sha256sum --strict --check", command)
+        self.assertNotIn("git -C", command)
+        self.assertNotIn("launch_retrieval_benchmark_duoduoclip.sh", command)
+        self.assertNotIn("--keep-old-files", command)
 
     def test_processor_output_preserves_object_and_view_axes(self):
         encoder = self.encoder()

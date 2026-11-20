@@ -120,16 +120,24 @@ tar -cf - "${files[@]}" -C "$scratch" TRANSFER_SHA256SUMS
 def collect(args) -> int:
     args.output.mkdir()
     archive = args.output / "artifact.tar"
-    started = time.time()
     command = remote_command(args.kind, args.condition, args.method, args.wait_seconds)
     with archive.open("wb") as payload, (args.output / "ssh.stderr.log").open("wb") as err:
-        result = subprocess.run(
+        with subprocess.Popen(
             ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30",
              "-o", "ServerAliveCountMax=2", "yunnao-share4", "tr -d '\\r' | bash -s"],
-            input=command.encode("ascii"), stdout=payload, stderr=err, check=False,
-        )
+            stdin=subprocess.PIPE, stdout=payload, stderr=err,
+        ) as result:
+            started = time.time()
+            start_file = args.output / "connection_start.json"
+            tmp = start_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"ssh_pid": result.pid, "started_epoch": started,
+                                       "kind": args.kind, "conditions": args.condition}) + "\n",
+                           encoding="utf-8")
+            tmp.replace(start_file)
+            result.communicate(input=command.encode("ascii"))
     record = {"actual_ssh_exit": result.returncode, "started_epoch": started, "ended_epoch": time.time(),
-              "kind": args.kind, "conditions": args.condition, "methods": args.method}
+              "kind": args.kind, "conditions": args.condition, "methods": args.method,
+              "collector_sha256": sha256(Path(__file__))}
     if result.returncode == 0:
         received = args.output / "raw"
         received.mkdir()
