@@ -1,5 +1,10 @@
 # 实验交接
 
+## E1 补测 · 冻结 MM-CAD 基线
+
+- `state: cpu_authorized`。用户要求从对话里最新的对齐 benchmark 继续，现补测固定 MM-CAD v2。复用原 E1 的 A/B/C 文字、登记 UID、256 件图库和平分规则。两域 B-Rep 均从原 E1 的 8-bit 命令重放实体取得。仅用 share4 CPU 编码，本地执行几何转换和评价。
+- 运行标识 `idea01_e1_mmcad_20261120`，分支 `codex/e1-mmcad-baseline`。权重、归一化统计、分词器和官方推理代码均已指纹核对。运行前先通过发布参考样本、两个领域的候选和原生文字提示的实测检查。[补测计划](plans/IDEA01_E1_MMCAD_BASELINE_2026-11-20.md) · [审码记录](reviews/IDEA01_E1_MMCAD_CODE_REVIEW_2026-11-20.md)
+
 ## 实验一 · Fusion 360 跨来源检索
 
 本地分支 `codex/e1-fusion360-protocol` 接续已结案的 Text2CAD 提精度实验。v1.1 的自动清点、几何核验、两域评分、正式评价和独立复算已完成。[执行文档](plans/IDEA01_E1_FUSION360_RETRIEVAL_2026-11-19.md) · [最终结果](submissions/idea01_e1_fusion360_retrieval_20261120/CODEX_E1_FUSION360_RESULTS_2026-11-20.md) · [48 条冻结背景索引](configs/idea01_e1_fusion360_background_48_20261119.json)
