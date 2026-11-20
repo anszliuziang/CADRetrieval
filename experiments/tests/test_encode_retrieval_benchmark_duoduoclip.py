@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -18,6 +19,36 @@ class DuoduoCLIPEncoderTests(unittest.TestCase):
         name = "encode_retrieval_benchmark_duoduoclip"
         self.assertIsNotNone(importlib.util.find_spec(name), "missing DuoduoCLIP encoder")
         return importlib.import_module(name)
+
+    def test_scoring_assets_omit_positive_links_and_reject_changed_text(self):
+        encoder = self.encoder()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gallery = {"cad_index": 3, "uid": "0000/00000003", "member": "3.pth"}
+            gallery_path = root / "gallery.jsonl"
+            gallery_path.write_bytes((json.dumps(gallery) + "\n").encode())
+            text_path = root / "texts_l2.jsonl"
+
+            def write_text(value):
+                record = {"text_index": 0, "text": value,
+                          "text_sha256": hashlib.sha256(value.encode()).hexdigest()}
+                text_path.write_bytes((json.dumps(record) + "\n").encode())
+
+            write_text("frozen L2 query")
+            gallery_sha = encoder.sha256(gallery_path)
+            manifest = {"domain": "DeepCAD", "gallery_count": 1, "conditions": {"l2": {"unique_texts": 1}},
+                        "files": {"gallery.jsonl": gallery_sha, "texts_l2.jsonl": encoder.sha256(text_path),
+                                  "queries_l2.jsonl": "9" * 64}}
+            manifest_path = root / "freeze.json"
+            manifest_path.write_bytes(json.dumps(manifest).encode())
+            pins = {"freeze_sha256": encoder.sha256(manifest_path), "gallery_sha256": gallery_sha,
+                    "gallery_count": 1}
+            gallery_rows, actual_sha, axes = encoder.scoring_inputs(root, pins, ["l2"])
+            self.assertEqual((gallery_rows, actual_sha), ([gallery], gallery_sha))
+            self.assertEqual(axes["l2"][0][0]["text"], "frozen L2 query")
+            write_text("different query with its own correct text SHA")
+            with self.assertRaisesRegex(ValueError, "frozen text axis"):
+                encoder.scoring_inputs(root, pins, ["l2"])
 
     def test_processor_output_preserves_object_and_view_axes(self):
         encoder = self.encoder()

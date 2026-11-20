@@ -23,7 +23,7 @@ from encode_retrieval_benchmark_external import (
     axis_files, load_gallery, load_texts, log, normalize_rows, output_lock, packages, write_axis,
 )
 from eval_retrieval_benchmark_fill import array_artifact, read_axis_status, verify_unit_vectors
-from prepare_retrieval_benchmark_fill import CONDITIONS, load_json, sha256, verify_freeze, verify_sha256, write_json
+from prepare_retrieval_benchmark_fill import CONDITIONS, load_json, sha256, verify_sha256, write_json
 
 
 SPEC = Path(__file__).resolve().parents[1] / "configs" / "retrieval_benchmark_duoduoclip.json"
@@ -316,13 +316,28 @@ def publish_axis(output, stem, rows, meta, dim, build, *, is_text=False):
         log("duoduoclip_axis_complete", axis=stem, rows=len(rows), valid=int(valid.sum()))
 
 
+def scoring_inputs(frozen, binding, conditions):
+    manifest_path = frozen / "freeze.json"
+    verify_sha256(manifest_path, binding["freeze_sha256"])
+    manifest = load_json(manifest_path)
+    gallery, gallery_sha = load_gallery(frozen / "gallery.jsonl")
+    if (manifest["domain"] != "DeepCAD" or gallery_sha != binding["gallery_sha256"]
+            or gallery_sha != manifest["files"]["gallery.jsonl"]
+            or len(gallery) != binding["gallery_count"] or len(gallery) != manifest["gallery_count"]):
+        raise ValueError("the DeepCAD axis differs from the frozen DuoduoCLIP input")
+    text_axes = {}
+    for condition in dict.fromkeys(conditions):
+        name = f"texts_{condition}.jsonl"
+        rows, digest = load_texts(frozen / name)
+        if digest != manifest["files"][name] or len(rows) != manifest["conditions"][condition]["unique_texts"]:
+            raise ValueError(f"unexpected frozen text axis: {condition}")
+        text_axes[condition] = (rows, digest)
+    return gallery, gallery_sha, text_axes
+
+
 def encode(args, spec):
     binding = spec["deepcad"]
-    verify_sha256(args.frozen / "freeze.json", binding["freeze_sha256"])
-    manifest = verify_freeze(args.frozen)
-    gallery, gallery_sha = load_gallery(args.frozen / "gallery.jsonl")
-    if gallery_sha != binding["gallery_sha256"] or len(gallery) != binding["gallery_count"]:
-        raise ValueError("the DeepCAD axis differs from the frozen DuoduoCLIP input")
+    gallery, gallery_sha, text_axes = scoring_inputs(args.frozen, binding, args.condition or binding["conditions"])
     records, render_meta = load_render_axis(args.renders, gallery, binding, sha256(SPEC))
     read_views = partial(open_views, render_root=args.renders, image_size=spec["render"]["size_px"])
     log("duoduoclip_input_axes_verified", gallery=len(gallery), gallery_sha256=gallery_sha, **render_meta)
@@ -342,11 +357,8 @@ def encode(args, spec):
             "axis_sha256": gallery_sha, "image_batch": args.image_batch, "view_count": FRAME_COUNT,
         }, encoder.dim, partial(gallery_embeddings, gallery, records, read_views, encoder.images,
                                batch_size=args.image_batch, dim=encoder.dim))
-        for condition in dict.fromkeys(args.condition or binding["conditions"]):
+        for condition, (rows, digest) in text_axes.items():
             name = f"texts_{condition}"
-            rows, digest = load_texts(args.frozen / f"{name}.jsonl")
-            if digest != manifest["files"][f"{name}.jsonl"] or len(rows) != manifest["conditions"][condition]["unique_texts"]:
-                raise ValueError(f"unexpected frozen text axis: {condition}")
             log("duoduoclip_text_condition", condition=condition, rows=len(rows), text_axis_sha256=digest)
             publish_axis(args.output, name, rows, meta | {"axis_sha256": digest, "condition": condition,
                          "text_batch": args.text_batch, "context_window": encoder.window}, encoder.dim,
