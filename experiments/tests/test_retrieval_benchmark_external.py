@@ -1,10 +1,23 @@
 import hashlib
 import json
+import sys
 
 import numpy as np
 import pytest
 
 from experiments.scripts import encode_retrieval_benchmark_external as enc
+
+
+def test_mmcad_cli_accepts_the_historical_vector_cache(monkeypatch, tmp_path):
+    captured = []
+    monkeypatch.setattr(enc, "encode", captured.append)
+    argv = ["encode_retrieval_benchmark_external.py", "encode", "--method", "mmcad_v2"]
+    for name in ("frozen", "replay", "output", "upstream", "checkpoint", "stats", "text-model",
+                 "vector-cache", "cache-checksums"):
+        argv += ["--" + name, str(tmp_path / name)]
+    monkeypatch.setattr(sys, "argv", argv)
+    enc.main()
+    assert captured[0].vector_cache == tmp_path / "vector-cache"
 
 
 def write_rows(path, rows):

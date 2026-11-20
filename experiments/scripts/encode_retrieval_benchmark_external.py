@@ -651,13 +651,13 @@ def main():
         if bool(a.vector_cache) == bool(a.brep_cache):
             parser.error("MM-CAD requires exactly one of --vector-cache or --brep-cache")
         if a.vector_cache:
-            required += ("cache_checksums",)
+            required += ("vector_cache", "cache_checksums")
+        else:
+            required += ("brep_cache",)
     if any(getattr(a, flag) is None for flag in required):
         parser.error("required method paths: " + ", ".join("--" + flag.replace("_", "-") for flag in required))
     path_flags = {"renders", "clip_weights", "clip_processor", "vector_cache", "bigg_checkpoint",
                   "cache_checksums", "brep_cache", "upstream", "checkpoint", "stats", "text_model"}
-    if a.method == "mmcad_v2" and a.brep_cache:
-        required += ("brep_cache",)
     if any(getattr(a, flag) is not None for flag in path_flags.difference(required)):
         parser.error("only use path flags for the selected method and gallery source")
     a.threads = DEFAULT_THREADS[a.method] if a.threads is None else a.threads
