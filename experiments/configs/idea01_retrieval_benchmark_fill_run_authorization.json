@@ -1,8 +1,8 @@
 {
   "status": "pilot_authorized",
-  "mode": "probe",
+  "mode": "score",
   "run_id": "idea01_retrieval_benchmark_fill_20261120",
-  "output_directory": "probe",
+  "output_directory": "full",
   "approved_sha": "6cd791312eefa5e575b0e56a39553fa9f92fbd3b",
   "conditions": [
     "ct_deepcad",
@@ -10,9 +10,10 @@
   ],
   "freeze_sha256": "bdd3bc14d3b585bb7ccaf06100d2266d46e5ccea71450b87182212e0a24c4785",
   "replay_sha256": "f2c22eb86db0c2774e416bd4e8d5d279ae7a202df71a5dc89fd824f3c28d48f7",
+  "probe_result_sha256": "cfe1cc2c888f018de9298da0ad49cba55cfa4b9ef7a1d24d2c2e015e2efed1b5",
   "field_counts_sha256": "9f6b9cf4251d7e8f14b6dff31b86a2b0a86878981405c70529e0991a8ecd2b4b",
-  "max_pairs": 2560,
-  "max_card_seconds": 2400,
-  "max_devices": 1,
-  "deadline_epoch": 1795177998
+  "max_pairs": 77404384,
+  "max_card_seconds": 224000,
+  "max_devices": 4,
+  "deadline_epoch": 1795282723
 }
