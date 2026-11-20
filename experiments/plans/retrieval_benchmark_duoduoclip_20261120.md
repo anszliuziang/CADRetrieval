@@ -53,55 +53,25 @@ This census used the exact publisher `tokenizer.json` with the installed tokeniz
 | L3 | 7,607 / 7,614 | 7,607 / 7,614 | 1,698 |
 | CT–DeepCAD | 0 / 2,029 | 0 / 7,513 | 20 |
 
-## Running the model smoke
+## Running the model and evaluator
 
-Stage the named files from the exact public revision using the compute environment's Hugging Face downloader. The model repository, revision and filenames are in the config and the demo image keys are relative to the snapshot. The next snippet is the smoke entry to run on a host with Transformers 4.57.6 and the verified checkpoint. It exercises the documented image and text model interfaces and prints measured results for the publisher's example. Keep stdout with the run evidence. Run with `HF_HUB_OFFLINE=1` and `HF_MODULES_CACHE` pointing to an empty private directory outside the checkout.
+Stage the ten model files and three demo images from the pinned public revision. The [encoder](../scripts/encode_retrieval_benchmark_duoduoclip.py) checks the complete snapshot before importing model code, rejects extra files that could override the model, and loads using an empty offline module cache. It runs CPU FP32 with Transformers 4.57.6, `CLIPImageProcessor`, `CLIPTokenizerFast` and eager attention. Select `python` from the isolated model environment, set `benchmark_run` to the current runtime and set `snapshot` to the staged revision directory.
 
-```python
-import hashlib
-import importlib.metadata
-import json
-from pathlib import Path
+```bash
+python -B experiments/scripts/encode_retrieval_benchmark_duoduoclip.py --snapshot "$snapshot" audit
 
-import torch
-import torch.nn.functional as F
-from PIL import Image
-from transformers import AutoModel, AutoProcessor
+python -B experiments/scripts/encode_retrieval_benchmark_duoduoclip.py --snapshot "$snapshot" --threads 4 \
+    demo --output "$benchmark_run/duoduoclip_demo_only.json"
 
-snapshot = Path("<local pinned model snapshot>")
-model_spec = json.loads(Path("experiments/configs/retrieval_benchmark_duoduoclip.json").read_bytes())["model"]
-assert importlib.metadata.version("transformers") == model_spec["transformers"]
-for name, expected in (model_spec["files"] | model_spec["demo_images"]).items():
-    digest = hashlib.sha256()
-    with (snapshot / name).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(4 << 20), b""):
-            digest.update(chunk)
-    assert digest.hexdigest() == expected, name
-model, info = AutoModel.from_pretrained(
-    snapshot, trust_remote_code=True, local_files_only=True, use_safetensors=True,
-    dtype=torch.float32, attn_implementation="eager", output_loading_info=True,
-)
-assert all(not info.get(key) for key in ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs"))
-model.eval()
-processor = AutoProcessor.from_pretrained(snapshot, trust_remote_code=True, local_files_only=True)
-pictures = []
-for name in model_spec["demo_images"]:
-    with Image.open(snapshot / name) as image:
-        pictures.append(image.convert("RGB"))
-with torch.inference_mode():
-    pixels = processor(images=pictures, return_tensors="pt").pixel_values.unsqueeze(0)
-    assert pixels.shape == (1, 3, 3, 224, 224)
-    raw_shapes = model.get_image_features(pixel_values=pixels)
-    raw_text = model.get_text_features(**processor(text=model_spec["demo_texts"], padding=True, return_tensors="pt"))
-    assert raw_shapes.shape == (1, 512) and raw_text.shape == (3, 512)
-    assert torch.isfinite(raw_shapes).all() and torch.isfinite(raw_text).all()
-    assert (raw_shapes.norm(dim=-1) > 0).all() and (raw_text.norm(dim=-1) > 0).all()
-    shapes, texts = F.normalize(raw_shapes, dim=-1), F.normalize(raw_text, dim=-1)
-    reversed_shapes = F.normalize(model.get_image_features(pixel_values=pixels.flip(1)), dim=-1)
-    torch.testing.assert_close(shapes, reversed_shapes, atol=2e-5, rtol=0)
-print(json.dumps({"torch": torch.__version__, "pixel_shape": list(pixels.shape),
-                  "shape_norms": shapes.norm(dim=-1).tolist(), "text_norms": texts.norm(dim=-1).tolist(),
-                  "score_by_demo_text": dict(zip(model_spec["demo_texts"], (shapes @ texts.T)[0].tolist()))}))
+python -B experiments/scripts/encode_retrieval_benchmark_duoduoclip.py --snapshot "$snapshot" --threads 4 \
+    encode --frozen "$benchmark_run/frozen" --renders "$benchmark_run/duoduoclip_render" \
+    --output "$benchmark_run/external/duoduoclip" --image-batch 2 --text-batch 32 \
+    --condition ct_deepcad --condition l2
+
+python -B experiments/scripts/eval_retrieval_benchmark_fill.py --runtime "$benchmark_run" \
+    external --condition ct_deepcad --method duoduoclip --input "$benchmark_run/external/duoduoclip"
 ```
 
-In the gallery pass, validate `render_summary.json` against the full gallery SHA and source manifest SHA, then check `gallery_render_status.jsonl` and per-image digests. Read `00.png` to `07.png` for each valid UID in frozen order. Submit flattened RGB images to the processor and reshape its pixel tensor to `(B,8,3,224,224)` before the joint image call. Compare a two-object batch to separate calls in the smoke test. On the text side, batch exact `text` fields using the processor's tokenizer with `padding=True`, `truncation=True`, `max_length=77` and `return_tensors="pt"`. Count the original token lengths in a separate untruncated call and assert retention of `min(77, original_count)` including special tokens.
+`audit` verifies the local files without importing Torch. `demo` runs the publisher's three images and three texts, records scores and unit norms, and checks invariance to view reversal. `encode` also verifies the full 8,032-row render manifest, checks joint encoding on two real eight-view CADs, and tests individual and reversed-view calls against the joint batch. It reads each valid UID's eight PNGs by checksum and feeds an exact `(B,8,3,224,224)` input. Text encoding verifies the right-truncated prefix and EOS against each untruncated token sequence.
+
+Omit `--condition` to encode all five text axes. Use multiple `--condition` arguments to prioritize a subset, or reuse the directory with the same run settings to add more conditions. Each complete axis is reused after checking provenance, digests and finite unit-or-zero rows. The limits are 1–8 shapes per image batch, 1–128 queries per text batch, and 1–32 CPU threads. The render pilot directory has partial coverage and cannot be used for full encoding. When an encoding stops during publication, the runner rejects an output axis missing its metadata. A fresh encoding directory can rerun that attempt.

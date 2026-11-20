@@ -92,6 +92,16 @@ for arm in {' '.join(arms)}; do
     files+=(full/"$arm"_worker*.json full/"$arm"_exit_*.json full/"$arm"_shard*.launch.json)
     files+=(full/"$arm"_shard*.stdout.log full/"$arm"_shard*.stderr.log)
 done
+"""
+        if "l2" in arms:
+            body += """
+until [[ -s control/score/controller.actual_exit ]]; do
+    if (( $(date +%s) >= deadline )); then printf 'Waiting for final scorer exit\n' >&2; exit 4; fi
+    sleep 5
+done
+[[ "$(cat control/score/controller.actual_exit)" == 0 ]]
+"""
+        body += """
 if [[ -s control/score/controller.actual_exit ]]; then
     files+=(control/score/controller.actual_exit full/ledger.json control/score/launch_command.txt)
     if [[ -f full/controller_exit.json ]]; then files+=(full/controller_exit.json); fi
@@ -126,7 +136,10 @@ def collect(args) -> int:
         with tarfile.open(archive, "r:") as stream:
             stream.extractall(received, filter="data")
         record.update(verify_received(received))
-    (args.output / "pull_receipt.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    receipt = args.output / "pull_receipt.json"
+    staged = receipt.with_suffix(".tmp")
+    staged.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    staged.replace(receipt)
     print(json.dumps(record), flush=True)
     return result.returncode
 
