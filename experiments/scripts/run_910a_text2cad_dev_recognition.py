@@ -351,6 +351,7 @@ def recognise(model, device, reference, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--assets", type=Path, required=True)
+    parser.add_argument("--reference", type=Path, help="prior evidence directory, defaults to assets/reference")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--device", choices=("npu:0", "cpu"), required=True)
     parser.add_argument("--precision", choices=("default", "preserve"), default="default")
@@ -374,7 +375,7 @@ def main():
     pins = json.loads(PINS.read_bytes())
     data_revision = pins["dataset_revision"]
     asset_root = args.assets
-    reference = asset_root / "reference"
+    reference = args.reference if args.reference is not None else asset_root / "reference"
     archive = asset_root / f"datasets/Text2CAD-v1.0/{data_revision}/cad_seq.zip"
     checkpoint = asset_root / f"models/Text2CAD-v1.0/{data_revision}/Text2CAD_1.0.pth"
     bert = asset_root / "models/bert-large-uncased" / pins["bert_revision"]
@@ -386,7 +387,10 @@ def main():
         metadata.update(torch_npu=version("torch-npu"), hardware=torch.npu.get_device_name(device))
     write_json(args.out / "runtime.json", metadata)
     start = time.perf_counter()
-    model, info = load_frozen_text2cad(checkpoint, bert, device)
+    model, info = load_frozen_text2cad(
+        checkpoint, bert, device,
+        expected_keys_manifest=Path("experiments/configs/text2cad_checkpoint_expected_keys_20260930.json"),
+    )
     write_json(args.out / "load.json", info)
     replay = replay_reference(model, device, archive, reference)
     write_json(args.out / "replay.json", replay)
