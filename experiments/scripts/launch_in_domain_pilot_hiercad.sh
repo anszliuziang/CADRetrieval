@@ -11,7 +11,7 @@ if [[ -n "$(GIT_OPTIONAL_LOCKS=0 git -C "$repo" status --porcelain)" ]] || git -
     printf 'A clean detached deployment is required\n' >&2
     exit 2
 fi
-stage="$run/hiercad"
+stage="$run/hiercad_with_occ"
 mkdir "$stage"
 finish() {
     rc=$?
@@ -45,12 +45,8 @@ py=/home/ma-user/anaconda3/envs/cadretrieval-glm-torch271/bin/python
 set +u
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 set -u
-export LD_LIBRARY_PATH="$asset/geometry_extracted_v2/lib:$asset/geometry_freeimage/lib:$asset/geometry_cpp_runtime_v3/lib:${LD_LIBRARY_PATH:-}"
-if [[ -e "$asset/geometry_freeimage/lib/libstdc++.so.6" ]]; then
-    export LD_PRELOAD="$asset/geometry_freeimage/lib/libstdc++.so.6"
-elif [[ -e "$asset/geometry_cpp_runtime_v3/lib/libstdc++.so.6" ]]; then
-    export LD_PRELOAD="$asset/geometry_cpp_runtime_v3/lib/libstdc++.so.6"
-fi
+export LD_LIBRARY_PATH="$asset/geometry_cpp_runtime_v3/lib:$asset/geometry_extracted_v2/lib:$asset/geometry_freeimage/lib:${LD_LIBRARY_PATH:-}"
+export LD_PRELOAD="$asset/geometry_cpp_runtime_v3/lib/libgcc_s.so.1 $asset/geometry_cpp_runtime_v3/lib/libstdc++.so.6"
 cd -- "$repo"
 common=(
     "$py" -B -u experiments/scripts/run_in_domain_pilot_native.py hiercad
