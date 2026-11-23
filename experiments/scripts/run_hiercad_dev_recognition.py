@@ -14,6 +14,8 @@ import time
 import torch
 
 from experiments.scripts.run_910a_text2cad_dev_recognition import (
+    ATTRIBUTES,
+    FAMILIES,
     HISTORIES,
     VARIANTS,
     fixture_design_key,
@@ -185,10 +187,33 @@ def run_paired(backend, pairs, indexed, output):
     return [{"family": f, "attribute": a, **counts} for (f, a), counts in aggregates.items()]
 
 
+def run_coarse_controls(backend, pairs, indexed, output):
+    by_design = {fixture_design_key(pair): pair["pair_id"] for pair in pairs}
+    controls = []
+    for family, index in product(FAMILIES, range(2)):
+        pair_ids = [by_design[(family, attribute, index)] for attribute in ATTRIBUTES]
+        for pair_id, kind in zip(pair_ids, (["round", "round"], ["oblong", "round"]), strict=True):
+            geometry = indexed[pair_id, "A0"]["geometry"]["hiercad"]
+            if geometry["status"] != "ok" or sorted(geometry[loc]["kind"] for loc in ("near", "far")) != kind:
+                raise ValueError("HierCAD coarse-control geometry does not match the literal caption")
+        part = FAMILIES[family][0]
+        texts = [f"A {part} has two round through holes.",
+                 f"A {part} has one round through hole and one oblong through hole."]
+        raw = []
+        for text, pair_id in product(texts, pair_ids):
+            prepared = backend.prepare({"minimal_member": member_name(pair_id, "A0")}, text)
+            raw.append(backend.score([prepared])[0][0])
+        controls.append({"family": family, "index": index, "texts": texts, "pair_ids": pair_ids,
+                         "scores": raw, "metrics": metrics(check_scores(raw))})
+    write_json(output / "coarse_shape_controls.json", controls)
+    return len(controls)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("base", "adapter", "minimal-zip", "hiercad-repo", "reference", "out"):
         parser.add_argument(f"--{name}", type=Path, required=True)
+    parser.add_argument("--coarse-only", action="store_true")
     args = parser.parse_args()
     if subprocess.check_output(["git", "status", "--porcelain"], text=True):
         raise ValueError("Use the clean deployed implementation")
@@ -215,6 +240,11 @@ def main():
     if not reference["passed"]:
         return 3
     score_start = time.perf_counter()
+    if args.coarse_only:
+        count = run_coarse_controls(backend, pairs, indexed, args.out)
+        write_json(args.out / "summary.json", {"coarse_shape_views": count, "coarse_scores": 4 * count,
+                   "wall_seconds": time.perf_counter() - score_start, "missing_scores": 0})
+        return 0
     aggregates = run_paired(backend, pairs, indexed, args.out)
     torch.npu.synchronize()
     write_json(args.out / "summary.json", {"groups": aggregates, "missing_scores": 0,
