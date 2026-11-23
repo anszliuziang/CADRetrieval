@@ -263,7 +263,8 @@ def primitive_counts(x):
 
 
 
-def _features_for_uid(uid):
+def _features_for_uid(entry):
+    uid, compute_features = entry
     import torch
 
     raw = _VECTOR_ARCHIVE.read(cad_member(uid))
@@ -276,18 +277,23 @@ def _features_for_uid(uid):
     n_fields = int(np.count_nonzero(data[1:]))
     if not n_fields:
         raise ValueError(f"{uid}: no effective output fields")
+    fingerprints = {"member_sha256": sha256_bytes(raw),
+                    "quantized_sha256": sha256_bytes(data.astype("<i4", copy=False).tobytes()),
+                    "n_fields": n_fields}
+    if not compute_features:
+        return uid, fingerprints, None
     labels = data[1:].ravel()
     structural = np.bincount(data[1:, 0], minlength=267)[2:11]
     numeric = labels[labels >= 11].astype(np.int16)
     bins = np.bincount((numeric - 11) // 16, minlength=16)
-    return uid, {"member_sha256": sha256_bytes(raw),
-                 "quantized_sha256": sha256_bytes(data.astype("<i4", copy=False).tobytes()),
-                 "n_fields": n_fields}, np.concatenate((structural, primitive_counts(data[:, 0]), bins)).astype(np.int16)
+    return uid, fingerprints, np.concatenate((structural, primitive_counts(data[:, 0]), bins)).astype(np.int16)
 
 
-def scan_official_programs(archive, uids, workers):
+def scan_official_programs(archive, uids, feature_uids, workers):
     ordered = sorted(uids)
-    features = np.empty((len(ordered), len(FEATURE_NAMES)), dtype=np.int16)
+    feature_axis = sorted(feature_uids)
+    positions = {uid: index for index, uid in enumerate(feature_axis)}
+    features = np.empty((len(feature_axis), len(FEATURE_NAMES)), dtype=np.int16)
     fingerprints = {}
     # fork shares the already imported CPU Torch runtime. Workers each reopen the
     # archive to avoid sharing a ZIP seek pointer.
@@ -296,11 +302,12 @@ def scan_official_programs(archive, uids, workers):
     torch.set_num_threads(1)
     with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("fork"),
                              initializer=_worker_setup, initargs=(archive,)) as pool:
-        for position, (uid, record, feature) in enumerate(
-                pool.map(_features_for_uid, ordered, chunksize=64)):
+        requested = ((uid, uid in feature_uids) for uid in ordered)
+        for uid, record, feature in pool.map(_features_for_uid, requested, chunksize=64):
             fingerprints[uid] = record
-            features[position] = feature
-    return ordered, fingerprints, features
+            if feature is not None:
+                features[positions[uid]] = feature
+    return feature_axis, fingerprints, features
 
 
 def cohort_summary(by_split, fingerprints, panel_queries, levels):
@@ -346,9 +353,9 @@ def build_manifests(assets, output, workers):
     available = {"t2cad-v1.0": native, "ct-deepcad": ct}
     absent_minimal = {uid for uid in uids if minimal_members[minimal_member(uid)] != 1}
     print("Source inventories aligned; computing program fingerprints and count features", flush=True)
-    uid_order, fingerprints, features = scan_official_programs(assets.official_zip, uids, workers)
+    uid_order, fingerprints, features = scan_official_programs(assets.official_zip, uids, uids - splits["test"], workers)
     result = {"assets": pinned_assets, "official_split_counts": SPLIT_COUNTS,
-              "official_catalog_size": len(uid_order), "missing_minimal_json": sorted(absent_minimal),
+              "official_catalog_size": len(fingerprints), "missing_minimal_json": sorted(absent_minimal),
               "test_cad_axis_sha256": sha256_lines(test_axis),
               "test_evaluation": "inventory and program fingerprints only", "sources": {}}
 
