@@ -1,0 +1,26 @@
+{
+  "host": "yunnao-910a",
+  "architecture": "aarch64",
+  "driver": "24.1.0",
+  "cann": "8.0.0",
+  "cann_set_env": "/usr/local/Ascend/ascend-toolkit/set_env.sh",
+  "conda": {
+    "channel": "https://conda.anaconda.org/conda-forge",
+    "python": "3.11.10",
+    "prefix": "/home/ma-user/work/CADRetrieval_runtime/envs/cadretrieval-910a-cann80-torch240"
+  },
+  "pip_phases": [
+    ["torch==2.4.0", "torch-npu==2.4.0.post2", "numpy==1.26.4"],
+    ["transformers==4.53.1", "tokenizers==0.21.4", "safetensors==0.4.5", "peft==0.14.0", "accelerate==1.0.1"],
+    ["scipy==1.12.0", "scikit-learn==1.7.1", "pandas==2.0.3", "h5py==3.10.0", "pytest==8.3.5", "loguru==0.7.3", "PyYAML==6.0.2"]
+  ],
+  "asset_root": "/home/ma-user/work/CADRetrieval_runtime",
+  "qualification": {
+    "seed": 17,
+    "device_cases": ["fp32_attention_and_label_loss", "fp16_forward_backward_and_update", "bf16_capability", "hccl_two_rank"],
+    "project_cases": ["frozen_text2cad_reference_replay", "paired_geometry_recognition"],
+    "text2cad_score_atol": 0.001,
+    "text2cad_score_rtol": 0.000001
+  },
+  "compatibility_reference": "https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md"
+}
