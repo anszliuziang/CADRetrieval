@@ -32,6 +32,7 @@ def outcomes(values):
         "D": math.fsum((aa, bb, -ab, -ba)),
         "ties": sum(delta == 0 for delta in (*direct, *reverse)),
         "direct_margins": direct,
+        "reverse_margins": reverse,
     }
 
 
@@ -76,6 +77,50 @@ def group_key(row):
     return row["family"], row["attribute"], row.get("method", "")
 
 
+def view_key(row):
+    return row["pair_id"], row["order"], row["variant"]
+
+
+def margin_decisions(values):
+    return tuple(int(value > 0) - int(value < 0) for value in values)
+
+
+def audit_layouts(raw, layouts, design_by_id):
+    base = {view_key(row): row for row in raw if design_by_id[row["pair_id"]]["index"] == 0
+            and row["order"] == 0 and row["variant"] in ("near_first", "far_first_rephrased")}
+    if len(layouts) != 8 or len(base) != 8 or {view_key(row) for row in layouts} != set(base):
+        raise ValueError("Missing or unexpected HierCAD layout diagnostics")
+    result = Counter()
+    deltas = []
+    for row in layouts:
+        single = base[view_key(row)]["scores"]
+        batch = row["batched_scores"]
+        for left, right in zip(single, batch, strict=True):
+            fields = ("input_sha256", "target_sha256", "target_token_sha256", "effective_units", "query_tokens",
+                      "segment_counts", "total_input_tokens", "logit_dtype")
+            if any(left[key] != right[key] for key in fields):
+                raise ValueError("Batch-layout comparison changed the effective pair")
+        diffs = [abs(left["s0"] - right["s0"]) / left["effective_units"]
+                 for left, right in zip(single, batch, strict=True)]
+        if diffs != row["abs_mean_deltas"]:
+            raise ValueError("Stored layout score deltas disagree with the singleton and batch scores")
+        single_metrics = outcomes([cell["s0"] for cell in single])
+        batch_metrics = outcomes([cell["s0"] for cell in batch])
+        verify_persisted(batch_metrics, row["batched_metrics"])
+        fixed_cad = single_metrics["both_cads"] != batch_metrics["both_cads"]
+        fixed_caption = single_metrics["both_captions"] != batch_metrics["both_captions"]
+        if fixed_cad != row["both_cads_changed"] or fixed_caption != row["both_captions_changed"]:
+            raise ValueError("Layout combined decision change flag disagrees with the four scores")
+        result.update(fixed_cad=fixed_cad, fixed_caption=fixed_caption)
+        for direction in ("direct", "reverse"):
+            key = direction + "_margins"
+            old = margin_decisions(single_metrics[key])
+            new = margin_decisions(batch_metrics[key])
+            result[direction + "_individual_flips"] += sum(a != b for a, b in zip(old, new, strict=True))
+        deltas.extend(diffs)
+    return {**result, "views": len(layouts), "compared_cells": len(deltas), "max_abs_mean_delta": max(deltas)}
+
+
 def audit(source, mode, reference):
     path = source / ("paired_views.jsonl" if mode == "native" else "views.jsonl")
     raw = read_rows(path)
@@ -87,7 +132,7 @@ def audit(source, mode, reference):
     direct_margins = defaultdict(list)
     collisions = Counter()
     for row in raw:
-        key = row["pair_id"], row["order"], row["variant"]
+        key = view_key(row)
         if key in seen or key[0] not in design_by_id or key[1] not in (0, 1) or key[2] not in VARIANTS:
             raise ValueError(f"Duplicate or unexpected view: {key}")
         seen.add(key)
@@ -140,13 +185,7 @@ def audit(source, mode, reference):
         compare_groups(groups, [{**group, "method": groups[0]["method"]} for group in saved["groups"]])
     if mode == "hiercad":
         layouts = json.loads((source / "layouts.json").read_bytes())
-        if len(layouts) != 8:
-            raise ValueError("Missing HierCAD layout diagnostics")
-        result["layout_decision_flips"] = {
-            "fixed_cad": sum(row["both_cads_changed"] for row in layouts),
-            "fixed_caption": sum(row["both_captions_changed"] for row in layouts),
-            "max_abs_mean_delta": max(max(row["abs_mean_deltas"]) for row in layouts),
-        }
+        result["layout_decision_flips"] = audit_layouts(raw, layouts, design_by_id)
     return result
 
 
