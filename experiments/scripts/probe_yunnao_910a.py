@@ -17,8 +17,8 @@ def report(**values):
     print(json.dumps(values, allow_nan=False, sort_keys=True), flush=True)
 
 
-def seeded(shape):
-    return torch.randn(shape, generator=torch.Generator().manual_seed(17))
+def seeded(shape, seed=17):
+    return torch.randn(shape, generator=torch.Generator().manual_seed(seed))
 
 
 def check_tensor(name, value, reference, tolerance):
@@ -53,7 +53,9 @@ def fp32_witness(device):
 
 def fp16_witness(device):
     x = seeded((16, 32)).half()
-    weights = seeded((20, 32)).half()
+    # An independent, scaled draw keeps the classification loss away from
+    # saturation, so the expected step survives FP16 rounding.
+    weights = (seeded((20, 32), seed=19) * 0.125).half()
     model = torch.nn.Linear(32, 20, bias=False, device=device, dtype=torch.float16)
     with torch.no_grad():
         model.weight.copy_(weights.to(device))
