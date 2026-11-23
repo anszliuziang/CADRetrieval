@@ -59,7 +59,7 @@ def snapshot_facts(path: Path) -> dict:
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", choices=("text2cad", "hiercad"))
-    parser.add_argument("--stage", choices=("all", "prepare", "readout", "timing", "training"), default="all")
+    parser.add_argument("--stage", choices=("all", "prepare", "smoke", "readout", "timing", "training"), default="all")
     parser.add_argument("--source", choices=tuple(native.CONDITIONS))
     parser.add_argument("--manifests", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
@@ -87,14 +87,14 @@ def parse_args():
     if args.timing_warmups < 0:
         parser.error("timing warmup count must be nonnegative")
     if args.model == "text2cad":
-        if args.stage in ("training", "timing"):
+        if args.stage in ("training", "timing", "smoke"):
             parser.error("the Text2CAD pilot implements its development readout only")
         if args.stage != "prepare" and (args.checkpoint is None or args.bert_dir is None):
             parser.error("Text2CAD readout requires --checkpoint and --bert-dir")
     else:
         if any(getattr(args, name) is None for name in ("hiercad_repo", "hiercad_base", "minimal_zip")):
             parser.error("HierCAD requires --hiercad-repo, --hiercad-base and --minimal-zip")
-        if args.stage in ("all", "readout", "timing") and args.hiercad_adapter is None:
+        if args.stage in ("all", "readout", "timing", "smoke") and args.hiercad_adapter is None:
             parser.error("HierCAD scoring requires --hiercad-adapter")
     return args
 
@@ -241,6 +241,54 @@ def validate_readout(source: str, axes: dict, rows: list[dict], args, backend) -
     return summaries
 
 
+def smoke_long_contexts(source: str, rows: list[dict], out: Path, backend) -> dict:
+    eligible = []
+    unsupported = []
+    for query in rows:
+        for level in native.CONDITIONS[source]:
+            for row in rows:
+                identity = {"query_uid": query["uid"], "candidate_uid": row["uid"], "level": level}
+                try:
+                    prepared = backend.prepare(row, query["texts"][level])
+                except Exception as exc:
+                    unsupported.append({**identity, **native.error_record(exc)})
+                    continue
+                eligible.append((len(prepared["encoded"].input_ids), identity, prepared))
+    eligible.sort(key=lambda entry: entry[0], reverse=True)
+    if len(eligible) < 2:
+        native.write_json(out / "long_context_smoke.json", {"passed": False, "unsupported": unsupported})
+        raise ValueError(f"{source}: fewer than two eligible contexts on the frozen panel")
+    chosen = eligible[:2]
+    native.reset_memory(backend.device)
+    native.synchronize(backend.device)
+    started = time.perf_counter()
+    singles = [backend.score([example], audit=True) for _, _, example in chosen]
+    batched, native_batch = backend.score([example for _, _, example in chosen], audit=True)
+    native.synchronize(backend.device)
+    results = []
+    for (width, identity, _), ([single], native_single), pair_batch in zip(chosen, singles, batched, strict=True):
+        label_fields = ("input_sha256", "target_token_sha256", "label_sha256", "effective_units")
+        score_delta = abs(single["s0"] - pair_batch["s0"]) / single["effective_units"]
+        native_delta = native_single["native_batch_ce_abs_delta"]
+        passed = (
+            score_delta <= native.H_SCORE_MEAN_ATOL
+            and all(single[key] == pair_batch[key] for key in label_fields)
+            and single["nll_abs_delta"] <= single["nll_atol"]
+            and pair_batch["nll_abs_delta"] <= pair_batch["nll_atol"]
+            and native_delta is not None and native_delta <= native_single["native_batch_ce_atol"]
+        )
+        results.append({**identity, "total_input_tokens": width, "single": single, "batch": pair_batch,
+                        "native_single": native_single, "score_delta_per_unit": score_delta, "passed": passed})
+    batch_delta = native_batch["native_batch_ce_abs_delta"]
+    passed = (all(item["passed"] for item in results) and batch_delta is not None
+              and batch_delta <= native_batch["native_batch_ce_atol"])
+    result = {"passed": passed, "eligible_contexts": len(eligible), "unsupported": unsupported,
+              "pairs": results, "native_batch": native_batch,
+              "wall_seconds": time.perf_counter() - started, **native.memory_peaks(backend.device)}
+    native.write_json(out / "long_context_smoke.json", result)
+    return result
+
+
 def timing_conditions(source: str, axes: dict, query_limit: int) -> dict:
     result = {}
     for level in native.CONDITIONS[source]:
@@ -354,15 +402,17 @@ def scientific_status(result: dict, args) -> None:
 def run(args) -> int:
     sources = (args.source,) if args.source else tuple(native.CONDITIONS)
     readout = args.stage in ("all", "readout")
+    smoke = args.stage == "smoke"
     timing = args.model == "hiercad" and args.stage in ("all", "timing")
     training = args.model == "hiercad" and args.stage in ("all", "training")
     preparing = args.stage in ("all", "prepare", "readout")
-    device, device_name = setup_device(args.device, readout or timing or training)
+    forwarding = readout or smoke or timing or training
+    device, device_name = setup_device(args.device, forwarding)
     axes, manifest_hashes = load_manifests(args, sources)
     for source in sources:
         (args.out / source).mkdir()
     runtime = {
-        "device": str(device), "physical_type": device_name, "devices": int(readout or timing or training),
+        "device": str(device), "physical_type": device_name, "devices": int(forwarding),
         "sharding": None, "python": platform.python_version(), "torch": torch.__version__,
         "package_versions": package_versions(("torch-npu", "transformers", "peft", "datasets", "accelerate")),
         "execution_sha": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
@@ -374,7 +424,7 @@ def run(args) -> int:
     selection = {}
     store = None
     member_index = {}
-    if preparing:
+    if preparing or smoke:
         members = list(dict.fromkeys(row["cad_member"] for src in axes.values() for row in src["targets"]))
         store = native.ZipCandidateStore(args.cad_zip, members)
         member_index = {name: i for i, name in enumerate(members)}
@@ -416,7 +466,7 @@ def run(args) -> int:
                 row["uid"] for selected in selection.values() for row in selected["rows"]
             })
         dtype = getattr(torch, args.hiercad_dtype)
-        if readout or timing:
+        if readout or timing or smoke:
             model = native.hiercad_scoring_model(args.hiercad_base, args.hiercad_adapter, device, dtype)
         elif training:
             base_model = native.hiercad_base_model(args.hiercad_base, device, torch.bfloat16)
@@ -455,6 +505,10 @@ def run(args) -> int:
             if readout:
                 summary["readout"] = validate_readout(source, axes[source], selection[source]["rows"], args, backend)
                 checks["native_readout"] = all(row["passed"] for row in summary["readout"].values())
+            if smoke:
+                tested = smoke_long_contexts(source, selection[source]["rows"], args.out / source, backend)
+                checks["long_context_native_ce"] = tested["passed"]
+                event(args.out, "long_context_smoke_finished", source=source, passed=tested["passed"])
             if timing:
                 stats = measure_timing(source, axes[source], args, backend)
                 summary["timing_cells"] = len(stats["cells"])
@@ -490,7 +544,7 @@ def run(args) -> int:
         if archive:
             archive.close()
         native.write_json(args.out / "summary.json", result)
-    return 0
+    return int(smoke and result["status"] != "complete_evidence")
 
 
 def main() -> int:
