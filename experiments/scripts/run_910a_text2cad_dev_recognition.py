@@ -265,7 +265,45 @@ def rule_scores(texts, drawings, attribute, variant):
     return {"first_cut_slot": compare(slot), "local_sketch_distance": compare(local)}
 
 
-def recognise(model, device, reference, output):
+def read_reusable_views(partial, metadata):
+    prior = json.loads((partial / "runtime.json").read_bytes())
+    fields = ("host", "device", "precision", "torch", "torch_npu", "hardware", "transformers",
+              "asset_pins", "evidence_sha256", "rows", "batch_size")
+    if any(prior.get(field) != metadata.get(field) for field in fields):
+        raise ValueError("Timed-out job used a different runtime or inputs")
+    replay = json.loads((partial / "replay.json").read_bytes())
+    if not replay["passed"] or replay["unique_pairs"] != 16:
+        raise ValueError("Timed-out job lacks a successful historical replay")
+    raw = (partial / "paired_views.jsonl").read_bytes()
+    complete, _, tail = raw.rpartition(b"\n")
+    reusable = {}
+    for line in complete.splitlines():
+        row = json.loads(line)
+        key = row["pair_id"], row["order"], row["variant"]
+        if key in reusable:
+            raise ValueError(f"Duplicate view from the timed-out run: {key}")
+        reusable[key] = row["cells"]
+    return reusable, {"source_git_sha": prior["git_sha"], "views_sha256": sha256(raw).hexdigest(),
+                      "reused_views": len(reusable), "incomplete_tail_bytes": len(tail)}
+
+
+def admit_saved_cells(cells, backend, texts, members):
+    if len(cells) != 4:
+        raise ValueError("Resumed view does not contain four complete scores")
+    for (q, cad), cell in zip(product(range(2), repeat=2), cells, strict=True):
+        text, member = texts[q], members[cad]
+        expected = backend.prepare({"cad_member": member}, text)
+        units = int((~backend.store.get(expected["index"])["key_padding_mask"][1:]).sum())
+        if (cell["query"] != ENTITIES[q] or cell["cad"] != ENTITIES[cad] or cell["member"] != member
+                or cell["text_sha256"] != sha256(text.encode()).hexdigest()
+                or cell["logit_dtype"] != "torch.float32" or not math.isfinite(cell["s0"])
+                or cell["s0"] != cell["score_total"] or cell["effective_units"] != units
+                or any(cell[key] != expected[key] for key in ("input_sha256", "target_sha256", "query_tokens"))):
+            raise ValueError("Prior partial score identity or values disagree with the frozen view")
+    return cells
+
+
+def recognise(model, device, reference, output, reusable):
     pairs, all_histories, indexed = load_fixtures(reference)
     store = FixtureStore(all_histories)
     backend = Text2CadReadout(model, store, store.by_member, device)
@@ -287,10 +325,15 @@ def recognise(model, device, reference, output):
                 if any(sha256(text.encode()).hexdigest() != pair["caption_sha256"][entity][variant]
                        for entity, text in zip(ENTITIES, texts, strict=True)):
                     raise ValueError("Caption text hash differs")
-                cells = native_cells(
-                    backend, texts, [member_name(pair_id, item) for item in ids],
-                    [pair["text2cad_caption_inputs"][entity][variant] for entity in ENTITIES],
-                )
+                members = [member_name(pair_id, item) for item in ids]
+                old = reusable.pop((pair_id, order, variant), None)
+                if old is None:
+                    cells = native_cells(
+                        backend, texts, members,
+                        [pair["text2cad_caption_inputs"][entity][variant] for entity in ENTITIES],
+                    )
+                else:
+                    cells = admit_saved_cells(old, backend, texts, members)
                 rules = rule_scores(texts, [drawings[item] for item in ids], attribute, variant)
                 methods = {"Text2CAD_S0": metrics([cell["s0"] for cell in cells]),
                            **{name: metrics(values) for name, values in rules.items()}}
@@ -308,7 +351,7 @@ def recognise(model, device, reference, output):
                                   "bow_identical_caption_input": bow_collision,
                                   "spectra_identical_cad_input": spectral_collision})
                 all_group.update(views=1, scores=len(cells), bow_collisions=bow_collision,
-                                 spectra_collisions=spectral_collision)
+                                 spectra_collisions=spectral_collision, reused_scores=len(cells) if old else 0)
             summary = {}
             for name, results in per_method.items():
                 win = all(result["both_cads"] for result in results)
@@ -341,7 +384,7 @@ def recognise(model, device, reference, output):
         controls.append({"family": family, "index": index, "texts": texts, "cells": cells,
                          "metrics": metrics([cell["s0"] for cell in cells])})
     write_json(output / "coarse_shape_controls.json", controls)
-    if all_group["views"] != 320 or all_group["scores"] != 1280:
+    if all_group["views"] != 320 or all_group["scores"] != 1280 or reusable:
         raise ValueError("Development matrix was incomplete")
     return {"global": dict(all_group), "coarse_shape_views": len(controls), "missing_scores": 0,
             "groups": [{"family": family, "attribute": attr, "method": name, **counts}
@@ -356,9 +399,12 @@ def main():
     parser.add_argument("--device", choices=("npu:0", "cpu"), required=True)
     parser.add_argument("--precision", choices=("default", "preserve"), default="default")
     parser.add_argument("--replay-only", action="store_true")
+    parser.add_argument("--resume-from", type=Path)
     args = parser.parse_args()
     if args.device == "cpu" and args.precision != "default":
         parser.error("preserve applies only to NPU")
+    if args.resume_from is not None and (args.device != "npu:0" or args.replay_only):
+        parser.error("resume requires the native NPU recognition path")
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     if subprocess.check_output(["git", "status", "--porcelain"], text=True):
         raise ValueError("Use the clean deployed revision")
@@ -398,7 +444,11 @@ def main():
     if not replay["passed"]:
         return 3
     if not args.replay_only:
-        result = recognise(model, device, reference, args.out)
+        reusable = {}
+        if args.resume_from is not None:
+            reusable, evidence = read_reusable_views(args.resume_from, metadata)
+            write_json(args.out / "resume_evidence.json", evidence)
+        result = recognise(model, device, reference, args.out, reusable)
         elapsed = time.perf_counter() - start
         write_json(args.out / "summary.json", {**result, "wall_seconds": elapsed})
         print(f"Completed full development recognition after {elapsed:.2f} seconds", flush=True)
