@@ -1,3 +1,13 @@
+# 当前任务：两来源同域检索与几何读出先导（2026-11-23）
+
+- `state`：验证先导执行中。八个检索矩阵、四个训练曝光账本及 Text2CAD 原生分已复核。
+- `plan`：[先导交接单](plans/IDEA01_IN_DOMAIN_PILOT_HANDOFF_2026-11-23.md)与 Astra 所列的三类输入碰撞、完整前缀分布、直接文字–UID 正例检查。
+- `run_root`：`yunnao-share4:/home/ma-user/work/CADRetrieval_runtime/runs/idea01_in_domain_pilot_20261123`。本地进行编辑和 Git 管理，SSH 相邻启动至少间隔 60 秒。
+- `scope`：两来源分别使用 4,096 训练 UID、512 验证查询和 2,048 验证候选。全训练集无序命令计数岭回归单列。测试侧仅封存清单和重合统计。四套正式权重训练、测试排名、正式几何题与自由生成另议。
+- `report`：[同源先导结果](submissions/idea01_in_domain_pilot_20261123/PILOT_RESULTS.md)。HierCAD-14B 候选重放、轨迹核对已通过。完整权重 SHA 对齐后，在两张空闲卡分别做长输入准入，再执行读出、成本测量和训练步探针。本轮最晚窗口为北京时间 2026-11-24 04:24:46。
+
+## 既往任务记录
+
 # 当前任务：G5 同协议对照——三外部方法全量评测完成，MM-CAD v2 复审通过（2026-11-18 收官，待终审）
 
 - `state`: `results_submitted`（用户批准序列 CLIP → MM-CAD → OpenShape 全部完成；**MM-CAD v2 复审通过**（`g5_mmcad_v2_codex_review_20261118`：独立复算逐查询名次/R@K/MedR/5,000 次配对抽样全部一致；**修复增益配对 R@20 +0.619pp CI [+0.237, +1.013]，命中 69 → 118**）。公共子库 8,032 件 / 7,920 保留查询，配对 bootstrap seed 20261112 ×5,000。**四方法最终对照（R@20 / MedR）**：SUM 2.6136% / 3405.5；**OpenShape（本轮适配版）2.4369% / 1374.0**（R@20 未观测到明确差异，MedR 全场最优）；CLIP 1.2374% / 2057.5（显著更差）；**MM-CAD v2 1.4899% / 1735.0**（显著更差；旧 0.8712% 为混合实现**历史诊断作废**——`auto_model`/`model` 键失配 + 邻接静默失败，两修复合计配对增益 +0.619pp [+0.237, +1.013]，命中 69→118）。**分层（正例命令长度四分位 Top-20 命中）**：最短组 SUM 144 / OpenShape 51 / CLIP 37 / MM-CAD v2 33；最长组 SUM 6 / OpenShape 63 / CLIP 29 / MM-CAD v2 27——**SUM 头部命中优势集中于短命令组，三种外部配置在最长组都超过 SUM**。归因限制：四配置同时改变表示/模型/训练，排序不做归因。报告 `experiments/submissions/idea01_g5_external_baselines_20261115/`（CLIP/MMCAD/OPENSHAPE 三份 G5_RESULTS + 总表在 OPENSHAPE_G5_RESULTS §2-3 + ASSET_PRECHECK + READINESS）；本地镜像 `experiments/runs/idea01_{clip_g5_20261115, mmcad_g5_v2_20261118, openshape_g5_20261116}/`。执行 2026-11-16~18 全程 CPU（零 NPU），连接遵守 yunnao 安全策略。**遗留订正已完成**：计时口径（v2 编码 8,724.4s / 旧版 8,410.2s 分列）、MM-CAD v2 行标注（公开联合检查点严格加载 + G5 重建 STEP + 适配邻接提取，"恢复有效邻接，保留格式上限"）、ACTIVE_TASK 旧成绩同步。待 Codex 终审 → 收官；§4 分层归因分析需新授权）
