@@ -336,6 +336,10 @@ def release_assets(paths, receipt):
 
 
 def activate_deepcad(root):
+    from unittest.mock import patch
+
+    import matplotlib
+
     root = root.resolve()
     git = ["git", "-C", str(root)]
     remote = subprocess.check_output([*git, "remote", "get-url", "origin"], text=True).strip()
@@ -348,11 +352,19 @@ def activate_deepcad(root):
     files = {path.relative_to(root).as_posix(): sha256_file(path)
              for path in sorted((root / "cadlib").glob("*.py"))}
     sys.path.insert(0, str(root))
-    from cadlib import visualize
+    # The release selects TkAgg at import even when only its solid converter is used.
+    set_backend = matplotlib.use
+
+    def headless_backend(name, **kwargs):
+        return set_backend("Agg" if name.casefold() == "tkagg" else name, **kwargs)
+
+    with patch.object(matplotlib, "use", headless_backend):
+        from cadlib import visualize
 
     if Path(visualize.__file__).resolve().parent != root / "cadlib":
         raise ValueError("the imported DeepCAD converter came from another checkout")
-    return visualize.vec2CADsolid, {"revision": revision, "origin": remote, "files_sha256": files}
+    return visualize.vec2CADsolid, {"revision": revision, "origin": remote, "files_sha256": files,
+                                   "plotting_backend": "Agg for the release's TkAgg import"}
 
 
 def load_converter(root, activate):
