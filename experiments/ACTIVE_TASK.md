@@ -1,10 +1,10 @@
 # 当前任务：两来源同域检索与几何读出先导（2026-11-23）
 
-- `state`：验证先导执行中。八个检索矩阵、四个训练曝光账本及 Text2CAD 原生分已复核。
+- `state`：验证先导已执行并复核。八个检索矩阵、四个训练曝光账本、40 对几何题和两种生成器的已登记读出均有实际证据。Text2CAD L3 的 8 个配对超长。HierCAD 首轮跨批行分布超出容差，补做固定批行与掩码的真实后缀对照 10/10 全词表一致。
 - `plan`：[先导交接单](plans/IDEA01_IN_DOMAIN_PILOT_HANDOFF_2026-11-23.md)与 Astra 所列的三类输入碰撞、完整前缀分布、直接文字–UID 正例检查。
 - `run_root`：`yunnao-share4:/home/ma-user/work/CADRetrieval_runtime/runs/idea01_in_domain_pilot_20261123`。本地进行编辑和 Git 管理，SSH 相邻启动至少间隔 60 秒。
 - `scope`：两来源分别使用 4,096 训练 UID、512 验证查询和 2,048 验证候选。全训练集无序命令计数岭回归单列。测试侧仅封存清单和重合统计。四套正式权重训练、测试排名、正式几何题与自由生成另议。
-- `report`：[同源先导结果](submissions/idea01_in_domain_pilot_20261123/PILOT_RESULTS.md)。HierCAD-14B 候选重放、轨迹核对已通过。完整权重 SHA 对齐后，在两张空闲卡分别做长输入准入，再执行读出、成本测量和训练步探针。本轮最晚窗口为北京时间 2026-11-24 04:24:46。
+- `report`：[同源先导结果](submissions/idea01_in_domain_pilot_20261123/PILOT_RESULTS.md)。HierCAD-14B 两套验证的长输入准入、原生分与 NLL 对账、21 个计时单元和 6 个实步均完成，原始前缀异常与对照分列。当前无待运行作业。正式评估规模与推理布局待研究决策。
 
 ## 既往任务记录
 
