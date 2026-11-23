@@ -1,0 +1,39 @@
+{
+  "audit_skill": "experiment-audit",
+  "review_independence": "same-family",
+  "acceptance_status": "provisional",
+  "verdict": "pass_with_development_scope_limits",
+  "scope": "two engineered development families, no confirmatory inference",
+  "reviews": [
+    "paired_controls_integrity_audit",
+    "text2cad_native_integrity_audit"
+  ],
+  "archived_input_sha256": {
+    "text2cad_views": "467da185df190261a1daccd795be4531d8750085b92a2f2642797a9a856dd65a",
+    "text2cad_preserved_views": "2879893e1d44e489d7e085a809ea6ea88c58d4aa9e1b6bbfb4228b2d73f0c11a",
+    "hiercad_views": "ca6f734c27e799acbf1cb6fd19e75936752b783ab87734fa50e68fb4a4db700a",
+    "dual_t_views": "d3409996549ccfd0821cc02a3ab131eed5ea4a6858a3903b344fa599ec9f99bd",
+    "dual_ct_views": "b81008c6a1b54ed2db66dea0db36d04c8f504251d5fc17ab0b560be370a7fa90",
+    "native_identity_audit": "5c82590cac1bb730b23576360af50bbc61a6faca064a506aacee83507381848f"
+  },
+  "evidence": {
+    "development_pairs": 40,
+    "expected_views_per_method": 320,
+    "expected_scores_per_method": 1280,
+    "text2cad_verified_reused_views": 80,
+    "text2cad_scored_new_views": 240,
+    "verified_text2cad_cell_identities": 1280,
+    "verified_hiercad_cell_identities": 1280,
+    "hiercad_layout_views": 8,
+    "hiercad_layout_cells": 32,
+    "changed_hiercad_combined_fixed_cad_decisions": 1,
+    "trained_text2cad_probe_steps": 6,
+    "verified_batch_score_receipts": 60
+  },
+  "limits": [
+    "Conditional label-swap reference under the registered fixtures",
+    "Coarse shape controls also differ in target length and geometry",
+    "Dual-tower raw cells carry positional scores, with axes bound by the frozen implementation and runtime input checks",
+    "Development checks with released generator weights, not matched-source training or a test set"
+  ]
+}

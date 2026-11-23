@@ -1,4 +1,11 @@
-# 当前任务：两来源同域检索与几何读出先导（2026-11-23）
+# 当前任务 · 910A 准入和 40 对开发辨认（北京时间 2026-11-24）
+
+- `state: reviewed`。Text2CAD 在 `yunnao-910a` 以保留 FP32 精度的配置通过历史单件回放、16/14 批形状复算、完整开发辨认及两个来源共六步训练更新。小型 HCCL 双卡见证通过，BF16 能力查询返回不支持。HierCAD 继续使用 `yunnao-share4` 的 BF16 环境。
+- 两生成器各完成 320 个展示、1,280 个主分数。固定 CAD 时两件都选对描述的展示数为 Text2CAD 20/320、HierCAD 122/320；全部八种展示都答对分别为 0/40、2/40。两支双塔、槽位与局部坐标规则及表示恒等性对照随报告。40 对结果属于两个开发家族。
+- 两来源的验证清单已备齐；L3 的 95/512 条超过 Text2CAD 的 512 token 窗口。对齐的生成器重训、验证面板评分、正式封存家族和自由生成对照保留待填。
+- 本轮作业与复算均已结算。最终检查时 910A 八张卡处于健康、空闲状态。[本轮执行计划](plans/IDEA01_910A_AND_DEV_GEOMETRY_RECOGNITION_2026-11-23.md) · [运行、指标与原件](submissions/idea01_yunnao_910a_qualification_20261123/RUNTIME_AND_BINDING_RESULTS.md) · [复核](submissions/idea01_yunnao_910a_qualification_20261123/EXPERIMENT_AUDIT.md)
+
+## 两来源同域检索与几何读出先导（2026-11-23）
 
 - `state`：验证先导已执行并复核。八个检索矩阵、四个训练曝光账本、40 对几何题和两种生成器的已登记读出均有实际证据。Text2CAD L3 的 8 个配对超长。HierCAD 首轮跨批行分布超出容差，补做固定批行与掩码的真实后缀对照 10/10 全词表一致。
 - `plan`：[先导交接单](plans/IDEA01_IN_DOMAIN_PILOT_HANDOFF_2026-11-23.md)与 Astra 所列的三类输入碰撞、完整前缀分布、直接文字–UID 正例检查。

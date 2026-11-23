@@ -1,5 +1,12 @@
 # CADRetrieval 项目执行约定
 
+## 2026-11-24 远程执行环境
+
+- 以 [ACTIVE_TASK](experiments/ACTIVE_TASK.md) 和其中的计划为准。源码、脚本、配置和文档在本地 Git 编辑，服务端从干净的固定提交运行。模型推理、训练和结果复算都在远端执行。`yunnao-share2` 已退出本项目的计算安排。
+- `ssh yunnao-910a` 是八卡 32 GiB 的 910ProA。项目 checkout 位于 `/home/ma-user/work/CADRetrieval`。独立环境、资产、固定执行工作树和产物位于 `/home/ma-user/work/CADRetrieval_runtime`。Text2CAD 用 CANN 8.0.0 和 PyTorch 2.4.0 配合 `torch-npu==2.4.0.post2`。FP32 运行显式设置进程级 `ACL_PRECISION_MODE=must_keep_origin_dtype`，按[运行手册](experiments/plans/IDEA01_910A_RUNBOOK_2026-11-23.md)先核对占用、真实数值回放与退出。该机 BF16 能力查询返回不支持。
+- `ssh yunnao-share4` 使用已复现的 910C 环境承担 HierCAD 的 BF16 工作。相邻 SSH 启动至少间隔 60 秒。合并状态、环境和下载核验到一次远端操作，启动前确认芯片健康和空闲，避免占用他人进程。
+- [910A 与开发辨认报告](experiments/submissions/idea01_yunnao_910a_qualification_20261123/RUNTIME_AND_BINDING_RESULTS.md)记录实际验证范围、运行原件位置和后续待填项。
+
 ## 2026-11-11 交接给 GLM 5.3
 
 用户指定由 GLM 5.3 接手整个项目。接手先读[项目交接文档](experiments/HANDOFF_GLM53_2026-11-11.md)和 [ACTIVE_TASK](experiments/ACTIVE_TASK.md)；下文旧执行者及运行状态是历史记录。此前的历史前向机是两卡 `yunnan-share2`（旧别名 `yunnao-share2`）。用户另确认四卡 `yunnao-share4` 可用，尚未独立核验连接、占用和运行环境；它不继承历史机器的路径或实验授权。已完成的研究保持 `reviewed`，无待续跑任务。
