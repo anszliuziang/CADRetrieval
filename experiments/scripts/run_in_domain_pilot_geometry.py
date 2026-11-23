@@ -132,7 +132,16 @@ def run_history(design, history, captions, assets, statuses):
         inputs.update(dict.fromkeys(geo.MODELS, blocked))
         return record, shapes
 
-    measure_sequence("raw", "deepcad_raw_replay", lambda: sequence_type.from_dict(raw))
+    def raw_sequence():
+        sequence = sequence_type.from_dict(raw)
+        for sketch in sequence.sketch_seq:
+            # The OCC SWIG point constructor accepts real scalars, not np.int64.
+            # Keep the authored program and the coordinate values unchanged.
+            frame = sketch.coordsystem.metadata
+            frame["origin"] = frame["origin"].astype("float64", copy=False)
+        return sequence
+
+    measure_sequence("raw", "deepcad_raw_replay", raw_sequence)
     encoded, failure = attempt("text2cad_program", geo.text2cad_program, sequence_type, raw)
     if failure:
         inputs["text2cad"] = failure
