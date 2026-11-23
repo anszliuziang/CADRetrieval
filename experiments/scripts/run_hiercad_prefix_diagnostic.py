@@ -88,11 +88,47 @@ def test_backend(backend, batch, pos, full_controls):
     return outputs, comparisons
 
 
+@torch.inference_mode()
+def test_fixed_slots(backend, batch, pos, out):
+    """Keep each complete real suffix, then equalize the mask after the true EOS."""
+    eos = backend.tokenizer.eos_token_id
+    ids = torch.where(batch["attention_mask"].bool(), batch["input_ids"], eos)
+    mask = torch.ones_like(batch["attention_mask"])
+    if not torch.equal(ids[:, :pos], batch["input_ids"][:, :pos]):
+        raise ValueError("The equal-mask control changed a causal prefix")
+    native_tokens_kept = torch.equal(
+        ids[batch["attention_mask"].bool()], batch["input_ids"][batch["attention_mask"].bool()]
+    )
+    if not native_tokens_kept:
+        raise ValueError("The equal-mask control changed a real target token")
+    result = {}
+    for slot in (0, 1):
+        reference = ids.clone()
+        contrast = ids.clone()
+        contrast[slot] = ids[1 - slot]
+        if not torch.equal(reference[slot, :pos], contrast[slot, :pos]):
+            raise ValueError("The compared row lost its shared prefix")
+        if torch.equal(reference[slot, pos:], contrast[slot, pos:]):
+            raise ValueError("The compared row does not contain distinct real suffixes")
+        a = backend.model(input_ids=reference, attention_mask=mask, use_cache=False).logits[slot, pos - 1].float().cpu()
+        b = backend.model(input_ids=contrast, attention_mask=mask, use_cache=False).logits[slot, pos - 1].float().cpu()
+        result[str(slot)] = native.save_distribution_comparison(torch.stack((a, b)), out / f"slot_{slot}.pt",
+                                                                  native.H_CAUSAL_ATOL)
+    return {
+        "checks_by_fixed_batch_slot": result, "native_tokens_kept": bool(native_tokens_kept),
+        "active_mask_sha256": native.digest_tensor(mask), "common_input_width": ids.shape[1],
+        "extra_active_eos_after_real_end": [int((row == 0).sum()) for row in batch["attention_mask"]],
+        "prefix_variants_passed": sum(record["passed"] for record in result.values()),
+    }
+
+
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
     for key in ("original-stage", "manifests", "minimal-zip", "hiercad-repo", "base", "adapter", "out"):
         cli.add_argument(f"--{key}", required=True, type=Path)
     cli.add_argument("--device", default="npu:0")
+    cli.add_argument("--fixed-slot-only", action="store_true",
+                     help="Keep both real suffixes in the same row and compare with an identical active mask")
     args = cli.parse_args()
     args.out.mkdir(parents=True, exist_ok=False)
     import torch_npu  # noqa: F401
@@ -121,18 +157,25 @@ def main():
                           "attention_mask_sha256": native.digest_tensor(batch["attention_mask"]),
                           "backends": {}}
                 trace = {}
-                for implementation in ("sdpa", "eager"):
+                implementations = ("sdpa",) if args.fixed_slot_only else ("sdpa", "eager")
+                for implementation in implementations:
                     model.get_base_model().set_attn_implementation(implementation)
                     if model.config._attn_implementation != implementation:
                         raise RuntimeError(f"Attention implementation was not applied: {implementation}")
                     native.synchronize(device)
                     started = time.perf_counter()
-                    logits, checks = test_backend(backend, batch, pos, full_controls=implementation == "sdpa")
+                    if args.fixed_slot_only:
+                        directory = args.out / condition
+                        directory.mkdir()
+                        checks = test_fixed_slots(backend, batch, pos, directory)
+                    else:
+                        logits, checks = test_backend(backend, batch, pos, full_controls=implementation == "sdpa")
+                        trace[implementation] = logits
                     native.synchronize(device)
                     values["backends"][implementation] = {"comparisons": checks,
                                                           "wall_seconds": time.perf_counter() - started}
-                    trace[implementation] = logits
-                torch.save(trace, args.out / f"{condition}_controls.pt")
+                if trace:
+                    torch.save(trace, args.out / f"{condition}_controls.pt")
                 report["cases"][condition] = values
                 print(condition, json.dumps({k: v["comparisons"] for k, v in values["backends"].items()}),
                       flush=True)
