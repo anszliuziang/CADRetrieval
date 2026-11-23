@@ -12,6 +12,7 @@ import statistics
 
 VARIANTS = ("near_first", "far_first", "near_first_rephrased", "far_first_rephrased")
 PAIR_SHA = "9f524f9e05d94c0cee321a26fba452395ad90f2d196422c9108d039271864824"
+HISTORY_SHA = "b7767bf41d902d86b506df48f20b153061b16dc85d9277852729fd33103f2b3a"
 
 
 def read_rows(path):
@@ -65,10 +66,14 @@ def unpack(row, mode):
 
 
 def compare_groups(rows, saved):
+    required = {"pairs", "views", "joint", "joint_swap", "N_twice", "both_cads",
+                "both_captions", "D_positive", "ties"}
+    if len({group_key(row) for row in saved}) != len(saved):
+        raise ValueError("Stored group keys are not unique")
     for original, recomputed in zip(sorted(saved, key=group_key), sorted(rows, key=group_key), strict=True):
-        keys = {"pairs", "views", "scores", "joint", "joint_swap", "N_twice", "both_cads",
-                "both_captions", "D_positive", "ties", "fixed_cad_correct"}
-        for key in keys & original.keys() & recomputed.keys():
+        if group_key(original) != group_key(recomputed) or not required <= original.keys():
+            raise ValueError("Stored group identity or required metric keys differ")
+        for key in required | ({"scores", "fixed_cad_correct"} & original.keys()):
             if original[key] != recomputed[key]:
                 raise ValueError(f"Aggregate mismatch for {group_key(original)}, {key}")
 
@@ -121,21 +126,63 @@ def audit_layouts(raw, layouts, design_by_id):
     return {**result, "views": len(layouts), "compared_cells": len(deltas), "max_abs_mean_delta": max(deltas)}
 
 
-def audit(source, mode, reference):
+def verify_native_identity(row, pair, histories, mode):
+    cells = row["cells"] if mode == "native" else row["scores"]
+    for (query, cad), cell in zip(product("AB", repeat=2), cells, strict=True):
+        name = f"{cad}{row['order']}"
+        history = histories[pair["pair_id"], name]
+        if mode == "native":
+            expected = history["inputs"]["text2cad"]
+            text = pair["captions"][query][row["variant"]]
+            if (cell["member"] != f"{pair['pair_id']}/{name}" or cell["effective_units"] != expected["valid_fields"]
+                    or cell["text_sha256"] != sha256(text.encode()).hexdigest()
+                    or cell["s0"] != cell["score_total"]):
+                raise ValueError("Text2CAD cell cannot be traced to its fixture and caption")
+        else:
+            expected = history["inputs"]["hiercad"]
+            prompt = expected["caption_inputs"][query][row["variant"]]
+            targets = expected["effective_target"]["target_ids"]
+            tokens_sha = sha256(json.dumps(targets, separators=(",", ":")).encode()).hexdigest()
+            if (cell["input_sha256"] != prompt["full_input_sha256"]
+                    or cell["target_sha256"] != history["hiercad_target"]["response_sha256"]
+                    or cell["target_token_sha256"] != tokens_sha or cell["effective_units"] != expected["target_tokens"]
+                    or cell["query_tokens"] != prompt["query_tokens"] or cell["total_input_tokens"] != prompt["total_tokens"]
+                    or cell["segment_counts"] != expected["segment_counts"]):
+                raise ValueError("HierCAD cell cannot be traced to its fixture and caption tokens")
+        if not isinstance(cell["effective_units"], int) or cell["effective_units"] <= 0:
+            raise ValueError("Effective target length must be positive")
+    if cells[0]["target_sha256"] == cells[1]["target_sha256"]:
+        raise ValueError("Opposite candidates share a native target identity")
+
+
+def audit(source, mode, reference, history_path):
     path = source / ("paired_views.jsonl" if mode == "native" else "views.jsonl")
     raw = read_rows(path)
-    design_by_id = {row["pair_id"]: row["design"] for row in read_rows(reference)}
+    pairs = {row["pair_id"]: row for row in read_rows(reference)}
+    design_by_id = {uid: pair["design"] for uid, pair in pairs.items()}
+    histories = {}
+    if history_path is not None and mode in ("native", "hiercad"):
+        data = history_path.read_bytes()
+        if sha256(data).hexdigest() != HISTORY_SHA:
+            raise ValueError("Development history file differs")
+        histories = {(row["pair_id"], row["history"]): row for row in map(json.loads, data.splitlines())}
+        if set(histories) != set(product(pairs, ("A0", "A1", "B0", "B1"))):
+            raise ValueError("Development history axes differ")
     if len(raw) != 320 or len(design_by_id) != 40:
         raise ValueError("Incomplete development pair or view count")
     seen = set()
     by_pair = defaultdict(dict)
     direct_margins = defaultdict(list)
     collisions = Counter()
+    native_cell_checks = 0
     for row in raw:
         key = view_key(row)
         if key in seen or key[0] not in design_by_id or key[1] not in (0, 1) or key[2] not in VARIANTS:
             raise ValueError(f"Duplicate or unexpected view: {key}")
         seen.add(key)
+        if histories:
+            verify_native_identity(row, pairs[key[0]], histories, mode)
+            native_cell_checks += 4
         for method, (scores, reported) in unpack(row, mode).items():
             result = outcomes(scores)
             verify_persisted(result, reported)
@@ -146,12 +193,15 @@ def audit(source, mode, reference):
             collisions["spectra_identical_cad"] += row["spectra_identical_cad_input"] is True
 
     counts = defaultdict(Counter)
+    pair_outcomes = []
     for (pair_id, method), views in by_pair.items():
         if set(views) != set(product(range(2), VARIANTS)):
             raise ValueError("One pair does not have the eight specified views")
         design = design_by_id[pair_id]
         win = all(value["both_cads"] for value in views.values())
         swapped = all(value["swapped_both_cads"] for value in views.values())
+        pair_outcomes.append({"pair_id": pair_id, "method": method, "G": int(win), "G_swap": int(swapped),
+                              "N": (int(win) + int(swapped)) / 2})
         row = counts[design["family"], design["attribute"], method]
         row.update(pairs=1, views=8, scores=32, joint=win, joint_swap=swapped,
                    N_twice=int(win) + int(swapped), both_cads=sum(x["both_cads"] for x in views.values()),
@@ -169,6 +219,7 @@ def audit(source, mode, reference):
                     order, "far_first" + suffix]["both_cads"]
     groups = [{"family": f, "attribute": a, "method": name, **value} for (f, a, name), value in counts.items()]
     result = {"mode": mode, "views": len(seen), "groups": groups,
+              "pair_outcomes": pair_outcomes, "native_cell_identity_checks": native_cell_checks,
               "abs_margin_medians": {name: statistics.median(map(abs, values))
                                      for name, values in direct_margins.items()},
               "identity_checks": dict(collisions)}
@@ -194,11 +245,12 @@ def main():
     parser.add_argument("--mode", choices=("native", "dual_t", "dual_ct", "hiercad"), required=True)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--pairs", type=Path, required=True)
+    parser.add_argument("--histories", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     if sha256(args.pairs.read_bytes()).hexdigest() != PAIR_SHA:
         raise ValueError("Development ground truth file differs")
-    report = audit(args.source, args.mode, args.pairs)
+    report = audit(args.source, args.mode, args.pairs, args.histories)
     with args.out.open("x", encoding="utf-8", newline="\n") as stream:
         json.dump(report, stream, indent=2, allow_nan=False)
         stream.write("\n")
