@@ -37,8 +37,11 @@ def fp32_witness(device):
     value = seeded((1, 4, 24, 32)).flip(-2).contiguous()
     mask = torch.triu(torch.full((24, 24), float("-inf")), diagonal=1)
     q, k, v, m = (tensor.to(device) for tensor in (query, key, value, mask))
-    deltas = (q @ k.transpose(-2, -1)) / (32 ** 0.5) + m
-    reference = ((query @ key.transpose(-2, -1)) / (32 ** 0.5) + mask).softmax(-1) @ value
+    product = q @ k.transpose(-2, -1)
+    cpu_product = query @ key.transpose(-2, -1)
+    report(test="fp32_batched_matmul", max_abs_delta=float((product.cpu() - cpu_product).abs().max()))
+    deltas = product / (32 ** 0.5) + m
+    reference = (cpu_product / (32 ** 0.5) + mask).softmax(-1) @ value
     check_tensor("fp32_masked_attention", deltas.softmax(-1) @ v, reference, 1e-4)
     labels = torch.arange(24, dtype=torch.long) % 16
     logits = seeded((24, 16))
@@ -59,16 +62,22 @@ def fp16_witness(device):
     labels = torch.arange(16, dtype=torch.long, device=device)
     loss = F.cross_entropy(output.float(), labels)
     loss.backward()
-    if not bool(model.weight.grad.isfinite().all()):
-        raise ValueError("non-finite FP16 gradient")
-    before = model.weight.detach().clone()
+    gradient = model.weight.grad.detach().float().cpu()
+    if not bool(gradient.isfinite().all()) or not bool(gradient.ne(0).any()):
+        raise ValueError("the FP16 gradient is non-finite or entirely zero")
+    before = model.weight.detach().cpu().clone()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.02)
     optimizer.step()
     torch.npu.synchronize(device)
-    changed = not torch.equal(before, model.weight)
-    if not changed or not bool(model.weight.isfinite().all()):
+    after = model.weight.detach().cpu()
+    delta = float((after.float() - before.float()).abs().max())
+    expected = (before.float() - 0.02 * gradient).to(before.dtype)
+    error = float((after.float() - expected.float()).abs().max())
+    report(test="fp16_parameter_update", loss=float(loss.detach()),
+           max_abs_gradient=float(gradient.abs().max()), max_abs_update=delta,
+           max_abs_delta_to_cpu_update=error)
+    if not bool(after.isfinite().all()) or delta == 0 or error > 0.003:
         raise ValueError("the FP16 optimizer witness did not update a finite parameter")
-    report(test="fp16_parameter_update", loss=float(loss.detach()), parameter_changed=changed)
 
 
 def distributed_witness():
@@ -95,7 +104,10 @@ def distributed_witness():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("fp32", "fp16", "bf16-capability", "hccl"))
+    parser.add_argument("--precision", choices=("default", "preserve"), default="default")
     args = parser.parse_args()
+    if args.precision == "preserve":
+        torch_npu.npu.set_option({"ACL_PRECISION_MODE": "must_keep_origin_dtype"})
     if args.mode == "hccl":
         distributed_witness()
         return
@@ -103,7 +115,7 @@ def main():
     device = torch.device("npu:0")
     torch.npu.set_device(device)
     torch.npu.init()
-    facts = {"mode": args.mode, "name": torch.npu.get_device_name(0),
+    facts = {"mode": args.mode, "precision": args.precision, "name": torch.npu.get_device_name(0),
              "torch": version("torch"), "torch_npu": version("torch-npu"),
              "visible_devices": os.environ.get("ASCEND_RT_VISIBLE_DEVICES")}
     if args.mode == "bf16-capability":
