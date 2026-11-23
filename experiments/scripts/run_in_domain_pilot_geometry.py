@@ -135,10 +135,11 @@ def run_history(design, history, captions, assets, statuses):
     def raw_sequence():
         sequence = sequence_type.from_dict(raw)
         for sketch in sequence.sketch_seq:
-            # The OCC SWIG point constructor accepts real scalars, not np.int64.
+            # The OCC SWIG point/direction constructors require real scalars.
             # Keep the authored program and the coordinate values unchanged.
             frame = sketch.coordsystem.metadata
-            frame["origin"] = frame["origin"].astype("float64", copy=False)
+            for channel in ("origin", "x_axis", "y_axis", "z_axis"):
+                frame[channel] = frame[channel].astype("float64", copy=False)
         return sequence
 
     measure_sequence("raw", "deepcad_raw_replay", raw_sequence)
