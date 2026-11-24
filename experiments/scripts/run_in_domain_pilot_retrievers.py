@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train and evaluate one neural retriever on a frozen in-domain pilot manifest."""
+"""Train a neural retriever on frozen pilot or formal train and validation axes."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from torch.nn.parallel import DistributedDataParallel
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from experiments.src.idea01.in_domain_pilot_retrievers import (
+    MAX_CAD_SEQUENCE_LENGTH,
     OUTPUT_DIM,
     SPECTRA_COMMIT,
     SPECTRA_SOURCE_SHA256,
@@ -54,6 +55,7 @@ QWEN_FILES = {
 MANIFESTS = ("pilot_train.jsonl", "validation_targets.jsonl", "validation_gallery.jsonl")
 TEMPERATURE = 0.05
 SEED = 17
+FORMAL_MANIFEST_RECEIPT_SHA = "3c297920d0905b3dd5f14aa1b5ac163245a17b958cc3c2e1169ee65d5a8d055d"
 
 
 def file_sha256(path: Path) -> str:
@@ -80,7 +82,17 @@ def write_rows(path: Path, rows) -> None:
 
 
 def manifest_axes(args):
-    paths = [args.manifest_root / args.source / filename for filename in MANIFESTS]
+    names = ("train.jsonl", *MANIFESTS[1:]) if args.train_split == "full" else MANIFESTS
+    paths = [args.manifest_root / args.source / filename for filename in names]
+    files = {path.name: file_sha256(path) for path in paths}
+    if args.train_split == "full":
+        receipt = args.manifest_root / "manifest_receipt.json"
+        data = receipt.read_bytes()
+        if sha256(data).hexdigest() != FORMAL_MANIFEST_RECEIPT_SHA:
+            raise ValueError("Formal training needs the certified DeepCAD manifest receipt")
+        pins = json.loads(data)["file_sha256"]
+        if any(pins[f"{args.source}/{name}"] != checksum for name, checksum in files.items()):
+            raise ValueError("A frozen formal train or validation manifest changed")
     train, targets, gallery = (read_rows(path) for path in paths)
     levels = LEVELS[args.source]
     axes = zip(paths, (train, targets, gallery),
@@ -103,7 +115,6 @@ def manifest_axes(args):
         {"uid": row["uid"], "level": level, "text": row["texts"][level]}
         for level in levels for row in targets
     ]
-    files = {path.name: file_sha256(path) for path in paths}
     return train, queries, gallery, files
 
 
@@ -146,6 +157,70 @@ def cad_cache(args, rows, files, spectra):
     return features, coverage
 
 
+def shared_cad_cache(args, train, gallery):
+    """Verify the combined input-only store and materialize only the requested two roles."""
+    from experiments.src.idea01.in_domain_pilot import INPUT_HASHES
+
+    root = args.shared_feature_store
+    summary_data = (root / "summary.json").read_bytes()
+    summary = json.loads(summary_data)
+    roles = ((args.source + "_train", train), (args.source + "_validation_gallery", gallery))
+    files = ("cad_features.npy", "feature_axis.jsonl", "coverage.jsonl",
+             *(f"{role}_indices.jsonl" for role, _ in roles))
+    pins = summary["files_sha256"]
+    if (summary["representation"] != "command-dual-tower"
+            or summary["cad_zip_sha256"] != INPUT_HASHES["official_zip"]
+            or file_sha256(args.official_zip) != INPUT_HASHES["official_zip"]):
+        raise ValueError("The shared store does not match the command representation and certified CAD archive")
+    for name in files:
+        if name not in pins or file_sha256(root / name) != pins[name]:
+            raise ValueError(f"Shared feature artifact differs from its receipt: {name}")
+    axis = read_rows(root / "feature_axis.jsonl")
+    coverage = read_rows(root / "coverage.jsonl")
+    store = np.load(root / "cad_features.npy", mmap_mode="r", allow_pickle=False)
+    expected = (summary["axis_count"], MAX_CAD_SEQUENCE_LENGTH, 4)
+    if (store.shape != expected or list(store.shape) != summary["feature_shape"]
+            or store.dtype != np.dtype("int32") or str(store.dtype) != summary["feature_dtype"]
+            or len(axis) != len(coverage) or len(axis) != expected[0]):
+        raise ValueError("The shared feature tensor and registered CAD axes differ")
+    uids = [row["uid"] for row in axis]
+    if uids != sorted(set(uids)) or [row["uid"] for row in coverage] != uids:
+        raise ValueError("Unexpected UID order or duplicates in the shared feature store")
+    indices, subset = [], []
+    for role, manifest in roles:
+        role_rows = read_rows(root / f"{role}_indices.jsonl")
+        if [row["uid"] for row in role_rows] != [row["uid"] for row in manifest]:
+            raise ValueError(f"Shared feature role does not match the ordered {role} manifest")
+        counts = Counter()
+        for located, expected_row in zip(role_rows, manifest, strict=True):
+            index = located["feature_index"]
+            identity = {key: expected_row[key] for key in ("uid", "cad_member", "member_sha256")}
+            if type(index) is not int or not 0 <= index < len(axis) or axis[index] != identity:
+                raise ValueError(f"Incorrect shared feature identity for {role}/{located['uid']}")
+            entry = coverage[index]
+            if (entry["cad_member"] != identity["cad_member"]
+                    or (entry["status"] == "ok" and (
+                        entry.get("member_sha256") != identity["member_sha256"]
+                        or sha256(store[index].tobytes()).hexdigest() != entry.get("feature_sha256")
+                    ))):
+                raise ValueError(f"Incorrect shared feature coverage for {role}/{located['uid']}")
+            indices.append(index)
+            subset.append(entry)
+            counts[entry["status"]] += 1
+        if counts != summary["role_coverage"][role]:
+            raise ValueError(f"Shared feature coverage counts differ for {role}")
+    selected = np.asarray(indices, dtype=np.int64)
+    np.save(args.output / "cad_feature_indices.npy", selected, allow_pickle=False)
+    write_rows(args.output / "cad_coverage.jsonl", subset)
+    write_json(args.output / "cad_cache_input.json", {
+        "path": str(root.resolve()), "summary_sha256": sha256(summary_data).hexdigest(),
+        "representation": summary["representation"], "cad_zip_sha256": summary["cad_zip_sha256"],
+        "files_sha256": {name: pins[name] for name in files},
+        "roles": {role: len(rows) for role, rows in roles},
+    })
+    return store[selected], subset
+
+
 @dataclass(frozen=True)
 class DeviceGroup:
     device: torch.device
@@ -162,12 +237,14 @@ class DeviceGroup:
             dist.barrier()
 
 
-def initialize_devices(label: str) -> DeviceGroup:
+def initialize_devices(label: str, *, keep_origin_dtype: bool = False) -> DeviceGroup:
     kind = label.partition(":")[0]
     if kind == "npu":
         import torch_npu  # noqa: F401  Registers the Ascend device and HCCL backend.
 
         backend = torch.npu
+        if keep_origin_dtype:
+            backend.set_option({"ACL_PRECISION_MODE": "must_keep_origin_dtype"})
     else:
         backend = torch.cuda
     if not backend.is_available():
@@ -268,19 +345,23 @@ def load_towers(args, group, spectra):
 
 
 class TextInputs:
-    def __init__(self, tokenizer, texts, prefix, length, device):
+    def __init__(self, tokenizer, texts, prefix, length, device, *, pad_multiple=None):
         self.tokenizer = tokenizer
         self.device = device
         self.length = length
+        self.pad_multiple = pad_multiple
         ids = tokenizer(
             [prefix + text for text in texts], padding=False, truncation=False,
             return_attention_mask=False, verbose=False,
         )["input_ids"]
         self.rows = []
         self.ids = {}
+        self.overlength = set()
         for text, row in zip(texts, ids, strict=True):
             used = row[-length:] if tokenizer.truncation_side == "left" else row[:length]
             self.ids[text] = used
+            if len(used) < len(row):
+                self.overlength.add(text)
             self.rows.append({
                 "text_sha256": sha256(text.encode("utf-8")).hexdigest(),
                 "input_token_count": len(row),
@@ -291,9 +372,10 @@ class TextInputs:
     def batch(self, texts):
         return self.tokenizer.pad(
             [{"input_ids": self.ids[text]} for text in texts], return_tensors="pt", padding=True,
+            pad_to_multiple_of=self.pad_multiple,
         ).to(self.device)
 
-    def frozen(self, backbone, texts, batch_size):
+    def frozen(self, backbone, texts, batch_size, *, report_progress=False):
         """Masked means from a fixed eval-mode model, indexed by exact text."""
         indexes = {text: index for index, text in enumerate(texts)}
         length_order = sorted(texts, key=lambda text: len(self.ids[text]))
@@ -305,6 +387,8 @@ class TextInputs:
                 hidden = backbone(**inputs).last_hidden_state.float()
                 mask = inputs["attention_mask"].unsqueeze(-1)
                 values.append((hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1))
+                if report_progress and (start == 0 or len(values) % 256 == 0):
+                    print(f"Frozen BERT inputs encoded {min(start + batch_size, len(texts))}/{len(texts)}", flush=True)
         return torch.cat(values)[[length_index[text] for text in texts]], indexes
 
 
@@ -314,12 +398,24 @@ def exposure_rows(train, levels, counters):
         yield {"uid": row["uid"], "pair_exposures": sum(counts.values()), "level_exposures": counts}
 
 
+def training_batches(per_rank, world_size, pair_count, spectra):
+    batch_size = per_rank * world_size
+    batches = [(start, min(start + batch_size, pair_count)) for start in range(0, pair_count, batch_size)]
+    if (len(batches) < 2 or any(end - start < 2 or (end - start) % world_size for start, end in batches)
+            or (spectra and len(batches) == 10)):
+        raise ValueError(f"Unsupported batch layout for {pair_count} pairs, {world_size} ranks and batch {per_rank}. "
+                         "Each of at least two updates needs equal nonempty rank slices and two global pairs. "
+                         "SpectraBRep also needs a nondegenerate OneCycle schedule.")
+    return batches
+
+
 def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream):
     all_texts = list(dict.fromkeys(row["text"] for row in pairs))
     registration = direct_registration((row["text"], row["uid"]) for row in pairs)
     frozen = None
     if backbone is not None:
-        frozen, frozen_index = text_inputs.frozen(backbone, all_texts, args.eval_batch_size)
+        frozen, frozen_index = text_inputs.frozen(backbone, all_texts, args.eval_batch_size,
+                                                   report_progress=group.primary and args.train_split == "full")
     if group.world_size > 1:
         runner = DistributedDataParallel(towers, device_ids=[group.device.index])
     else:
@@ -332,18 +428,13 @@ def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream):
     if lora:
         groups.insert(0, {"params": lora, "lr": 1e-4})
     optimizer = torch.optim.AdamW(groups, weight_decay=0.01, foreach=False)
-    batch_size = args.batch_size * group.world_size
-    batches = [(start, min(start + batch_size, len(pairs))) for start in range(0, len(pairs), batch_size)]
-    if (len(batches) < 2 or any(end - start < 2 or (end - start) % group.world_size for start, end in batches)
-            or (upstream is not None and len(batches) == 10)):
-        raise ValueError("Choose a batch size giving at least two updates, equal nonempty rank slices, "
-                         "at least two pairs per global batch, and a nondegenerate SpectraBRep OneCycle schedule")
+    batches = training_batches(args.batch_size, group.world_size, len(pairs), upstream is not None)
     scheduler = None
     if upstream is not None:
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer, [item["lr"] for item in groups], total_steps=len(batches), pct_start=0.1,
         )
-    order = torch.randperm(len(pairs), generator=torch.Generator().manual_seed(SEED)).tolist()
+    order = torch.randperm(len(pairs), generator=torch.Generator().manual_seed(args.seed)).tolist()
     runner.train()
     stats = Counter()
     exposure = Counter()
@@ -405,7 +496,7 @@ def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream):
         if stream is not None:
             stream.close()
     if any(value != 1 for value in exposure.values()) or len(exposure) != len(pairs):
-        raise RuntimeError("The pilot must expose each registered UID and level exactly once")
+        raise RuntimeError("The epoch must expose each registered UID and level exactly once")
     if upstream is not None:
         stats["known_negative_treatment_text_to_cad"] = stats["known_off_diagonal_positives"]
         stats["known_negative_treatment_cad_to_text"] = stats["known_off_diagonal_positives"]
@@ -423,26 +514,33 @@ def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream):
 
 def score(args, group, towers, backbone, text_inputs, cad, queries, covered):
     towers.eval()
-    unique = list(dict.fromkeys(row["text"] for row in queries))
+    eligible = [index for index, row in enumerate(queries)
+                if not args.require_full_validation_text or row["text"] not in text_inputs.overlength]
+    texts = [queries[index]["text"] for index in eligible]
+    unique = list(dict.fromkeys(texts))
     text_locations = {text: index for index, text in enumerate(unique)}
+    valid_queries = np.zeros(len(queries), dtype=bool)
+    scores = np.full((len(queries), len(covered)), np.nan, dtype=np.float32)
     with torch.no_grad():
-        frozen = backbone is not None
-        if frozen:
-            text_values, _ = text_inputs.frozen(backbone, unique, args.eval_batch_size)
-        text_embeddings = []
-        for start in range(0, len(unique), args.eval_batch_size):
-            stop = start + args.eval_batch_size
-            value = text_values[start:stop] if frozen else text_inputs.batch(unique[start:stop])
-            text_embeddings.append(towers.encode_text(value))
-        query_values = torch.cat(text_embeddings)[[text_locations[row["text"]] for row in queries]]
+        if unique:
+            frozen = backbone is not None
+            if frozen:
+                text_values, _ = text_inputs.frozen(backbone, unique, args.eval_batch_size)
+            text_embeddings = []
+            for start in range(0, len(unique), args.eval_batch_size):
+                stop = start + args.eval_batch_size
+                value = text_values[start:stop] if frozen else text_inputs.batch(unique[start:stop])
+                text_embeddings.append(towers.encode_text(value))
+            query_values = torch.cat(text_embeddings)[[text_locations[text] for text in texts]]
+            valid_queries[eligible] = torch.isfinite(query_values).all(dim=1).cpu().numpy()
         cad_values = torch.full((len(covered), OUTPUT_DIM), torch.nan, device=group.device)
         valid = [index for index, value in enumerate(covered) if value]
         for start in range(0, len(valid), args.eval_batch_size):
             selected = valid[start:start + args.eval_batch_size]
             cad_values[selected] = towers.encode_cad(cad[selected])
-        valid_queries = torch.isfinite(query_values).all(dim=1).cpu().numpy()
         valid_candidates = torch.isfinite(cad_values).all(dim=1).cpu().numpy()
-        scores = (query_values @ cad_values.T).cpu().numpy()
+        if unique:
+            scores[eligible, :] = (query_values @ cad_values.T).cpu().numpy()
     scores[~valid_queries, :] = np.nan
     scores[:, ~valid_candidates] = np.nan
     return scores, valid_queries, valid_candidates
@@ -462,6 +560,7 @@ def run(args, group, axes, features, coverage, spectra, started):
     from experiments.src.idea01.in_domain_pilot import evaluate_rankings
 
     train, queries, gallery, files = axes
+    formal = args.train_split == "full"
     train_size = len(train)
     levels = LEVELS[args.source]
     pairs = [
@@ -473,17 +572,18 @@ def run(args, group, axes, features, coverage, spectra, started):
     if train_ok != train_size:
         raise ValueError(f"Only {train_ok}/{train_size} training CAD encoded; see cad_coverage.jsonl. "
                          "Resolve the common training manifest before optimizer updates.")
-    random.seed(SEED)
-    np.random.seed(SEED)
-    torch.manual_seed(SEED)
-    group.backend.manual_seed_all(SEED)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    group.backend.manual_seed_all(args.seed)
     group.backend.reset_peak_memory_stats(group.device)
     phase_start = perf_counter()
     towers, backbone, tokenizer, upstream, model_source = load_towers(args, group, spectra)
     all_texts = list(dict.fromkeys(row["text"] for row in pairs + queries))
     prefix = upstream["config"].INSTRUCTION if upstream is not None else ""
     window = 384 if upstream is not None else 512
-    text_inputs = TextInputs(tokenizer, all_texts, prefix, window, group.device)
+    text_inputs = TextInputs(tokenizer, all_texts, prefix, window, group.device,
+                             pad_multiple=64 if formal else None)
     cad = torch.from_numpy(features)
     mean = std = None
     if upstream is not None:
@@ -498,7 +598,7 @@ def run(args, group, axes, features, coverage, spectra, started):
     if backbone is not None:
         total += sum(value.numel() for value in backbone.parameters())
     config = {
-        "source": args.source, "method": args.method, "seed": SEED, "epochs": 1,
+        "source": args.source, "method": args.method, "seed": args.seed, "epochs": 1,
         "levels": levels, "manifest_sha256": files, "official_zip": str(args.official_zip.resolve()),
         "git_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[2], text=True).strip(),
         "command": sys.argv,
@@ -525,6 +625,21 @@ def run(args, group, axes, features, coverage, spectra, started):
         "checkpoint_selection": "only end-of-epoch checkpoint in this one-epoch pilot",
         "runtime": runtime_versions(),
     }
+    if formal:
+        config.update({
+            "run_scope": "formal_full_train_one_epoch",
+            "train_split": "full", "train_manifest": f"{args.source}/train.jsonl",
+            "manifest_receipt_sha256": FORMAL_MANIFEST_RECEIPT_SHA,
+            "cad_feature_selection": ("cad_cache_input.json"
+                                      if args.shared_feature_store or args.prepared_cad else "cad_cache.json"),
+            "registration": "exact raw text to UID edges from the full frozen source training manifest",
+            "training_text_policy": "original text with native-window truncation recorded per exposure",
+            "validation_text_policy": "complete native input including special tokens, with overlength queries failed",
+            "pad_to_multiple_of": 64,
+            "npu_precision_mode": "must_keep_origin_dtype" if group.device.type == "npu" else None,
+            "checkpoint_selection": "sole candidate at end of epoch 1 evaluated on frozen full-text validation R@20",
+            "candidate_epochs": [1], "test_access": False,
+        })
     if upstream is not None:
         config.update({
             "upstream": {"commit": SPECTRA_COMMIT, "tree": SPECTRA_TREE, "source_sha256": SPECTRA_SOURCE_SHA256},
@@ -533,7 +648,7 @@ def run(args, group, axes, features, coverage, spectra, started):
             "lora_rank": 16, "lora_alpha": 32, "backbone_lr": 1e-4,
             "scheduler": "OneCycleLR", "warmup_fraction": 0.1,
             "release_differences": [
-                "Frozen in-domain pilot manifests, one epoch, seed 17, recorded device count and batch size",
+                f"Frozen in-domain pilot manifests, one epoch, seed {args.seed}, recorded device count and batch size",
                 "Explicit accelerator rather than CUDA-only launcher",
                 "Pretrained model loader uses torch_dtype, local assets, no remote code, and explicit attention",
                 "Global average gradient with no additional world-size multiplier",
@@ -555,8 +670,8 @@ def run(args, group, axes, features, coverage, spectra, started):
         write_rows(args.output / "prediction_gallery.jsonl", gallery)
     group.barrier()
     if group.world_size > 1:
-        torch.manual_seed(SEED + group.rank)
-        group.backend.manual_seed_all(SEED + group.rank)
+        torch.manual_seed(args.seed + group.rank)
+        group.backend.manual_seed_all(args.seed + group.rank)
     phase_start = perf_counter()
     exposure, training = fit(args, group, towers, backbone, text_inputs, cad[:train_size], pairs, upstream)
     fit_seconds = perf_counter() - phase_start
@@ -590,18 +705,32 @@ def run(args, group, axes, features, coverage, spectra, started):
         write_rows(args.output / "ranks.jsonl", ranking_rows)
         write_json(args.output / "metrics.json", metrics)
         write_rows(args.output / "prediction_failures.jsonl", (
-            [{"axis": "query", "row": index, **queries[index]} for index in np.flatnonzero(~valid_q).tolist()]
+            [{"axis": "query", "row": index, **queries[index], **(
+                {"reason": "overlength_full_text" if queries[index]["text"] in text_inputs.overlength
+                 else "nonfinite_query_embedding"} if args.require_full_validation_text else {}
+            )} for index in np.flatnonzero(~valid_q).tolist()]
             + [{"axis": "gallery", "row": index, "uid": gallery[index]["uid"],
                 "cad_status": coverage[train_size + index]["status"]} for index in np.flatnonzero(~valid_c).tolist()]
         ))
         evaluation_seconds = perf_counter() - phase_start
+        validation_overlength = sum(row["text"] in text_inputs.overlength for row in queries)
+        if formal:
+            write_json(args.output / "selection.json", {
+                "run_scope": "formal_full_train_one_epoch", "source": args.source, "method": args.method,
+                "seed": args.seed, "candidate_epochs": [1], "selected_epoch": 1,
+                "selected_checkpoint": "retrieval.pt",
+                "checkpoint_sha256": file_sha256(args.output / "retrieval.pt"),
+                "validation_metrics": "metrics.json", "rank_rows": "ranks.jsonl",
+                "validation_R@20_equal_level_macro": sum(metrics[level]["R@20"] for level in levels) / len(levels),
+                "validation_overlength_failures": validation_overlength, "test_access": False,
+            })
         arts = sorted(path for path in args.output.rglob("*") if path.is_file())
         input_by_text = dict(zip(all_texts, text_inputs.rows, strict=True))
         result = {
             "status": "completed", "source": args.source, "method": args.method,
             "training": training, "training_cad_coverage": {"valid": train_ok, "total": train_size},
             "train_truncated_pairs": sum(input_by_text[row["text"]]["truncated"] for row in pairs),
-            "validation_truncated_queries": sum(input_by_text[row["text"]]["truncated"] for row in queries),
+            "validation_truncated_queries": 0 if args.require_full_validation_text else validation_overlength,
             "validation_gallery_cad_status": dict(Counter(row["status"] for row in coverage[train_size:])),
             "validation_queries_valid": int(valid_q.sum()), "validation_queries_total": len(queries),
             "validation_gallery_valid": int(valid_c.sum()), "validation_gallery_total": len(gallery),
@@ -617,6 +746,14 @@ def run(args, group, axes, features, coverage, spectra, started):
             },
             "files": {path.relative_to(args.output).as_posix(): file_sha256(path) for path in arts},
         }
+        if args.require_full_validation_text:
+            result["validation_overlength_failures"] = validation_overlength
+        if formal:
+            result.update({
+                "run_scope": "formal_full_train_one_epoch", "seed": args.seed, "selected_epoch": 1,
+                "checkpoint_selection_receipt": "selection.json", "test_access": False,
+            })
+            result["runtime"]["fit_accelerator_hours"] = fit_seconds * group.world_size / 3600
         write_json(args.output / "run.json", result)
         print(json.dumps(metrics, ensure_ascii=False, allow_nan=False), flush=True)
     group.barrier()
@@ -639,11 +776,32 @@ def main():
     parser.add_argument("--eval-batch-size", type=int, default=32)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--prepared-cad", type=Path)
+    parser.add_argument("--shared-feature-store", type=Path, help="Certified DeepCAD feature store for formal train/val")
     parser.add_argument("--prepare-cad-only", action="store_true")
-    parser.add_argument("--expected-train-uids", type=int, default=4096)
+    parser.add_argument("--train-split", choices=("pilot", "full"), default="pilot")
+    parser.add_argument("--require-full-validation-text", action="store_true",
+                        help="Keep overlength queries as failed rows without encoding them")
+    parser.add_argument("--seed", type=int, choices=(17, 29, 43), default=SEED)
+    parser.add_argument("--expected-train-uids", type=int,
+                        help="Defaults to 4096 for pilot or the certified source count for full")
     parser.add_argument("--expected-targets", type=int, default=512)
     parser.add_argument("--expected-gallery", type=int, default=2048)
     args = parser.parse_args()
+    formal = args.train_split == "full"
+    if formal:
+        from experiments.src.idea01.in_domain_pilot import COHORTS
+
+        expected_train = COHORTS[args.source]["train"][0]
+        if (args.method != "dual-tower" or args.precision != "fp32" or not args.require_full_validation_text
+                or (not args.prepare_cad_only and args.bert_dir is None)):
+            parser.error("Full training requires the FP32 BERT command dual tower and --require-full-validation-text")
+        if args.expected_train_uids not in (None, expected_train):
+            parser.error("Full training uses the certified source UID count")
+        args.expected_train_uids = expected_train
+    elif args.expected_train_uids is None:
+        args.expected_train_uids = 4096
+    if args.shared_feature_store is not None and (not formal or args.prepared_cad is not None):
+        parser.error("--shared-feature-store is for formal full training and replaces --prepared-cad")
     if args.batch_size is None:
         args.batch_size = 16 if args.method == "spectrabrep" else 32
     if min(args.batch_size, args.eval_batch_size, args.workers,
@@ -663,9 +821,11 @@ def main():
     train, _, gallery, files = axes
     spectra = verify_spectra_source(args.upstream) if args.method == "spectrabrep" else None
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    if formal:
+        planned_batches = training_batches(args.batch_size, world_size, len(train) * len(LEVELS[args.source]), False)
     group = None
     if world_size > 1:
-        group = initialize_devices(args.device)
+        group = initialize_devices(args.device, keep_origin_dtype=formal)
     primary = group is None or group.primary
     if primary:
         args.output.mkdir(parents=True, exist_ok=False)
@@ -673,21 +833,43 @@ def main():
         group.barrier()
     try:
         if primary:
-            features, coverage = cad_cache(args, train + gallery, files, spectra)
+            if args.shared_feature_store is not None:
+                features, coverage = shared_cad_cache(args, train, gallery)
+            else:
+                if formal:
+                    from experiments.src.idea01.in_domain_pilot import INPUT_HASHES
+
+                    if file_sha256(args.official_zip) != INPUT_HASHES["official_zip"]:
+                        raise ValueError("The formal CAD archive differs from the registered release")
+                features, coverage = cad_cache(args, train + gallery, files, spectra)
         else:
             group.barrier()
-            cache = args.prepared_cad or args.output
-            features = np.load(cache / "cad_features.npy", allow_pickle=False)
-            coverage = read_rows(cache / "cad_coverage.jsonl")
+            if args.shared_feature_store is not None:
+                selected = np.load(args.output / "cad_feature_indices.npy", allow_pickle=False)
+                store = np.load(args.shared_feature_store / "cad_features.npy", mmap_mode="r", allow_pickle=False)
+                features = store[selected]
+                coverage = read_rows(args.output / "cad_coverage.jsonl")
+            else:
+                cache = args.prepared_cad or args.output
+                features = np.load(cache / "cad_features.npy", allow_pickle=False)
+                coverage = read_rows(cache / "cad_coverage.jsonl")
         if args.prepare_cad_only:
-            write_json(args.output / "prepare_runtime.json", {
+            report = {
                 "seconds": perf_counter() - started, "runtime": runtime_versions(), "workers": args.workers,
                 "training_status": dict(Counter(row["status"] for row in coverage[:len(train)])),
                 "validation_status": dict(Counter(row["status"] for row in coverage[len(train):])),
-            })
+            }
+            if formal:
+                report.update(run_scope="formal_full_train_one_epoch", seed=args.seed, train_pair_count=(
+                    len(train) * len(LEVELS[args.source])), planned_updates=len(planned_batches),
+                    final_global_batch=planned_batches[-1][1] - planned_batches[-1][0],
+                    manifest_sha256=files, test_access=False)
+            write_json(args.output / "prepare_runtime.json", report)
+            if formal and report["training_status"] != {"ok": len(train)}:
+                raise ValueError("At least one registered training CAD is invalid. See prepare_runtime.json.")
             return
         if group is None:
-            group = initialize_devices(args.device)
+            group = initialize_devices(args.device, keep_origin_dtype=formal)
         if primary:
             group.barrier()
         run(args, group, axes, features, coverage, spectra, started)
