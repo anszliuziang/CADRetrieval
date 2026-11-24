@@ -7,10 +7,10 @@ import ast
 import hashlib
 import json
 import math
-from collections import Counter
-from pathlib import Path
 import re
 import tempfile
+from collections import Counter
+from pathlib import Path
 
 
 SOURCE = "cadmium-fusion-r1.0.1"
@@ -20,7 +20,8 @@ SPLIT_SHA256 = "2de40371e99fb32c09ca11ba76995ab40fe465aa09609b4de6c81de1bc553ef4
 EXPECTED_SPLITS = {"train": 6011, "validation": 635, "test": 1661}
 EXPECTED_OFFICIAL = {"train": 6900, "test": 1725}
 EXPECTED_PROJECTS = {"train_seen": 1027, "validation_only": 127, "strict_unseen": 507}
-UID = re.compile(r"[0-9]+_[0-9a-fA-F]{8}_[0-9]{4}")
+# The official UID lists determine membership. This guard limits archive/path use.
+UID = re.compile(r"[A-Za-z0-9]+_[A-Za-z0-9]+_[A-Za-z0-9]+")
 CURVE_FIELDS = {
     "line": (("Start Point", 2), ("End Point", 2)),
     "arc": (("Start Point", 2), ("Mid Point", 2), ("End Point", 2)),
