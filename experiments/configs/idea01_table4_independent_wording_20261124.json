@@ -1,0 +1,7 @@
+{
+  "writer": "Codex agent /root/four_tables_binding_eval (AI wording author, separate from the geometry author)",
+  "wordings": {
+    "near_first_rephrased": "The {part} has two {holes}. In plan view, the distance from the {anchor} to the center of the {near} hole is shorter than the distance to the center of the {far} hole.",
+    "far_first_rephrased": "The {far} hole lies farther from the {anchor} than the {near} hole. That comparison uses the centers of the two {holes} in the {part}, as seen in plan view."
+  }
+}

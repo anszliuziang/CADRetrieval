@@ -269,14 +269,33 @@ def write_pair(streams, pair, rows):
         pilot.jsonl_write(streams["histories"], row)
 
 
-def prepare(out, slots, implementation, templates, excluded, *, previews):
-    from contextlib import ExitStack
+def output_paths(out):
+    files = {name: out / f"{name}.jsonl" for name in ("pairs", "histories", "geometry_attempts", "review_key")}
+    files["items"] = out / "review_packet" / "items.jsonl"
+    return files
 
+
+def start_review(out):
     review_dir = out / "review_packet"
     (review_dir / "solids").mkdir(parents=True)
     (review_dir / "README.md").write_text(review.REVIEW_INSTRUCTIONS, encoding="utf-8", newline="\n")
-    files = {name: out / f"{name}.jsonl" for name in ("pairs", "histories", "geometry_attempts", "review_key")}
-    files["items"] = review_dir / "items.jsonl"
+    return review_dir
+
+
+def finish_review(review_dir, files, decisions):
+    files["decision_template"] = review_dir / "decisions_template.jsonl"
+    packet_hash = sha(files["items"])
+    with files["decision_template"].open("xb") as stream:
+        for entry in decisions:
+            pilot.jsonl_write(stream, {**entry, "review_packet_sha256": packet_hash})
+    files["review_index"] = review.write_index(review_dir)
+
+
+def prepare(out, slots, implementation, templates, excluded, *, previews):
+    from contextlib import ExitStack
+
+    review_dir = start_review(out)
+    files = output_paths(out)
     group_stats = {group_key(slot): Counter() for slot in slots}
     review_failures = []
     decisions = []
@@ -332,13 +351,55 @@ def prepare(out, slots, implementation, templates, excluded, *, previews):
                 stats["no_valid_candidate"] += 1
     groups = [{"family": family, "attribute": attribute, "kind": kind, **counts}
               for (family, attribute, kind), counts in group_stats.items()]
-    files["decision_template"] = review_dir / "decisions_template.jsonl"
-    packet_hash = sha(files["items"])
-    with files["decision_template"].open("xb") as stream:
-        for entry in decisions:
-            pilot.jsonl_write(stream, {**entry, "review_packet_sha256": packet_hash})
-    files["review_index"] = review.write_index(review_dir)
+    finish_review(review_dir, files, decisions)
     return groups, review_failures, files
+
+
+def prepare_family(task):
+    out, slots, text2cad_root, templates, excluded, previews = task
+    implementation, _ = pilot.activate_text2cad(text2cad_root)
+    return prepare(out, slots, implementation, templates, excluded, previews=previews)
+
+
+def prepare_parallel(out, slots, text2cad_root, templates, excluded, *, previews, workers):
+    from concurrent.futures import ProcessPoolExecutor
+    from multiprocessing import get_context
+    from shutil import copyfileobj
+    from tempfile import TemporaryDirectory
+
+    family_slots = {family: [slot for slot in slots if slot.family == family] for family in families.FAMILIES}
+    files = output_paths(out)
+    groups = []
+    failures = []
+    decisions = []
+    with TemporaryDirectory(prefix=".families-", dir=out) as work:
+        tasks = [(Path(work) / family, group, text2cad_root, templates, excluded, previews)
+                 for family, group in family_slots.items() if group]
+        # Each process imports its own CadSeqProc and OCC and writes in a separate directory.
+        with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as pool:
+            shards = list(pool.map(prepare_family, tasks))
+
+        review_dir = start_review(out)
+        # map() preserves the catalog order, so the merged axes match the serial run.
+        for name, destination in files.items():
+            with destination.open("xb") as output:
+                for _, _, paths in shards:
+                    with paths[name].open("rb") as source:
+                        copyfileobj(source, output)
+        for shard_groups, shard_failures, paths in shards:
+            groups.extend(shard_groups)
+            failures.extend(shard_failures)
+            media = paths["items"].parent / "solids"
+            for source in media.iterdir():
+                destination = review_dir / "solids" / source.name
+                if destination.exists():
+                    raise ValueError(f"review filename collision across families: {source.name}")
+                source.replace(destination)
+            with paths["decision_template"].open("rb") as source:
+                decisions.extend(json.loads(line) for line in source)
+        # Regenerate the index and bind every response template to the merged public packet.
+        finish_review(review_dir, files, decisions)
+    return groups, failures, files
 
 
 def main():
@@ -351,9 +412,12 @@ def main():
     parser.add_argument("--no-previews", action="store_true", help="Export STEP for review without preview images")
     parser.add_argument("--paraphrases", type=Path, help="JSON with writer and both rephrased wording templates")
     parser.add_argument("--review-exclusions", type=Path, help="JSON list of candidate IDs, reasons and evidence hashes")
+    parser.add_argument("--workers", type=int, default=1, help="Concurrent family processes for CPU validation")
     args = parser.parse_args()
     if not args.pre_register_only and args.text2cad_root is None:
         parser.error("--text2cad-root is required for OCC replay")
+    if not 1 <= args.workers <= len(families.FAMILIES):
+        parser.error(f"--workers must be between 1 and {len(families.FAMILIES)}")
     all_slots = list(families.slots())
     families.check_design_balance(all_slots)
     templates, metadata = wording(args.paraphrases)
@@ -370,8 +434,14 @@ def main():
     excluded, exclusions_sha = exclusions(args.review_exclusions, ids)
     implementation, provenance = pilot.activate_text2cad(args.text2cad_root)
     selected = smoke_slots(all_slots) if args.smoke else all_slots
-    groups, failures, files = prepare(args.out, selected, implementation, templates, excluded,
-                                      previews=not args.no_previews)
+    if args.workers == 1:
+        groups, failures, files = prepare(args.out, selected, implementation, templates, excluded,
+                                          previews=not args.no_previews)
+    else:
+        groups, failures, files = prepare_parallel(
+            args.out, selected, args.text2cad_root, templates, excluded,
+            previews=not args.no_previews, workers=args.workers,
+        )
     no_valid = sum(row.get("no_valid_candidate", 0) for row in groups)
     coord_unverified = sum(row["coordinate_requested"] - row.get("coordinate_geometry_verified", 0) for row in groups)
     family_coverage = {}
@@ -381,7 +451,7 @@ def main():
                                  for key in ("requested", "verified", "review_packet", "preview_warnings",
                                              "coordinate_requested", "coordinate_geometry_verified", "coordinate_conflict",
                                              "bbox_center_near", "bbox_center_far")}
-    summary = {**initial, "mode": "smoke" if args.smoke else "full", "pythonocc": OCC.VERSION,
+    summary = {**initial, "mode": "smoke" if args.smoke else "full", "pythonocc": OCC.VERSION, "workers": args.workers,
                "cadseqproc": provenance, "family_coverage": family_coverage, "groups": groups,
                "raw_geometry_missing_slots": no_valid,
                "coordinate_unverified_slots": coord_unverified, "review_export_failures": failures,
