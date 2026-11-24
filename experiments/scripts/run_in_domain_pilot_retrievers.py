@@ -56,6 +56,7 @@ MANIFESTS = ("pilot_train.jsonl", "validation_targets.jsonl", "validation_galler
 TEMPERATURE = 0.05
 SEED = 17
 FORMAL_MANIFEST_RECEIPT_SHA = "3c297920d0905b3dd5f14aa1b5ac163245a17b958cc3c2e1169ee65d5a8d055d"
+FORMAL_TEST_SCOPE = {"test_queries_opened": False, "test_qrels_opened": False, "test_scoring_executed": False}
 
 
 def file_sha256(path: Path) -> str:
@@ -345,7 +346,7 @@ def load_towers(args, group, spectra):
 
 
 class TextInputs:
-    def __init__(self, tokenizer, texts, prefix, length, device, *, pad_multiple=None):
+    def __init__(self, tokenizer, texts, prefix, length, device, *, pad_multiple=None, native_truncation=False):
         self.tokenizer = tokenizer
         self.device = device
         self.length = length
@@ -357,10 +358,22 @@ class TextInputs:
         self.rows = []
         self.ids = {}
         self.overlength = set()
+        truncated = {}
+        if native_truncation:
+            long_texts = [text for text, row in zip(texts, ids, strict=True) if len(row) > length]
+            if long_texts:
+                clipped = tokenizer([prefix + text for text in long_texts], padding=False, truncation=True,
+                                    max_length=length, return_attention_mask=False, verbose=False)["input_ids"]
+                truncated = dict(zip(long_texts, clipped, strict=True))
         for text, row in zip(texts, ids, strict=True):
-            used = row[-length:] if tokenizer.truncation_side == "left" else row[:length]
+            if native_truncation:
+                used = truncated.get(text, row)
+            else:
+                used = row[-length:] if tokenizer.truncation_side == "left" else row[:length]
             self.ids[text] = used
-            if len(used) < len(row):
+            if len(row) > length:
+                if not 0 < len(used) <= length:
+                    raise ValueError("Tokenizer returned IDs outside the declared context")
                 self.overlength.add(text)
             self.rows.append({
                 "text_sha256": sha256(text.encode("utf-8")).hexdigest(),
@@ -583,7 +596,7 @@ def run(args, group, axes, features, coverage, spectra, started):
     prefix = upstream["config"].INSTRUCTION if upstream is not None else ""
     window = 384 if upstream is not None else 512
     text_inputs = TextInputs(tokenizer, all_texts, prefix, window, group.device,
-                             pad_multiple=64 if formal else None)
+                             pad_multiple=64 if formal else None, native_truncation=formal)
     cad = torch.from_numpy(features)
     mean = std = None
     if upstream is not None:
@@ -632,13 +645,14 @@ def run(args, group, axes, features, coverage, spectra, started):
             "manifest_receipt_sha256": FORMAL_MANIFEST_RECEIPT_SHA,
             "cad_feature_selection": ("cad_cache_input.json"
                                       if args.shared_feature_store or args.prepared_cad else "cad_cache.json"),
+            "shared_cad_catalog_includes_unscored_test_candidates": args.shared_feature_store is not None,
             "registration": "exact raw text to UID edges from the full frozen source training manifest",
             "training_text_policy": "original text with native-window truncation recorded per exposure",
             "validation_text_policy": "complete native input including special tokens, with overlength queries failed",
             "pad_to_multiple_of": 64,
             "npu_precision_mode": "must_keep_origin_dtype" if group.device.type == "npu" else None,
             "checkpoint_selection": "sole candidate at end of epoch 1 evaluated on frozen full-text validation R@20",
-            "candidate_epochs": [1], "test_access": False,
+            "candidate_epochs": [1], **FORMAL_TEST_SCOPE,
         })
     if upstream is not None:
         config.update({
@@ -722,7 +736,7 @@ def run(args, group, axes, features, coverage, spectra, started):
                 "checkpoint_sha256": file_sha256(args.output / "retrieval.pt"),
                 "validation_metrics": "metrics.json", "rank_rows": "ranks.jsonl",
                 "validation_R@20_equal_level_macro": sum(metrics[level]["R@20"] for level in levels) / len(levels),
-                "validation_overlength_failures": validation_overlength, "test_access": False,
+                "validation_overlength_failures": validation_overlength, **FORMAL_TEST_SCOPE,
             })
         arts = sorted(path for path in args.output.rglob("*") if path.is_file())
         input_by_text = dict(zip(all_texts, text_inputs.rows, strict=True))
@@ -751,7 +765,7 @@ def run(args, group, axes, features, coverage, spectra, started):
         if formal:
             result.update({
                 "run_scope": "formal_full_train_one_epoch", "seed": args.seed, "selected_epoch": 1,
-                "checkpoint_selection_receipt": "selection.json", "test_access": False,
+                "checkpoint_selection_receipt": "selection.json", **FORMAL_TEST_SCOPE,
             })
             result["runtime"]["fit_accelerator_hours"] = fit_seconds * group.world_size / 3600
         write_json(args.output / "run.json", result)
@@ -863,7 +877,8 @@ def main():
                 report.update(run_scope="formal_full_train_one_epoch", seed=args.seed, train_pair_count=(
                     len(train) * len(LEVELS[args.source])), planned_updates=len(planned_batches),
                     final_global_batch=planned_batches[-1][1] - planned_batches[-1][0],
-                    manifest_sha256=files, test_access=False)
+                    shared_cad_catalog_includes_unscored_test_candidates=args.shared_feature_store is not None,
+                    manifest_sha256=files, **FORMAL_TEST_SCOPE)
             write_json(args.output / "prepare_runtime.json", report)
             if formal and report["training_status"] != {"ok": len(train)}:
                 raise ValueError("At least one registered training CAD is invalid. See prepare_runtime.json.")
