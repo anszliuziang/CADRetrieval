@@ -10,7 +10,7 @@ import pytest
 EXPERIMENTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(EXPERIMENTS / "scripts"))
 from prepare_formal_fusion360 import ProgramError, json_bytes, read_program  # noqa: E402
-from convert_formal_fusion360 import native_distances  # noqa: E402
+from convert_formal_fusion360 import native_distances, select_routes  # noqa: E402
 from idea01.text2cad_e1_geometry import _triangles_squared_distance, distances  # noqa: E402
 
 
@@ -37,6 +37,19 @@ def test_rejects_taper_and_unsupported_extent():
         native_distances({**feature, "extent_one": extrusion(2, taper_angle={"value": 0.02})})
     with pytest.raises(ProgramError, match="unsupported_native_extent_definition"):
         native_distances({**feature, "extent_one": extrusion(2, kind="ThroughAllExtentDefinition")})
+
+
+def test_candidate_input_coverage_is_independent_of_aligned_training_coverage():
+    aligned = {"input_status": "ok", "geometry": {"status": "aligned"}}
+    other = {"input_status": "ok", "geometry": {"status": "geometry_mismatch"}}
+    failed = {"input_status": "failed"}
+    routes = {"autodesk_history": {"models": {"text2cad": other, "hiercad": failed}},
+              "cadmium_minimal": {"models": {"text2cad": failed, "hiercad": aligned}}}
+    assert select_routes(routes) == ({"text2cad": None, "hiercad": "cadmium_minimal"},
+                                    {"text2cad": "autodesk_history", "hiercad": "cadmium_minimal"}, None)
+    routes["cadmium_minimal"]["models"]["text2cad"] = aligned
+    assert select_routes(routes) == ({"text2cad": "cadmium_minimal", "hiercad": "cadmium_minimal"},
+                                    {"text2cad": "cadmium_minimal", "hiercad": "cadmium_minimal"}, "cadmium_minimal")
 
 
 def test_minimal_literal_carries_only_typed_geometry():

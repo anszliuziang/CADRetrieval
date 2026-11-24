@@ -280,24 +280,38 @@ def evaluate_models(program, reference, uid, native=None):
         except Exception as exc:
             result["text2cad"]["geometry"] = failure("text2cad_replay", exc)
 
-    try:
-        target = hiercad_target(program)
-        result["hiercad"] = {"input_status": "ok", "response_sha256": sha256_bytes(target.response.encode("utf-8")),
-                             "replay_program_sha256": sha256_bytes(json_bytes(target.replay_program))}
-        outputs["hiercad"] = {"response": target.response, "program": target.replay_program}
-    except Exception as exc:
-        result["hiercad"] = {"input_status": "failed", "failure": failure("hiercad_render_parser_round_trip", exc)}
+    if program is None:
+        result["hiercad"] = {"input_status": "normalized_program_unavailable"}
     else:
         try:
-            replay = g.minimal_sequence(target.replay_program)
-            result["hiercad"]["geometry"] = comparison(replay, reference, uid)
+            target = hiercad_target(program)
+            result["hiercad"] = {"input_status": "ok", "response_sha256": sha256_bytes(target.response.encode("utf-8")),
+                                 "replay_program_sha256": sha256_bytes(json_bytes(target.replay_program))}
+            outputs["hiercad"] = {"response": target.response, "program": target.replay_program}
         except Exception as exc:
-            result["hiercad"]["geometry"] = failure("hiercad_parsed_program_replay", exc)
+            result["hiercad"] = {"input_status": "failed", "failure": failure("hiercad_render_parser_round_trip", exc)}
+        else:
+            try:
+                replay = g.minimal_sequence(target.replay_program)
+                result["hiercad"]["geometry"] = comparison(replay, reference, uid)
+            except Exception as exc:
+                result["hiercad"]["geometry"] = failure("hiercad_parsed_program_replay", exc)
     return result, outputs
 
 
 def model_alignment(routes, route, model):
     return routes[route].get("models", {}).get(model, {}).get("geometry", {}).get("status") == "aligned"
+
+
+def select_routes(routes):
+    """Select complete inputs independently from the geometry-qualified intersection."""
+    aligned = {model: next((route for route in ROUTES if model_alignment(routes, route, model)), None)
+               for model in MODELS}
+    inputs = {model: aligned[model] or next((route for route in ROUTES
+                                           if routes[route].get("models", {}).get(model, {}).get("input_status") == "ok"),
+                                          None) for model in MODELS}
+    joint = next((route for route in ROUTES if all(model_alignment(routes, route, model) for model in MODELS)), None)
+    return aligned, inputs, joint
 
 
 def read_original(archive, uid):
@@ -349,12 +363,17 @@ def stage_candidate(item):
             features = used_features(raw)
             route["features"] = source_diagnostics(raw, features)
             native = native_sequence(raw, features)
-            minimal = normalized_program(native)
         except Exception as exc:
             reason = failure("native_program_conversion", exc)
             route.update(program_status=reason["status"], failure=reason)
         else:
-            route["normalized_program_sha256"] = sha256_bytes(json_bytes(minimal))
+            try:
+                minimal = normalized_program(native)
+            except Exception as exc:
+                route["normalized_program_failure"] = failure("native_normalized_program_export", exc)
+                minimal = None
+            else:
+                route["normalized_program_sha256"] = sha256_bytes(json_bytes(minimal))
             route["models"], route_data["autodesk_history"] = evaluate_models(minimal, ref, uid, native)
 
     native_both = all(model_alignment(routes, "autodesk_history", model) for model in MODELS)
@@ -363,14 +382,12 @@ def stage_candidate(item):
     elif published is not None:
         routes["cadmium_minimal"]["conversion_status"] = "native_jointly_aligned"
 
-    joint = next((route for route in ROUTES if all(model_alignment(routes, route, model) for model in MODELS)), None)
-    selected = {model: joint or next((route for route in ROUTES if model_alignment(routes, route, model)), None)
-                for model in MODELS}
+    aligned, selected, joint = select_routes(routes)
     evidence = {"uid": uid, "split": row["split"], "test_project_group": row["test_project_group"],
-                "source_assets": official, "source_routes": routes, "selected_routes": selected,
+                "source_assets": official, "source_routes": routes, "selected_routes": aligned,
+                "selected_input_routes": selected,
                 "joint_aligned_route": joint, "text_present": row["annotation_status"] == "ok"}
-    chosen_data = {model: route_data[route][model] for model, route in selected.items() if route is not None}
-    return evidence, chosen_data
+    return evidence, route_data
 
 
 def configure_worker(archive_path, text2cad, hiercad):
@@ -381,6 +398,7 @@ def configure_worker(archive_path, text2cad, hiercad):
     from idea01 import text2cad_e1_geometry as g
     from idea01.in_domain_pilot_geometry import activate_text2cad
     from idea01.in_domain_pilot_native import use_hiercad_repo
+    from idea01.text2cad_port.model import generate_attention_mask
 
     torch.set_num_threads(1)
     os.environ["TEXT2CAD_SOURCE"] = str(text2cad)
@@ -388,7 +406,8 @@ def configure_worker(archive_path, text2cad, hiercad):
     if text2cad_receipt["revision"] != TEXT2CAD_REVISION:
         raise ValueError("Unexpected verified Text2CAD geometry revision")
     g.sequence_class()
-    g.causal_mask()
+    if not torch.equal(torch.from_numpy(g.causal_mask()), generate_attention_mask(271)):
+        raise ValueError("Text2CAD scoring mask differs from the pinned author's mask")
     use_hiercad_repo(hiercad)
     # Detect missing geometry libraries before emitting misleading per-UID failures.
     import OCC  # noqa: F401
@@ -401,14 +420,12 @@ def configure_worker(archive_path, text2cad, hiercad):
     _WORKER_TMP = Path(_WORKER_STAGE.name)
 
 
-def pth_bytes(arrays):
+def pth_bytes(arrays, attention):
     import torch
-
-    from idea01 import text2cad_e1_geometry as g
 
     data = {"vec": {key: torch.from_numpy(arrays[key]) for key in ("cad_vec", "flag_vec", "index_vec")},
             "mask_cad_dict": {"key_padding_mask": torch.from_numpy(arrays["key_padding_mask"]),
-                              "attn_mask": torch.from_numpy(g.causal_mask())}}
+                              "attn_mask": attention}}
     output = io.BytesIO()
     torch.save(data, output)
     return output.getvalue()
@@ -427,27 +444,69 @@ def count_features(arrays):
 
 def write_outputs(results, out):
     from idea01.in_domain_pilot import FEATURE_NAMES
+    from idea01.text2cad_port.model import generate_attention_mask
 
-    coverage, axes, responses, features = [], [], [], []
+    coverage, axes, responses, other_responses = [], [], [], []
+    features, other_features, representations = [], [], []
+    progress = Counter()
+    attention = generate_attention_mask(271)
     with ZipFile(out / "text2cad_candidates.zip", "x", compression=ZIP_DEFLATED, compresslevel=3) as z:
-        for row, models in results:
+        for row, route_data in results:
             uid = row["uid"]
-            member = None
-            if "text2cad" in models:
-                member = f"cad_seq/{uid}/seq/{uid}.pth"
-                z.writestr(ZipInfo(member), pth_bytes(models["text2cad"]), compress_type=ZIP_DEFLATED, compresslevel=3)
-                features.append({"uid": uid, "features": count_features(models["text2cad"])})
-            if "hiercad" in models:
-                responses.append({"uid": uid, **models["hiercad"]})
-            axes.append({"uid": uid, "text2cad_member": member, "hiercad_input": "hiercad" in models})
+            axis = {"uid": uid, "text2cad_member": None, "hiercad_input": False}
+            for model in MODELS:
+                axis[f"{model}_route"] = row["selected_input_routes"][model]
+                axis[f"{model}_geometry_verified"] = row["selected_routes"][model] is not None
+                axis[f"{model}_geometry_status"] = None
+                progress[f"{model}_input"] += axis[f"{model}_route"] is not None
+                progress[f"{model}_aligned"] += axis[f"{model}_geometry_verified"]
+            for route, candidates in route_data.items():
+                for model, payload in candidates.items():
+                    selected = axis[f"{model}_route"] == route
+                    geometry = row["source_routes"][route]["models"][model]["geometry"]
+                    status = geometry["status"]
+                    verified = status == "aligned"
+                    record = {"uid": uid, "model": model, "route": route, "selected": selected,
+                              "geometry_verified": verified, "geometry_status": status}
+                    if selected:
+                        axis[f"{model}_geometry_status"] = status
+                    if model == "text2cad":
+                        if not verified:
+                            prefix = f"unverified/{route}/"
+                        else:
+                            prefix = "" if selected else f"alternative/{route}/"
+                        member = f"{prefix}cad_seq/{uid}/seq/{uid}.pth"
+                        z.writestr(ZipInfo(member), pth_bytes(payload, attention),
+                                   compress_type=ZIP_DEFLATED, compresslevel=3)
+                        (features if selected else other_features).append({**record, "features": count_features(payload)})
+                        record["member"] = member
+                        if selected:
+                            axis["text2cad_member"] = member
+                    else:
+                        response = {**record, **payload}
+                        if selected:
+                            responses.append(response)
+                            axis["hiercad_input"] = True
+                            record["file"] = "hiercad_targets.jsonl"
+                        else:
+                            other_responses.append(response)
+                            record["file"] = "hiercad_alternative_targets.jsonl"
+                    representations.append(record)
+            axes.append(axis)
             coverage.append(row)
+            progress["joint_aligned"] += row["joint_aligned_route"] is not None
             if len(coverage) % 100 == 0:
-                print(f"Completed {len(coverage)} Fusion coverage records", flush=True)
+                print(json.dumps({"completed_fusion_uids": len(coverage), "last_uid": uid, **progress}), flush=True)
+
+    print(json.dumps({"completed_fusion_uids": len(coverage), **progress}), flush=True)
 
     write_jsonl(out / "geometry_coverage.jsonl", coverage)
     write_jsonl(out / "candidate_inputs.jsonl", axes)
+    write_jsonl(out / "candidate_representations.jsonl", representations)
     write_jsonl(out / "hiercad_targets.jsonl", responses)
+    write_jsonl(out / "hiercad_alternative_targets.jsonl", other_responses)
     write_jsonl(out / "command_count_features.jsonl", features)
+    write_jsonl(out / "command_count_alternative_features.jsonl", other_features)
     write_jsonl(out / "geometry_verified_train_intersection.jsonl", (
         {"uid": row["uid"], "route": row["joint_aligned_route"]}
         for row in coverage if row["split"] == "train" and row["joint_aligned_route"] and row["text_present"]))
@@ -461,6 +520,8 @@ def receipt(args, out, coverage):
         rows = [row for row in coverage if row["split"] == split]
         statistics[split] = {
             "attempted": len(rows), "frozen_denominator": EXPECTED_SPLITS[split],
+            "text2cad_input": sum(row["selected_input_routes"]["text2cad"] is not None for row in rows),
+            "hiercad_input": sum(row["selected_input_routes"]["hiercad"] is not None for row in rows),
             "text2cad_aligned": sum(row["selected_routes"]["text2cad"] is not None for row in rows),
             "hiercad_aligned": sum(row["selected_routes"]["hiercad"] is not None for row in rows),
             "jointly_aligned": sum(row["joint_aligned_route"] is not None for row in rows),
@@ -471,6 +532,7 @@ def receipt(args, out, coverage):
               "catalog_manifest_sha256": sha256_file(args.catalog / "manifest.json"),
               "autodesk_archive_sha256": ARCHIVE_SHA256, "text2cad_revision": TEXT2CAD_REVISION,
               "hiercad_revision": HIERCAD_REVISION, "statistics": statistics,
+              "training_intersection_status": "geometry_candidate_only_unfrozen",
               "hiercad_replay": "author-rendered response and author-parsed program, strict OCCT replay",
               "text2cad_replay": "author 8-bit vector and strict OCCT replay",
               "comparison": "final Autodesk STEP, Text2CAD source-normalized frame, E1 geometry thresholds, "
