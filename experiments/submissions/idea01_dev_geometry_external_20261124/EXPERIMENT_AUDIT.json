@@ -1,0 +1,40 @@
+{
+  "audit_skill": "experiment-audit",
+  "date": "2026-11-24",
+  "verdict": "WARN",
+  "integrity_status": "warn",
+  "reason_code": "scope_exceeds_evidence_if_generalized",
+  "reviewer_model": "gpt-6.2-sol",
+  "reviewer_reasoning": "ultra",
+  "review_independence": "same-family",
+  "acceptance_status": "provisional",
+  "audited_input_hashes": {
+    "frozen_pairs": "sha256:9f524f9e05d94c0cee321a26fba452395ad90f2d196422c9108d039271864824",
+    "frozen_histories": "sha256:b7767bf41d902d86b506df48f20b153061b16dc85d9277852729fd33103f2b3a",
+    "primary_manifest": "sha256:75328736ed6091f8e6066d70b1d3fa680b8e1855ed1d3218144b70d3d2e21d10",
+    "top_view_manifest": "sha256:76ea038051ed41ce63a65b5be588c77e5b4b91bcabdb6f00d1543f9282ed34d9"
+  },
+  "checks": {
+    "gt_provenance": {"status": "pass", "details": "Authored relations measured on the replayed OCC solids"},
+    "score_normalization": {"status": "pass", "details": "Unit-vector cosine independently recomputed"},
+    "result_existence": {"status": "pass", "details": "Actual exit receipts and manifests verified"},
+    "dead_code": {"status": "pass", "details": "All strict outcome indicators observed on executed path"},
+    "scope": {"status": "warn", "details": "40 designed development pairs from two families with repeated views"},
+    "eval_type": "real_gt",
+    "fixture_origin": "synthetic design, independently measured geometry"
+  },
+  "deterministic_checks": {
+    "cosines_recomputed": 10240,
+    "expanded_score_cells": 5120,
+    "geometry_files": 480,
+    "main_payloads": 532,
+    "top_view_payloads": 98,
+    "mmcad_feature_arrays_replayed": 400,
+    "mmcad_extractor_exception_events": 0,
+    "hole_centers_reprojected": 160
+  },
+  "claims": [
+    {"id": "development_pair_counts", "impact": "supported"},
+    {"id": "general_cad_understanding_or_representation_claim", "impact": "unsupported"}
+  ]
+}
