@@ -13,9 +13,9 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from idea01 import in_domain_pilot as pilot
-from idea01.in_domain_pilot_ridge import raw_pairs
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from experiments.src.idea01 import in_domain_pilot as pilot
+from experiments.src.idea01.in_domain_pilot_ridge import raw_pairs
 
 RECEIPT_SHA = "3c297920d0905b3dd5f14aa1b5ac163245a17b958cc3c2e1169ee65d5a8d055d"
 RIDGE_SUMMARY_SHA = {
