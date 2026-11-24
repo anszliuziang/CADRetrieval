@@ -3,9 +3,16 @@
 
 Formal mode takes two JSON receipts. The freeze receipt supplies the formal
 scope, seal time, family IDs, exchangeability declaration, and references to
-pairs, histories, blind reviews and preregistration. The runs receipt supplies
-one entry per attempted method, with score, model geometry, execution and
-applicable training-selection references. Each reference has path and sha256.
+pairs, histories, blind approvals and preregistration. Its review_packet names
+the geometry_summary, supplied wording, public items, private review_key and
+two completed responses. The runs receipt supplies one entry per attempted
+method, with score, model geometry, execution and applicable training-selection
+references. Each reference has path and sha256.
+
+Use two completed copies of the published decisions template as responses.
+Each coordinator approval records pair_id, review_id, the two review hashes,
+resolution and two reviewers with reviewer_id, blind and decision. Keep the
+private review_key and coordinator approvals outside the rater copy.
 
 Score JSONL positions are AA, AB, BA, BB. Every row includes pair_id, order,
 variant, view_sha256, scores, failures, cad_input_sha256 and cell_input_sha256.
@@ -108,7 +115,7 @@ def pair_view_key(pair, view):
 
 def view_identity_sha(view):
     return digest(json.dumps(view, sort_keys=True, ensure_ascii=False,
-                             separators=(",", ":")).encode("utf-8"))
+                             separators=(",", ":"), allow_nan=False).encode("utf-8"))
 
 
 def program_identity_sha(program):
@@ -468,6 +475,139 @@ def load_view_axes(pair_rows, histories):
     return views
 
 
+def verify_review_item(pair, histories, item, private, packet_dir, receipts):
+    """Recover opaque caption-to-part choices from the sealed fixture and private map."""
+    pid, review_id = pair["pair_id"], pair["review_id"]
+    item_sha = view_identity_sha(item)
+    require(len(review_id) == 17 and review_id.startswith("r")
+            and all(char in "0123456789abcdef" for char in review_id[1:])
+            and set(item) == {"review_id", "parts", "wording_views"}
+            and item["review_id"] == private["review_id"] == review_id
+            and private["pair_id"] == pid and private["review_item_sha256"] == item_sha,
+            f"Public review item and private mapping disagree for {pid}")
+    parts = keyed(item["parts"], lambda row: row["part_id"])
+    require(parts.keys() == private["parts"].keys() == {"P1", "P2"}
+            and {label["entity"] for label in private["parts"].values()} == {"A", "B"},
+            f"Incorrect blinded part axes for {pid}")
+    labels = {}
+    for label, part in parts.items():
+        mapping = private["parts"][label]
+        entity = mapping["entity"]
+        member = entity + "0"
+        step = f"solids/{review_id}-{label}.step"
+        image = f"solids/{review_id}-{label}.png"
+        require(set(part) == {"part_id", "step", "step_sha256", "image", "image_sha256"}
+                and mapping["source_history"] == member
+                and mapping["raw_program_sha256"] == histories[pid, member]["raw_program_sha256"]
+                and mapping["roundtrip_geometry"]["status"] == "verified"
+                and part["step"] == step and part["step_sha256"] == mapping["step_sha256"]
+                and part["image_sha256"] == mapping["image_sha256"],
+                f"Blinded solid does not link to its sealed CAD for {pid}/{label}")
+        read_pinned(packet_dir / step, part["step_sha256"], receipts)
+        if part["image"] is None:
+            require(part["image_sha256"] is None, f"Missing image for {pid}/{label}")
+        else:
+            require(part["image"] == image, f"Incorrect blinded image path for {pid}/{label}")
+            read_pinned(packet_dir / image, part["image_sha256"], receipts)
+        labels[entity] = label
+
+    views = keyed(item["wording_views"], lambda row: row["view_id"])
+    wanted_variants = set(VARIANTS) if pair["kind"] == "binding" else {pair["views"][0]["variant"]}
+    require(views.keys() == private["views"].keys() == {f"V{i}" for i in range(1, len(wanted_variants) + 1)}
+            and {view["variant"] for view in private["views"].values()} == wanted_variants,
+            f"Blinded caption axes differ for {pid}")
+    answer = {}
+    for label, view in views.items():
+        mapping = private["views"][label]
+        captions = keyed(view["captions"], lambda row: row["caption_id"])
+        require(set(view) == {"view_id", "captions"} and captions.keys() == mapping["entities"].keys() == {"C1", "C2"}
+                and set(mapping["entities"].values()) == {"A", "B"}, f"Incorrect opaque captions for {pid}/{label}")
+        answer[label] = {}
+        for caption_id, caption in captions.items():
+            entity, variant = mapping["entities"][caption_id], mapping["variant"]
+            require(set(caption) == {"caption_id", "text"} and caption["text"] == pair["captions"][entity][variant]
+                    and digest(caption["text"].encode("utf-8")) == pair["caption_sha256"][entity][variant],
+                    f"Blinded wording differs from the sealed caption for {pid}/{label}/{caption_id}")
+            answer[label][caption_id] = labels[entity]
+    return answer
+
+
+def verify_review_responses(pair, item, packet_sha, expected, approval, responses):
+    pid, review_id = pair["pair_id"], pair["review_id"]
+    item_sha = view_identity_sha(item)
+    raters = approval["reviewers"]
+    require(approval["review_id"] == review_id and approval["resolution"] == "accepted" and len(raters) == 2
+            and len(responses) == 2
+            and {rater["reviewer_id"] for rater in raters} == responses.keys()
+            and all(rater["blind"] is True and rater["decision"] == "approved" for rater in raters),
+            f"Two distinct recorded blind approvals are required for {pid}")
+    require(approval.get("review_packet_sha256") == packet_sha and approval.get("review_item_sha256") == item_sha,
+            f"Coordinator approval is for a different packet or item for {pid}")
+    for reviewer_id, response in responses.items():
+        require(response["review_id"] == review_id and response["reviewer_id"] == reviewer_id
+                and response.get("review_packet_sha256") == packet_sha
+                and response.get("review_item_sha256") == item_sha,
+                f"Blind response is for a different packet or item for {pid}/{reviewer_id}")
+        date, visibility = response["review_date"], response["part_visibility"]
+        require(isinstance(date, str) and date.strip() and visibility.keys() == {"P1", "P2"}
+                and all(part["anchor_visible"] is True and part["both_target_holes_visible"] is True
+                        for part in visibility.values()), f"Blind visibility was not approved for {pid}/{reviewer_id}")
+        matches = keyed(response["wording_judgments"], lambda judgment: judgment["view_id"])
+        require({key: row["caption_match"] for key, row in matches.items()} == expected
+                and (pair["kind"] != "binding" or response["equivalent_wording"] is True),
+                f"Blind caption match or paraphrase approval differs for {pid}/{reviewer_id}")
+
+
+def verify_review_packet(base, freeze, pairs, histories, approvals, receipts):
+    packet = freeze["review_packet"]
+    summary = json.loads(read_reference(base, packet["geometry_summary"], receipts))
+    wording = json.loads(read_reference(base, packet["wording"], receipts))
+    writer = wording["writer"]
+    require(isinstance(writer, str) and writer.strip()
+            and set(wording["wordings"]) == set(VARIANTS[2:])
+            and all(isinstance(value, str) and value.strip() for value in wording["wordings"].values())
+            and summary["wording"] == {"status": "provided_for_blind_review", "independent_writer": writer,
+                                       "sha256": packet["wording"]["sha256"]},
+            "Formal blind review requires the exact supplied wording from a named independent author")
+    require(summary["mode"] == "full" and not summary["review_export_failures"]
+            and all(summary["files_sha256"][key] == reference["sha256"] for key, reference in (
+                ("pairs", freeze["pairs"]), ("histories", freeze["histories"]),
+                ("items", packet["items"]), ("review_key", packet["review_key"]))),
+            "Blind packet and sealed fixture do not match the full prepared geometry")
+    packet_dir = (base / packet["items"]["path"]).parent.resolve()
+    require(not (base / packet["review_key"]["path"]).resolve().is_relative_to(packet_dir),
+            "The private review key belongs outside the rater packet")
+    read_pinned(packet_dir / "index.html", summary["files_sha256"]["review_index"], receipts)
+    read_pinned(packet_dir / "decisions_template.jsonl", summary["files_sha256"]["decision_template"], receipts)
+    items = keyed(json_lines(read_reference(base, packet["items"], receipts)), lambda item: item["review_id"])
+    private = keyed(json_lines(read_reference(base, packet["review_key"], receipts)), lambda row: row["review_id"])
+    review_ids = keyed((pairs[pid] for pid in approvals), lambda pair: pair["review_id"])
+    require(items.keys() == private.keys() == review_ids.keys(),
+            "Blinded packet must cover exactly the sealed binding and easy pairs")
+
+    submitted = {}
+    require(len(packet["responses"]) == 2, "Two independent blind response files are required")
+    for reference in packet["responses"]:
+        rows = keyed(json_lines(read_reference(base, reference, receipts)), lambda row: row["review_id"])
+        require(rows.keys() == items.keys(), "Blind response coverage differs from the sealed packet")
+        identities = {row["reviewer_id"] for row in rows.values()}
+        require(len(identities) == 1, "Each blind response file must come from one distinct reviewer")
+        reviewer_id, = identities
+        require(isinstance(reviewer_id, str) and reviewer_id.strip()
+                and reviewer_id.strip().casefold() not in {identity.strip().casefold() for identity in (*submitted, writer)},
+                "The wording author and both blind raters must be distinct people")
+        submitted[reviewer_id] = rows
+
+    packet_sha = packet["items"]["sha256"]
+    for review_id, pair in review_ids.items():
+        item = items[review_id]
+        expected = verify_review_item(pair, histories, item, private[review_id], packet_dir, receipts)
+        approval = approvals[pair["pair_id"]]
+        responses = {reviewer_id: rows[review_id] for reviewer_id, rows in submitted.items()}
+        verify_review_responses(pair, item, packet_sha, expected, approval, responses)
+    return {"items_sha256": packet_sha, "wording": summary["wording"], "approved_items": len(items)}
+
+
 def load_formal_fixture(freeze_path, receipts):
     source = freeze_path.read_bytes()
     receipts[str(freeze_path)] = digest(source)
@@ -525,14 +665,7 @@ def load_formal_fixture(freeze_path, receipts):
             coordinate_parents.add(parent["pair_id"])
             continue
         require(raw_verified, f"Raw geometry must verify the frozen label for {pid}")
-        approval = reviews[pid]
-        raters = approval["reviewers"]
-        require(approval["review_id"] == pair["review_id"] and approval["resolution"] == "accepted" and len(raters) == 2
-                and all(rater["blind"] is True and rater["decision"] == "approved"
-                        and isinstance(rater["reviewer_id"], str) and rater["reviewer_id"].strip()
-                        for rater in raters)
-                and raters[0]["reviewer_id"] != raters[1]["reviewer_id"],
-                f"Two distinct recorded blind approvals are required for {pid}")
+    review_packet = verify_review_packet(freeze_path.parent, freeze, pairs, histories, reviews, receipts)
     for pid, pair in pairs.items():
         if pair["kind"] == "coordinate" and pair["coordinate_geometry_verified"]:
             parent = pair["parent_pair_id"]
@@ -540,7 +673,7 @@ def load_formal_fixture(freeze_path, receipts):
     exchange = freeze["exchangeability"]
     exchangeable = (exchange["independent_families"] is True and exchange["label_exchangeable"] is True
                     and bool(exchange["basis_in_preregistration"].strip()))
-    return list(pairs.values()), views, reviews, exchange, exchangeable
+    return list(pairs.values()), views, reviews, exchange, exchangeable, review_packet
 
 
 def method_geometry_run(run, base, pairs, receipts):
@@ -631,7 +764,7 @@ def method_score_run(run, base, pairs, axes, receipts):
 
 def formal_inputs(freeze_path, runs_path):
     receipts = {}
-    pairs, views, reviews, exchange, exchangeable = load_formal_fixture(freeze_path, receipts)
+    pairs, views, reviews, exchange, exchangeable, review_packet = load_formal_fixture(freeze_path, receipts)
     data = runs_path.read_bytes()
     receipts[str(runs_path)] = digest(data)
     methods = keyed(json.loads(data)["runs"], lambda run: run["method"])
@@ -646,7 +779,7 @@ def formal_inputs(freeze_path, runs_path):
     return {
         "scope": "formal", "pairs": pairs, "views": views, "grids": grids, "exclusions": exclusions,
         "geometry": geometry, "provenance": provenance, "input_sha256": receipts, "blind_reviews": reviews,
-        "exchangeability": exchange, "exchangeable": exchangeable, "supplement": None,
+        "exchangeability": exchange, "exchangeable": exchangeable, "supplement": None, "review_packet": review_packet,
     }
 
 
@@ -770,6 +903,8 @@ def write_report(inputs, output):
         if scope == "formal" else None,
         "failure_reasons": reason_counts, "methods": summaries,
     }
+    if scope == "formal":
+        summary["review_packet"] = inputs["review_packet"]
     output.mkdir(parents=True, exist_ok=False)
     write_json(output / "summary.json", summary)
     write_jsonl(output / "joined_views.jsonl", view_rows)

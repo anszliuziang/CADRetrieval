@@ -65,6 +65,10 @@ PUBLISHED = {
     "first_cut_slot": (160, 160, 160, 0), "local_sketch_distance": (0, 0, 0, 0),
     "bow_collision": (0, 0, 0, 0), "spectra_collision": (0, 0, 0, 0),
 }
+RIDGE_TOKEN_PATTERN = re.compile(
+    r"(?u)[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?|[^\W\d_]+(?:['’][^\W\d_]+)?",
+    re.IGNORECASE,
+)
 
 
 def archived_view(scores, saved):
@@ -117,10 +121,13 @@ def native_cell_evidence(cells):
 
 def original_collision_proofs(row, pair, histories, view):
     pid = pair["pair_id"]
-    tokens = [Counter(re.findall(r"[a-z0-9]+", text.lower())) for text in view["texts"]]
-    require(row["bow_identical_caption_input"] is True and tokens[0] == tokens[1],
+    text = [item.lower() for item in view["texts"]]
+    old_tokens = [Counter(re.findall(r"[a-z0-9]+", item)) for item in text]
+    ridge_tokens = [Counter(RIDGE_TOKEN_PATTERN.findall(item)) for item in text]
+    require(row["bow_identical_caption_input"] is True and old_tokens[0] == old_tokens[1]
+            and ridge_tokens[0] == ridge_tokens[1],
             f"Word bag equality cannot be proven for {pid}/{view['variant']}")
-    bow = collision_view("cad", {"identical_unigram_counts": dict(sorted(tokens[0].items()))})
+    bow = collision_view("cad", {"identical_unigram_counts": dict(sorted(ridge_tokens[0].items()))})
     cad = [histories[pid, name]["inputs"]["spectrabrep"] for name in view["histories"]]
     comparison, = [item for item in pair["models"]["spectrabrep"]["opposite_entities"]["comparisons"]
                    if item["histories"] == view["histories"]]

@@ -1,11 +1,12 @@
 import unittest
 import json
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from experiments.scripts.evaluate_formal_binding import (
     ATTRIBUTES, GRID, collision_view, digest, evaluate_view, exact_sign_flip, family_interval, load_formal_fixture,
-    pair_result, summarize_method,
+    pair_result, summarize_method, verify_review_responses, view_identity_sha,
 )
 
 
@@ -114,6 +115,40 @@ class FormalBindingTests(unittest.TestCase):
             path.write_text(json.dumps(sealed), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "Blind approvals"):
                 load_formal_fixture(path, {})
+
+    def test_stale_approval_is_rejected_even_when_opaque_id_and_choices_are_unchanged(self):
+        opaque = "r1234567890abcdef"
+        pair = {"pair_id": "test", "review_id": opaque, "kind": "binding"}
+        old_item = {"review_id": opaque, "parts": [], "wording_views": [{"text": "previous wording"}]}
+        item = {**old_item, "wording_views": [{"text": "new wording for the same part"}]}
+        old_packet = digest(json.dumps(old_item).encode())
+        packet = digest(json.dumps(item).encode())
+        expected = {"V1": {"C1": "P2", "C2": "P1"}}
+        approval = {
+            "review_id": opaque, "resolution": "accepted", "review_packet_sha256": packet,
+            "review_item_sha256": view_identity_sha(item), "reviewers": [
+                {"reviewer_id": name, "blind": True, "decision": "approved"} for name in ("reader A", "reader B")
+            ],
+        }
+        responses = {
+            name: {"review_id": opaque, "reviewer_id": name, "review_packet_sha256": packet,
+                   "review_item_sha256": view_identity_sha(item), "review_date": "2026-11-24",
+                   "part_visibility": {part: {"anchor_visible": True, "both_target_holes_visible": True}
+                                       for part in ("P1", "P2")},
+                   "wording_judgments": [{"view_id": "V1", "caption_match": expected["V1"]}],
+                   "equivalent_wording": True}
+            for name in ("reader A", "reader B")
+        }
+        verify_review_responses(pair, item, packet, expected, approval, responses)
+        for field, stale in (("review_packet_sha256", old_packet),
+                             ("review_item_sha256", view_identity_sha(old_item))):
+            with self.subTest(stale=field):
+                stale_responses = deepcopy(responses)
+                stale_responses["reader B"][field] = stale
+                with self.assertRaisesRegex(ValueError, "Blind response is for a different packet or item"):
+                    verify_review_responses(pair, item, packet, expected, approval, stale_responses)
+                with self.assertRaisesRegex(ValueError, "Coordinator approval is for a different packet or item"):
+                    verify_review_responses(pair, item, packet, expected, {**approval, field: stale}, responses)
 
 
 if __name__ == "__main__":

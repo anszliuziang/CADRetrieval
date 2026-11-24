@@ -35,18 +35,21 @@ def sha(path):
 def wording(path):
     if path is None:
         return families.DRAFT_PARAPHRASES, {"status": "draft_second_wording", "independent_writer": None}
-    document = json.loads(path.read_bytes())
+    payload = path.read_bytes()
+    document = json.loads(payload)
     writer = document["writer"]
     variants = document["wordings"]
     if not isinstance(writer, str) or not writer.strip() or set(variants) != set(families.DRAFT_PARAPHRASES):
         raise ValueError("provide a named independent wording author and both rephrased templates")
-    return variants, {"status": "provided_for_blind_review", "independent_writer": writer, "sha256": sha(path)}
+    return variants, {"status": "provided_for_blind_review", "independent_writer": writer,
+                      "sha256": sha256(payload).hexdigest()}
 
 
 def exclusions(path, candidates):
     if path is None:
-        return {}
-    records = json.loads(path.read_bytes())
+        return {}, None
+    payload = path.read_bytes()
+    records = json.loads(payload)
     allowed = {"ambiguous_english", "paraphrase_mismatch", "anchor_not_visible", "hole_not_visible",
                "geometry_error", "unresolved_reviewer_disagreement"}
     result = {}
@@ -56,7 +59,7 @@ def exclusions(path, candidates):
                 or not re.fullmatch(r"[0-9a-f]{64}", entry["review_evidence_sha256"])):
             raise ValueError("invalid blind exclusion or missing reviewer evidence")
         result[candidate] = entry
-    return result
+    return result, sha256(payload).hexdigest()
 
 
 def history_rows(design, coordinate=False):
@@ -364,7 +367,7 @@ def main():
         return 0
     import OCC
 
-    excluded = exclusions(args.review_exclusions, ids)
+    excluded, exclusions_sha = exclusions(args.review_exclusions, ids)
     implementation, provenance = pilot.activate_text2cad(args.text2cad_root)
     selected = smoke_slots(all_slots) if args.smoke else all_slots
     groups, failures, files = prepare(args.out, selected, implementation, templates, excluded,
@@ -382,7 +385,7 @@ def main():
                "cadseqproc": provenance, "family_coverage": family_coverage, "groups": groups,
                "raw_geometry_missing_slots": no_valid,
                "coordinate_unverified_slots": coord_unverified, "review_export_failures": failures,
-               "review_exclusions_sha256": sha(args.review_exclusions) if args.review_exclusions else None,
+               "review_exclusions_sha256": exclusions_sha,
                "files_sha256": {name: sha(path) for name, path in files.items()}}
     save(args.out / "summary.json", summary)
     print(json.dumps({"output": str(args.out), "planned": len(selected), "raw_geometry_missing": no_valid,
