@@ -130,9 +130,17 @@ class LazyCandidates(ZipCandidateStore):
         return self._load_one(self.members[index], self.archive)
 
 
+def encode_training_texts(tokenizer, texts, pad_multiple):
+    options = dict(return_tensors="pt", padding=True, truncation=True, max_length=512)
+    if pad_multiple is not None:
+        options["pad_to_multiple_of"] = pad_multiple
+    return tokenizer(texts, **options)
+
+
 class TrainingEmbedder(TextEmbedder):
     truncate = False
     profile = False
+    pad_multiple = None
 
     @lru_cache(maxsize=65536)
     def length(self, text):
@@ -144,13 +152,14 @@ class TrainingEmbedder(TextEmbedder):
         if self.profile:
             synchronize(self.device)
             started = time.monotonic()
-        packed = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        packed = encode_training_texts(self.tokenizer, texts, self.pad_multiple)
         inputs = packed.to(self.device)
         with torch.no_grad():
             result = self.model(**inputs)[0], inputs["attention_mask"] == 0
         if self.profile:
             synchronize(self.device)
             self.bert_seconds = time.monotonic() - started
+            self.text_width = int(inputs["input_ids"].shape[1])
         return result
 
 
@@ -340,6 +349,7 @@ def update(model, wrapped, optimizer, store, indices, train, levels, ids, rank, 
     if profile:
         timing = dict(rank=rank, pairs=len(local_ids), prepare_seconds=forward-begin,
                       bert_seconds=model.base_text_embedder.bert_seconds,
+                      text_width=model.base_text_embedder.text_width,
                       forward_and_loss_seconds=reduce-forward, head_count_reduce_seconds=backward-reduce,
                       backward_including_ddp_seconds=clip-backward, clip_update_seconds=finished-clip)
         if device.type == "npu":
@@ -494,6 +504,7 @@ def run(args):
     store = LazyCandidates(args.cad_zip, members, archive_pin)
     verify_bert_asset_shas(args.bert)
     embedder = TrainingEmbedder.from_local(args.bert, 512, device)
+    embedder.pad_multiple = getattr(args, "train_text_pad_multiple", None)
     verify_bert_model_load(embedder, args.bert)
     require(embedder.tokenizer.truncation_side == embedder.tokenizer.padding_side == "right", "Wrong tokenizer sides")
     seed_all(SEED, device)
@@ -524,6 +535,8 @@ def run(args):
                   train_only=args.train_only, audit_batch=args.audit_batch, smoke_validation_count=args.smoke_validation_count,
                   script_sha256=sha256_file(Path(__file__)),
                   code_sha=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
+    if embedder.pad_multiple is not None:
+        recipe["training_text_pad_multiple"] = embedder.pad_multiple
     layout = gather(dict(rank=rank, device=str(device), hostname=socket.gethostname(), pid=os.getpid(),
                          visible_devices=os.environ.get("ASCEND_RT_VISIBLE_DEVICES"),
                          visible_ascend_devices=os.environ.get("ASCEND_VISIBLE_DEVICES")), world)
@@ -547,6 +560,8 @@ def run(args):
             publish_curve(args.out, state)
     if args.audit_batch == "tail":
         state["next_batch"] = batches - 1
+    elif args.audit_batch == "third":
+        state["next_batch"] = 2
     while not state["completed"] and (args.stop_after_updates is None or state["updates"] < args.stop_after_updates):
         epoch = state["epoch"]
         order = epoch_order(size, epoch)
@@ -628,15 +643,20 @@ def main():
     p.add_argument("--fusion-validation-qrels", type=Path)
     p.add_argument("--device", choices=("npu", "cpu"), default="npu")
     p.add_argument("--train-only", action="store_true")
+    p.add_argument("--train-text-pad-multiple", type=int, choices=(32, 64),
+                   help="Compare right padding in a fresh bounded T training probe")
     p.add_argument("--stop-after-updates", type=int)
-    p.add_argument("--audit-batch", choices=("first", "tail"),
-                   help="One dropout-free real batch for comparing one-rank and two-rank witnesses")
+    p.add_argument("--audit-batch", choices=("first", "third", "tail"),
+                   help="One dropout-free real batch for comparing training layouts")
     p.add_argument("--save-every", type=int, default=250)
     p.add_argument("--validation-batch", type=int, default=8)
     p.add_argument("--smoke-validation-count", type=int, default=0,
                    help="After the bounded update, score the first N registered validation rows per level")
     p.add_argument("--resume", action="store_true")
     args = p.parse_args()
+    if args.train_text_pad_multiple is not None:
+        require(args.source == "t2cad-v1.0" and args.train_only and not args.resume,
+                "Text width changes are limited to fresh train-only T probes")
     if args.audit_batch:
         require(args.train_only and not args.resume and args.stop_after_updates in (None, 1),
                 "Audit requires --train-only, a fresh run, and exactly one update")

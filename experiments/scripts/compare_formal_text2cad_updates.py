@@ -1,4 +1,4 @@
-"""Compare one/two-rank optimizer witnesses or uninterrupted/resumed real runs."""
+"""Compare real optimizer witnesses or uninterrupted/resumed runs."""
 import argparse
 import json
 import math
@@ -38,7 +38,7 @@ def checkpoint(root):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("kind", choices=("ddp", "resume"))
+    p.add_argument("kind", choices=("ddp", "resume", "padding"))
     p.add_argument("reference", type=Path)
     p.add_argument("candidate", type=Path)
     p.add_argument("--rtol", type=float, default=1e-4)
@@ -55,8 +55,20 @@ def main():
     else:
         a, b = (load(root / "update-witness.pt") for root in (args.reference, args.candidate))
         recipes = [json.loads((root / "run.json").read_bytes())["recipe"] for root in (args.reference, args.candidate)]
-        if (recipes[0].pop("world"), recipes[1].pop("world")) != (1, 2) or recipes[0] != recipes[1]:
-            raise ValueError("Expected identical witness recipes for one and two ranks")
+        expected_world = (1, 2)
+        if args.kind == "padding":
+            expected_world = (2, 2)
+            multiple = recipes[1].pop("training_text_pad_multiple", None)
+            if "training_text_pad_multiple" in recipes[0] or multiple not in (32, 64):
+                raise ValueError("Padding witness needs a natural reference and a fixed-width candidate")
+            metrics["padding_multiple"] = multiple
+            equal_tree(a["by_rank"], b["by_rank"], "rank sample identities and text lengths")
+            widths = [[rank["text_width"] for rank in row["timing_by_rank"]] for row in (a, b)]
+            if widths[1] != [(width + multiple - 1) // multiple * multiple for width in widths[0]]:
+                raise ValueError("Observed padded widths differ from registered layout")
+            metrics["text_widths"] = widths
+        if tuple(recipe.pop("world") for recipe in recipes) != expected_world or recipes[0] != recipes[1]:
+            raise ValueError("Witness recipes differ outside the registered layout")
         for name in ("epoch", "batch", "update", "pairs", "fields", "pair_ids", "truncated", "by_level", "lr"):
             equal_tree(a[name], b[name], name)
         shards = b["by_rank"]
@@ -69,6 +81,12 @@ def main():
         for name in ("loss", "grad_norm"):
             if not math.isclose(a[name], b[name], rel_tol=args.rtol, abs_tol=args.loss_atol):
                 raise ValueError(f"{name} differs: {a[name]} vs {b[name]}")
+        if args.kind == "padding":
+            for name in ("smoothed_sum", "nll_sum"):
+                for head, (x, y) in enumerate(zip(a[name], b[name], strict=True)):
+                    fields = a["fields"][head]
+                    if not math.isclose(x / fields, y / fields, rel_tol=args.rtol, abs_tol=args.loss_atol):
+                        raise ValueError(f"{name} head {head} differs after normalization")
         metrics.update(pair_ids=a["pair_ids"], loss_abs_error=abs(a["loss"]-b["loss"]),
                        fields=a["fields"], distributed_shards=shards, probes={},
                        tolerances=dict(rtol=args.rtol, loss_atol=args.loss_atol,

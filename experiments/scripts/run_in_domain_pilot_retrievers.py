@@ -438,6 +438,14 @@ def training_order(pair_count, seed):
     return torch.randperm(pair_count, generator=torch.Generator().manual_seed(seed)).tolist()
 
 
+def spectra_timing_prefix(batches, updates):
+    if updates is None:
+        return batches
+    if not 2 <= updates < len(batches):
+        raise ValueError("SpectraBRep timing needs a strict prefix of at least two full-run updates")
+    return batches[:updates]
+
+
 def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream, cached_frozen=None):
     all_texts = list(dict.fromkeys(row["text"] for row in pairs))
     registration = direct_registration((row["text"], row["uid"]) for row in pairs)
@@ -471,6 +479,8 @@ def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream, cached
         )
     order = training_order(len(pairs), args.seed)
     witness = args.spectra_update_witness
+    timing_updates = getattr(args, "spectra_timing_updates", None)
+    active_batches = batches[:1] if witness else spectra_timing_prefix(batches, timing_updates)
     if witness:
         from experiments.src.idea01.formal_spectra_witness import parameter_probes, update_evidence
 
@@ -482,7 +492,9 @@ def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream, cached
     stream = (args.output / "training_steps.jsonl").open("w", encoding="utf-8", newline="\n") if group.primary else None
     try:
         train_start = perf_counter()
-        for step, (start, stop) in enumerate(batches[:1] if witness else batches, 1):
+        for step, (start, stop) in enumerate(active_batches, 1):
+            if timing_updates is not None:
+                step_start = perf_counter()
             global_rows = [pairs[index] for index in order[start:stop]]
             texts = [row["text"] for row in global_rows]
             uids = [row["uid"] for row in global_rows]
@@ -524,11 +536,15 @@ def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream, cached
             sum_loss += loss
             sum_pair_loss += loss * len(global_rows)
             if stream is not None:
-                stream.write(json.dumps({
+                row = {
                     "update": step, "global_pairs": len(global_rows), "pairs_per_rank": local_size,
                     "train_pair_indices": order[start:stop], "loss": loss, "learning_rates": lr,
                     "preclip_grad_norm": float(grad_norm), **counts,
-                }, allow_nan=False) + "\n")
+                }
+                if timing_updates is not None:
+                    group.backend.synchronize(group.device)
+                    row.update(seconds=perf_counter() - step_start, text_width=model_inputs["input_ids"].shape[1])
+                stream.write(json.dumps(row, allow_nan=False) + "\n")
                 stream.flush()
                 if step == 1 or step % 20 == 0 or step == len(batches):
                     print(f"{args.source}/{args.method} update {step}/{len(batches)} loss={loss:.5f}", flush=True)
@@ -545,6 +561,12 @@ def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream, cached
             "learning_rates_after_scheduler_step": scheduler.get_last_lr(), "scheduler_last_epoch": scheduler.last_epoch,
             "optimizer_loop_seconds": train_seconds, "parameter_changes": changes,
             "known_off_diagonal_positives_treated_as_negatives_each_direction": counts["known_off_diagonal_positives"],
+        }
+    if timing_updates is not None:
+        return exposure, {
+            "actual_updates": len(active_batches), "actual_training_pairs": sum(exposure.values()),
+            "full_epoch_planned_updates": len(batches), "optimizer_loop_seconds": train_seconds,
+            "scheduler_last_epoch": scheduler.last_epoch,
         }
     if any(value != 1 for value in exposure.values()) or len(exposure) != len(pairs):
         raise RuntimeError("The epoch must expose each registered UID and level exactly once")
@@ -631,9 +653,10 @@ def run(args, group, axes, features, coverage, spectra, started):
     phase_start = perf_counter()
     towers, backbone, tokenizer, upstream, model_source = load_towers(args, group, spectra)
     witness = args.spectra_update_witness
-    if witness:
-        first_batch = training_order(len(pairs), args.seed)[:args.batch_size]
-        all_texts = list(dict.fromkeys(pairs[i]["text"] for i in first_batch))
+    timing_updates = getattr(args, "spectra_timing_updates", None)
+    if witness or timing_updates is not None:
+        prefix_order = training_order(len(pairs), args.seed)[:args.batch_size * (timing_updates or 1)]
+        all_texts = list(dict.fromkeys(pairs[i]["text"] for i in prefix_order))
     else:
         all_texts = list(dict.fromkeys(row["text"] for row in pairs + queries))
     prefix = upstream["config"].INSTRUCTION if upstream is not None else ""
@@ -744,10 +767,13 @@ def run(args, group, axes, features, coverage, spectra, started):
     if witness:
         config.update(checkpoint_selection="temporary one-update checkpoint for restore verification",
                       candidate_epochs=[], epochs=0, validation_scoring_executed=False)
+    if timing_updates is not None:
+        config.update(run_scope="spectra_timing_probe", checkpoint_selection="no candidate checkpoint",
+                      candidate_epochs=[], epochs=0, validation_scoring_executed=False)
     if group.primary:
         write_json(args.output / "config.json", config)
         write_rows(args.output / "text_inputs.jsonl", text_inputs.rows)
-        if not witness:
+        if not witness and timing_updates is None:
             write_rows(args.output / "prediction_queries.jsonl", queries)
             write_rows(args.output / "prediction_gallery.jsonl", gallery)
     group.barrier()
@@ -771,6 +797,14 @@ def run(args, group, axes, features, coverage, spectra, started):
             "model_revision": model_source["revision"], "descriptor_store_sha256": FORMAL_SPECTRA_STORE_SHA,
             "manifest_sha256": files, "training_input_shape": list(tokens["input_ids"].shape),
             "primary_device": str(group.device), "device_model": config["device_model"],
+            "primary_peak_memory_bytes": int(group.backend.max_memory_allocated(group.device)),
+            "validation_scoring_executed": False, **FORMAL_TEST_SCOPE,
+        })
+        return
+    if timing_updates is not None:
+        write_json(args.output / "spectra_timing_probe.json", {
+            "status": "ok", "run_scope": "spectra_timing_probe", "source": args.source,
+            "training": training, "full_train_pairs": len(pairs),
             "primary_peak_memory_bytes": int(group.backend.max_memory_allocated(group.device)),
             "validation_scoring_executed": False, **FORMAL_TEST_SCOPE,
         })
@@ -888,6 +922,8 @@ def main():
     parser.add_argument("--train-split", choices=("pilot", "full"), default="pilot")
     parser.add_argument("--spectra-update-witness", action="store_true",
                         help="Run the exact first formal SpectraBRep update and replay a temporary checkpoint")
+    parser.add_argument("--spectra-timing-updates", type=int,
+                        help="Time a strict prefix of actual formal SpectraBRep updates")
     parser.add_argument("--require-full-validation-text", action="store_true",
                         help="Keep overlength queries as failed rows without encoding them")
     parser.add_argument("--seed", type=int, choices=(17, 29, 43), default=SEED)
@@ -900,6 +936,11 @@ def main():
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     if args.spectra_update_witness and (not formal or args.method != "spectrabrep" or args.prepare_cad_only):
         parser.error("--spectra-update-witness requires formal SpectraBRep training")
+    if args.spectra_timing_updates is not None and (
+        not 2 <= args.spectra_timing_updates <= 32 or not formal or args.source != "t2cad-v1.0"
+        or args.method != "spectrabrep" or args.prepare_cad_only or args.spectra_update_witness
+    ):
+        parser.error("--spectra-timing-updates requires a 2–32 update full-source T SpectraBRep timing prefix")
     if formal:
         from experiments.src.idea01.in_domain_pilot import COHORTS
 

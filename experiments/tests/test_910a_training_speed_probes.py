@@ -1,4 +1,6 @@
 import pytest
+import torch
+from transformers import BertTokenizer
 
 from experiments.scripts import run_formal_text2cad_training as native
 from experiments.scripts import run_in_domain_pilot_retrievers as retrieval
@@ -25,3 +27,21 @@ def test_spectra_probe_counts_real_pairs_in_the_prefix():
     assert retrieval.spectra_timing_prefix(batches, 2) == batches[:2]
     with pytest.raises(ValueError, match="strict prefix"):
         retrieval.spectra_timing_prefix(batches, 3)
+
+
+def test_actual_tokenizer_keeps_effective_ids_and_truncation(tmp_path):
+    vocab = tmp_path / "vocab.txt"
+    vocab.write_text("[PAD]\n[UNK]\n[CLS]\n[SEP]\n[MASK]\na\nb\n", encoding="utf-8")
+    tokenizer = BertTokenizer(vocab_file=str(vocab))
+    texts = ["a b a b", "b"]
+    natural = native.encode_training_texts(tokenizer, texts, None)
+    for multiple in (32, 64):
+        fixed = native.encode_training_texts(tokenizer, texts, multiple)
+        assert fixed["input_ids"].shape[1] == multiple
+        assert torch.equal(fixed["attention_mask"].sum(1), natural["attention_mask"].sum(1))
+        assert torch.equal(fixed["input_ids"][fixed["attention_mask"].bool()],
+                           natural["input_ids"][natural["attention_mask"].bool()])
+        long_text = ["a " * 530, "b"]
+        truncated = native.encode_training_texts(tokenizer, long_text, multiple)
+        assert truncated["input_ids"].shape[1] == 512
+        assert truncated["input_ids"][0, -1] == tokenizer.sep_token_id
