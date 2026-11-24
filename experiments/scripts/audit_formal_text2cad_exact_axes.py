@@ -9,7 +9,6 @@ from pathlib import Path
 import time
 
 import torch
-from transformers import AutoTokenizer
 
 from experiments.src.idea01 import in_domain_pilot as pilot
 from experiments.src.idea01.in_domain_pilot_native import _tensor_candidate_hashes, check_text2cad_flags
@@ -46,6 +45,10 @@ def grouped_texts(tokenizer, rows):
 
 
 def main():
+    # Match TextEmbedder.from_local directly. AutoTokenizer brings in its
+    # model factory, which imports accelerate and torch_npu on this CPU path.
+    from transformers import BertTokenizer
+
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("frozen", "cad-zip", "bert", "out"):
         p.add_argument(f"--{name}", type=Path, required=True)
@@ -59,9 +62,9 @@ def main():
     bert_files = ("config.json", "tokenizer_config.json", "tokenizer.json", "vocab.txt")
     if any(pilot.sha256_file(a.bert / name) != PINNED_BERT_FILE_SHA256[name] for name in bert_files):
         raise ValueError("Tokenizer differs from the pinned model")
-    tokenizer = AutoTokenizer.from_pretrained(a.bert, local_files_only=True)
-    if not tokenizer.is_fast:
-        raise ValueError("Expected the same fast tokenizer as the ported model")
+    tokenizer = BertTokenizer.from_pretrained(str(a.bert), local_files_only=True)
+    if set(tokenizer.model_input_names) != {"input_ids", "attention_mask", "token_type_ids"}:
+        raise ValueError("BERT input fields differ from the ported model")
     torch.set_num_threads(1)
     candidates = checked_jsonl(a.frozen, "candidate_inputs.jsonl", manifest)
     cad_members = [r["cad_member"] for r in candidates]
@@ -109,6 +112,7 @@ def main():
                            "potential_exact_pairs_including_background": len(union | background) * len(program_keys)}
     pilot.write_json(a.out / "summary.json", {
         "scope": "CPU-only identical inputs audit, no scores or ground truth used",
+        "tokenizer_class": type(tokenizer).__name__, "tokenizer_is_fast": tokenizer.is_fast,
         "candidate_rows": len(candidates), "distinct_complete_model_candidates": len(program_keys),
         "frozen_manifest_sha256": pilot.sha256_file(manifest_path),
         "sources": results, "numeric_equivalence_of_optimization_admitted": False,
