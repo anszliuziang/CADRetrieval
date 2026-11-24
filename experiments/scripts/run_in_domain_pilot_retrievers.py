@@ -338,7 +338,7 @@ def load_towers(args, group, spectra):
         ).to(group.device).eval().requires_grad_(False)
         width = backbone.config.hidden_size
         text = nn.Sequential(nn.LayerNorm(width), nn.Linear(width, OUTPUT_DIM))
-        cad = CommandTower()
+        cad = CommandTower(convolution=args.command_convolution)
         model_source["actual_backbone_dtypes"] = sorted({str(value.dtype) for value in backbone.parameters()})
     if model_source["actual_backbone_dtypes"] != [str(dtype)]:
         raise RuntimeError(f"Loaded backbone dtype differs from the requested {dtype}: {model_source}")
@@ -618,6 +618,7 @@ def run(args, group, axes, features, coverage, spectra, started):
         "model": str(args.qwen_dir if upstream is not None or args.bert_dir is None else args.bert_dir),
         "initialization": model_source, "backbone_precision": args.precision, "attention": args.attention,
         "tuning": "lora" if upstream is not None else "frozen",
+        "command_convolution": args.command_convolution if upstream is None else None,
         "head_dtype": "float32", "max_text_tokens": window, "instruction": prefix,
         "tokenizer": {"class": type(tokenizer).__name__, "padding_side": tokenizer.padding_side,
                       "truncation_side": tokenizer.truncation_side},
@@ -786,6 +787,8 @@ def main():
     parser.add_argument("--device", default="npu", help="Training accelerator, for example npu:0 or cuda:0")
     parser.add_argument("--precision", choices=("fp32", "bf16"), default="fp32")
     parser.add_argument("--attention", choices=("eager", "sdpa"), default="eager")
+    parser.add_argument("--command-convolution", choices=("native", "linear"), default="native",
+                        help="FP32-equivalent convolution implementation for the command tower")
     parser.add_argument("--batch-size", type=int, help="Per-device pairs per update, 32 for dual-tower or 16 for SpectraBRep")
     parser.add_argument("--eval-batch-size", type=int, default=32)
     parser.add_argument("--workers", type=int, default=4)
@@ -825,6 +828,8 @@ def main():
         parser.error("Choose npu[:INDEX] or cuda[:INDEX]")
     if args.method == "spectrabrep" and args.upstream is None:
         parser.error("SpectraBRep needs --upstream")
+    if args.method != "dual-tower" and args.command_convolution != "native":
+        parser.error("--command-convolution only applies to the command dual tower")
     if not args.prepare_cad_only and (args.qwen_dir is None and (args.method == "spectrabrep" or args.bert_dir is None)):
         parser.error("Specify --bert-dir for the dual tower or --qwen-dir for the pinned Qwen base")
     if args.prepare_cad_only and (args.prepared_cad is not None or int(os.environ.get("WORLD_SIZE", "1")) != 1):

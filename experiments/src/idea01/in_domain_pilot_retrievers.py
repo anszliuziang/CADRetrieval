@@ -19,6 +19,7 @@ from zipfile import BadZipFile, ZipFile
 import numpy as np
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from .text2cad_vector_scorer import (
     FLAG_SIZE,
@@ -91,17 +92,31 @@ def effective_command_input(payload: Mapping[str, Any]) -> torch.Tensor:
     return torch.column_stack((cad[:length], flag[:length], index[:length])).to(torch.int32)
 
 
+class _LinearCommandConv1d(nn.Conv1d):
+    """Evaluate the command tower's stride-one convolution with an FP32 linear operator."""
+
+    def forward(self, value: torch.Tensor) -> torch.Tensor:
+        length = value.shape[-1]
+        pad, = self.padding
+        kernel, = self.kernel_size
+        padded = F.pad(value.transpose(1, 2), (0, 0, pad, pad))
+        windows = torch.cat([padded[:, shift:shift + length] for shift in range(kernel)], dim=-1)
+        weights = self.weight.transpose(1, 2).flatten(1)
+        return F.linear(windows, weights, self.bias).transpose(1, 2)
+
+
 class CommandTower(nn.Module):
     """Position-aware residual convolution over the official quantized sequence."""
 
-    def __init__(self, width: int = 128, depth: int = 3):
+    def __init__(self, width: int = 128, depth: int = 3, *, convolution: str = "native"):
         super().__init__()
+        conv = {"native": nn.Conv1d, "linear": _LinearCommandConv1d}[convolution]
         self.fields = nn.ModuleList(
             nn.Embedding(size, width) for size in (ONE_HOT_SIZE, ONE_HOT_SIZE, FLAG_SIZE, INDEX_SIZE)
         )
         self.position = nn.Embedding(MAX_CAD_SEQUENCE_LENGTH, width)
         self.blocks = nn.ModuleList(
-            nn.Sequential(nn.Conv1d(width, width, 5, padding=2), nn.GELU(), nn.Dropout(0.1))
+            nn.Sequential(conv(width, width, 5, padding=2), nn.GELU(), nn.Dropout(0.1))
             for _ in range(depth)
         )
         self.output = nn.Sequential(nn.LayerNorm(width), nn.Linear(width, OUTPUT_DIM))
