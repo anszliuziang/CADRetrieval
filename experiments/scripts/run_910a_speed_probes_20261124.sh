@@ -49,16 +49,17 @@ if [[ "$kind" == spectra || "$kind" == spectra4 ]]; then
     gate="$rt/runs/idea01_four_tables_spectra_formal_gate_20261124/t2cad-v1.0"
     test "$(cat "$gate/exit_code.txt")" = 0
     if [[ "$kind" == spectra4 ]]; then
-        for chip in 2 3 4 5; do free_card "$chip"; done
-        for port in 22711 $(seq 22880 22895); do
+        # The 910A four-rank topology requires all four physical IDs in one group.
+        for chip in 4 5 6 7; do free_card "$chip"; done
+        for port in 22712 $(seq 22896 22911); do
             if grep -Eq ":${port}[[:space:]]" "$out/listeners_before.txt"; then
                 printf 'Reserved probe port %s is already bound\n' "$port" >&2
                 exit 11
             fi
         done
-        export ASCEND_RT_VISIBLE_DEVICES=2,3,4,5 HCCL_IF_BASE_PORT=22880
+        export ASCEND_RT_VISIBLE_DEVICES=4,5,6,7 HCCL_IF_BASE_PORT=22896
         prefix=("$py" -B -u -m torch.distributed.run --nnodes=1 --nproc_per_node=4
-                --master_addr=127.0.0.1 --master_port=22711 --max_restarts=0 -m)
+                --master_addr=127.0.0.1 --master_port=22712 --max_restarts=0 -m)
         logged "$out/hccl" 95s "${prefix[@]}" experiments.scripts.probe_yunnao_910a hccl
         per_rank=4 updates=4 limit=24m
     else
