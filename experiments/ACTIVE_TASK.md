@@ -3,7 +3,9 @@
 - `state: in_progress`。以 Astra 的交接提交 `5616599a943de1fc85ea661e767d7c8c3a51eafc` 为准。[正式执行交接单](plans/IDEA01_FOUR_TABLES_HANDOFF_2026-11-24.md) · [表格底稿](plans/IDEA01_FOUR_TABLES_WORKSHEET_2026-11-24.md)
 - 在 `yunnao-910a` 完成 T／CT 冻结轴、两套完整训练岭回归的 2,560 条验证名次回放、Fusion 原文／UID／项目清单及 40 对开发题的 320 展示、12 种方法逐项对照。正式题的几何准备、Fusion 全源转换和原生分成本核验分别留证。[执行记录](submissions/idea01_four_tables_20261124/EXECUTION_PROGRESS.md)
 - 12 家族共 960 对的原始几何与盲核公开包已核验，240 对原始坐标干预齐全。待两位独立真人评阅者回执。Text2CAD 的有效几何在绑定、易题上各覆盖 410／480，坐标干预 0／240 达到预登记等价门槛。详情和现有辨认逐条工件见执行记录。
-- `yunnao-910a` 命令／SpectraBRep 共有已核 170,361 个 DeepCAD 候选输入。CT 命令双塔 seed 17 单卡一整轮、T 冻结 BERT 成本探针按[dry-run 核验的配方](submissions/idea01_four_tables_20261124/COMMAND_TOWER_TRAINING.md)启动。表 1 潜在精确工作量 166,503,712 对。大规模生成器打分等待实测资源与整库预算。在机器间分别执行 SSH 连接启动间隔 30 秒。
+- Fusion 全部 8,307 个 UID 转换与逐字节核验退出 0，冻结共同训练轴 2,467 UID，正式验证面板 512 × 635。表 3 继续保留原 1,661 测试图库。MM-CAD、OpenShape、两种 CLIP 的表 4 成品输入已全部准备并独立逐 SHA 核对。正式模型评分仍待实际盲评锁定。
+- `yunnao-910a` 命令／SpectraBRep 共有已核 170,361 个 DeepCAD 候选输入。T 冻结 BERT 成本探针实际退出 0，单卡两小时配方不足以完整运行。CT seed 17 首轮在首个 FP32 卷积处退出 1，计费和失败保留，零优化器更新。按[训练配方](submissions/idea01_four_tables_20261124/COMMAND_TOWER_TRAINING.md)补做同数学形式的 FP32 算子对照。
+- 表 1 潜在精确工作量 166,503,712 对。两次 910C 的历史全库计时和当前 910A 相同 16 件批次的实测均已登记。当前完整验证图库做长度分桶核验，正式测试评分等待实际可用卡时。两台机器分别执行 SSH 连接启动间隔 30 秒，本轮新增计算均在 910A。
 
 ## 40 对开发辨认的成品几何对照（2026-11-24）
 
