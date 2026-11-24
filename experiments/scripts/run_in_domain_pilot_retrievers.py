@@ -809,12 +809,13 @@ def run(args, group, axes, features, coverage, spectra, started):
         })
         return
     if timing_updates is not None:
-        write_json(args.output / "spectra_timing_probe.json", {
-            "status": "ok", "run_scope": "spectra_timing_probe", "source": args.source,
-            "training": training, "full_train_pairs": len(pairs),
-            "primary_peak_memory_bytes": int(group.backend.max_memory_allocated(group.device)),
-            "validation_scoring_executed": False, **FORMAL_TEST_SCOPE,
-        })
+        if group.primary:
+            write_json(args.output / "spectra_timing_probe.json", {
+                "status": "ok", "run_scope": "spectra_timing_probe", "source": args.source,
+                "training": training, "full_train_pairs": len(pairs),
+                "primary_peak_memory_bytes": int(group.backend.max_memory_allocated(group.device)),
+                "validation_scoring_executed": False, **FORMAL_TEST_SCOPE,
+            })
         return
     peak = int(group.backend.max_memory_allocated(group.device))
     peak_by_rank = [peak]
@@ -944,10 +945,10 @@ def main():
     if args.spectra_update_witness and (not formal or args.method != "spectrabrep" or args.prepare_cad_only):
         parser.error("--spectra-update-witness requires formal SpectraBRep training")
     if args.spectra_timing_updates is not None and (
-        not 2 <= args.spectra_timing_updates <= 32 or not formal or args.source != "t2cad-v1.0"
+        not 2 <= args.spectra_timing_updates <= 256 or not formal or args.source != "t2cad-v1.0"
         or args.method != "spectrabrep" or args.prepare_cad_only or args.spectra_update_witness
     ):
-        parser.error("--spectra-timing-updates requires a 2–32 update full-source T SpectraBRep timing prefix")
+        parser.error("--spectra-timing-updates requires a 2–256 update full-source T SpectraBRep timing prefix")
     if formal:
         from experiments.src.idea01.in_domain_pilot import COHORTS
 

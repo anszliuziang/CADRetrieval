@@ -470,6 +470,12 @@ def runtime(args):
         device = torch.device("npu", local)
         torch.npu.set_device(device)
         torch_npu.npu.set_option({"ACL_PRECISION_MODE": "must_keep_origin_dtype"})
+        kernel_mode = getattr(args, "npu_kernels", None)
+        if kernel_mode == "precompiled":
+            torch_npu.npu.set_compile_mode(jit_compile=False)
+        if kernel_mode is not None:
+            require(torch_npu.npu.npu_config.is_jit_compile_false() == (kernel_mode == "precompiled"),
+                    f"Unexpected active NPU compilation mode for {kernel_mode}")
     else:
         device = torch.device("cpu")
     torch.set_num_threads(2)
@@ -537,6 +543,8 @@ def run(args):
                   code_sha=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
     if embedder.pad_multiple is not None:
         recipe["training_text_pad_multiple"] = embedder.pad_multiple
+    if getattr(args, "npu_kernels", None) is not None:
+        recipe["npu_jit_compile"] = args.npu_kernels == "jit"
     layout = gather(dict(rank=rank, device=str(device), hostname=socket.gethostname(), pid=os.getpid(),
                          visible_devices=os.environ.get("ASCEND_RT_VISIBLE_DEVICES"),
                          visible_ascend_devices=os.environ.get("ASCEND_VISIBLE_DEVICES")), world)
@@ -645,6 +653,8 @@ def main():
     p.add_argument("--train-only", action="store_true")
     p.add_argument("--train-text-pad-multiple", type=int, choices=(32, 64),
                    help="Compare right padding in a fresh bounded T training probe")
+    p.add_argument("--npu-kernels", choices=("jit", "precompiled"),
+                   help="Check CANN compilation mode in a bounded NPU training probe")
     p.add_argument("--stop-after-updates", type=int)
     p.add_argument("--audit-batch", choices=("first", "third", "tail"),
                    help="One dropout-free real batch for comparing training layouts")
@@ -654,6 +664,9 @@ def main():
                    help="After the bounded update, score the first N registered validation rows per level")
     p.add_argument("--resume", action="store_true")
     args = p.parse_args()
+    if args.npu_kernels is not None:
+        require(args.device == "npu" and args.train_only and not args.resume,
+                "Explicit compilation mode requires a fresh train-only NPU probe")
     if args.train_text_pad_multiple is not None:
         require(args.source == "t2cad-v1.0" and args.train_only and not args.resume,
                 "Text width changes are limited to fresh train-only T probes")

@@ -45,10 +45,10 @@ logged() {
     return "$code"
 }
 
-if [[ "$kind" == spectra || "$kind" == spectra4 ]]; then
+if [[ "$kind" == spectra || "$kind" == spectra4 || "$kind" == spectra128 || "$kind" == spectra4-128 ]]; then
     gate="$rt/runs/idea01_four_tables_spectra_formal_gate_20261124/t2cad-v1.0"
     test "$(cat "$gate/exit_code.txt")" = 0
-    if [[ "$kind" == spectra4 ]]; then
+    if [[ "$kind" == spectra4 || "$kind" == spectra4-128 ]]; then
         # The 910A four-rank topology requires all four physical IDs in one group.
         for chip in 4 5 6 7; do free_card "$chip"; done
         for port in 22713 $(seq 22912 22927); do
@@ -62,11 +62,13 @@ if [[ "$kind" == spectra || "$kind" == spectra4 ]]; then
                 --master_addr=127.0.0.1 --master_port=22713 --max_restarts=0 -m)
         logged "$out/hccl" 95s "${prefix[@]}" experiments.scripts.probe_yunnao_910a hccl
         per_rank=4 updates=4 limit=24m device_label=npu
+        if [[ "$kind" == spectra4-128 ]]; then updates=128 limit=4h; fi
     else
         free_card 1
         export ASCEND_RT_VISIBLE_DEVICES=1
         prefix=("$py" -B -u -m)
         per_rank=16 updates=12 limit=44m device_label=npu:0
+        if [[ "$kind" == spectra128 ]]; then updates=128 limit=6h; fi
     fi
     logged "$out/timing" "$limit" "${prefix[@]}" experiments.scripts.run_in_domain_pilot_retrievers \
         --source t2cad-v1.0 --method spectrabrep --train-split full --manifest-root "$manifests" --official-zip "$cad" \
@@ -78,10 +80,17 @@ if [[ "$kind" == spectra || "$kind" == spectra4 ]]; then
     exit 0
 fi
 
-test "$kind" = native
+test "$kind" = native || test "$kind" = native-precompiled
 test -d "$bert"
-for chip in 0 1 2 3 4 5; do free_card "$chip"; done
-for port in $(seq 22701 22703) $(seq 22800 22847); do
+for chip in 0 1 2 3; do free_card "$chip"; done
+ports=(22701 22702 $(seq 22800 22831))
+timing_limit=55m
+if [[ "$kind" == native ]]; then
+    for chip in 4 5; do free_card "$chip"; done
+    ports+=(22703 $(seq 22832 22847))
+    timing_limit=38m
+fi
+for port in "${ports[@]}"; do
     if grep -Eq ":${port}[[:space:]]" "$out/listeners_before.txt"; then
         printf 'Reserved probe port %s is already bound\n' "$port" >&2
         exit 11
@@ -91,6 +100,7 @@ done
 run_arm() (
     # Isolate the compiler working directories and HCCL port blocks for the three layouts.
     arm=$1 chips=$2 port=$3 hccl_port=$4 multiple=$5
+    shift 5
     cd "$out/$arm/repo"
     export ASCEND_RT_VISIBLE_DEVICES="$chips" HCCL_IF_BASE_PORT="$hccl_port"
     torchrun=("$py" -B -u -m torch.distributed.run --nnodes=1 --nproc_per_node=2
@@ -98,40 +108,53 @@ run_arm() (
     trainer=("${torchrun[@]}" experiments.scripts.run_formal_text2cad_training --source t2cad-v1.0
              --device npu --manifests "$manifests" --cad-zip "$cad" --bert "$bert" --train-only)
     if [[ -n "$multiple" ]]; then trainer+=(--train-text-pad-multiple "$multiple"); fi
+    trainer+=("$@")
     logged "$out/$arm/hccl" 95s "${torchrun[@]}" experiments.scripts.probe_yunnao_910a hccl
-    logged "$out/$arm/timing" 38m "${trainer[@]}" --stop-after-updates 8 --out "$out/$arm/timing/results"
+    logged "$out/$arm/timing" "$timing_limit" "${trainer[@]}" --stop-after-updates 8 --out "$out/$arm/timing/results"
     for batch in third tail; do
         logged "$out/$arm/$batch" 12m "${trainer[@]}" --audit-batch "$batch" --out "$out/$arm/$batch/results"
     done
 )
 
-for arm in natural pad32 pad64; do
+arms=(natural pad32 pad64)
+if [[ "$kind" == native-precompiled ]]; then arms=(natural precompiled); fi
+for arm in "${arms[@]}"; do
     mkdir "$out/$arm"
     git worktree add --quiet --detach "$out/$arm/repo" "$sha"
 done
 
-run_arm pad32 0,1 22701 22800 32 &
-pad32=$!
-run_arm natural 2,3 22702 22816 '' &
-natural=$!
-run_arm pad64 4,5 22703 22832 64 &
-pad64=$!
-printf 'pad32 %s\nnatural %s\npad64 %s\n' "$pad32" "$natural" "$pad64" > "$out/arm_pids.txt"
+if [[ "$kind" == native ]]; then
+    run_arm natural 2,3 22702 22816 '' &
+    natural=$!
+    run_arm pad32 0,1 22701 22800 32 &
+    pad32=$!
+    run_arm pad64 4,5 22703 22832 64 &
+    pad64=$!
+    printf 'pad32 %s\nnatural %s\npad64 %s\n' "$pad32" "$natural" "$pad64" > "$out/arm_pids.txt"
+else
+    run_arm natural 2,3 22702 22816 '' --npu-kernels jit &
+    natural=$!
+    run_arm precompiled 0,1 22701 22800 '' --npu-kernels precompiled &
+    precompiled=$!
+    printf 'natural %s\nprecompiled %s\n' "$natural" "$precompiled" > "$out/arm_pids.txt"
+fi
 failed=0
-for arm in pad32 natural pad64; do
+for arm in "${arms[@]}"; do
     code=0
     wait "${!arm}" || code=$?
     printf '%s\n' "$code" > "$out/$arm/arm_exit.txt"
     if (( code != 0 )); then failed=1; fi
 done
-for arm in pad32 pad64; do
+for arm in "${arms[@]:1}"; do
+    compare_kind=padding
+    if [[ "$arm" == precompiled ]]; then compare_kind=precompiled; fi
     for batch in third tail; do
         if [[ ! -s "$out/natural/$batch/results/update-witness.pt" || ! -s "$out/$arm/$batch/results/update-witness.pt" ]]; then
             failed=1
             continue
         fi
         logged "$out/$arm/compare_$batch" 180s "$py" -B -m experiments.scripts.compare_formal_text2cad_updates \
-            padding "$out/natural/$batch/results" "$out/$arm/$batch/results" || failed=1
+            "$compare_kind" "$out/natural/$batch/results" "$out/$arm/$batch/results" || failed=1
     done
 done
 exit "$failed"

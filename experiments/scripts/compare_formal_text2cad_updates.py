@@ -38,7 +38,7 @@ def checkpoint(root):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("kind", choices=("ddp", "resume", "padding"))
+    p.add_argument("kind", choices=("ddp", "resume", "padding", "precompiled"))
     p.add_argument("reference", type=Path)
     p.add_argument("candidate", type=Path)
     p.add_argument("--rtol", type=float, default=1e-4)
@@ -67,6 +67,14 @@ def main():
             if widths[1] != [(width + multiple - 1) // multiple * multiple for width in widths[0]]:
                 raise ValueError("Observed padded widths differ from registered layout")
             metrics["text_widths"] = widths
+        elif args.kind == "precompiled":
+            expected_world = (2, 2)
+            if tuple(recipe.pop("npu_jit_compile", None) for recipe in recipes) != (True, False):
+                raise ValueError("Precompiled witness needs a JIT-enabled reference and a JIT-disabled candidate")
+            equal_tree(a["by_rank"], b["by_rank"], "rank sample identities and text lengths")
+            widths = [[rank["text_width"] for rank in row["timing_by_rank"]] for row in (a, b)]
+            equal_tree(widths[0], widths[1], "rank in-device text widths")
+            metrics["text_widths"] = widths
         if tuple(recipe.pop("world") for recipe in recipes) != expected_world or recipes[0] != recipes[1]:
             raise ValueError("Witness recipes differ outside the registered layout")
         for name in ("epoch", "batch", "update", "pairs", "fields", "pair_ids", "truncated", "by_level", "lr"):
@@ -81,7 +89,7 @@ def main():
         for name in ("loss", "grad_norm"):
             if not math.isclose(a[name], b[name], rel_tol=args.rtol, abs_tol=args.loss_atol):
                 raise ValueError(f"{name} differs: {a[name]} vs {b[name]}")
-        if args.kind == "padding":
+        if args.kind in ("padding", "precompiled"):
             for name in ("smoothed_sum", "nll_sum"):
                 for head, (x, y) in enumerate(zip(a[name], b[name], strict=True)):
                     fields = a["fields"][head]
