@@ -20,8 +20,13 @@ from experiments.src.idea01.text2cad_frozen_runner import ZipCandidateStore, ass
 from experiments.src.idea01.text2cad_port.loader import load_frozen_text2cad
 from experiments.src.idea01.text2cad_port.model import teacher_forced_logits
 
-CASES = (("t2cad-v1.0", "L0", "short"), ("t2cad-v1.0", "L3", "long"),
-         ("ct-deepcad", "CT", "long"))
+CASES = {
+    "L0": ("t2cad-v1.0", "L0", "short"),
+    "L1": ("t2cad-v1.0", "L1", "long"),
+    "L2": ("t2cad-v1.0", "L2", "long"),
+    "L3": ("t2cad-v1.0", "L3", "long"),
+    "CT": ("ct-deepcad", "CT", "long"),
+}
 RECEIPT = "3c297920d0905b3dd5f14aa1b5ac163245a17b958cc3c2e1169ee65d5a8d055d"
 
 
@@ -133,7 +138,13 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for key in ("manifests", "checkpoint", "bert", "cad-zip", "out"):
         p.add_argument(f"--{key}", required=True, type=Path)
+    p.add_argument("--case", choices=tuple(CASES), action="append",
+                   help="Select validation/development conditions for independent timing jobs")
+    p.add_argument("--stage", choices=("score", "train", "both"), default="both")
     a = p.parse_args()
+    selected = a.case or ["L0", "L3", "CT"]
+    if len(selected) != len(set(selected)):
+        p.error("Each --case must be distinct")
     a.out.mkdir()
     receipt = a.manifests / "manifest_receipt.json"
     if pilot.sha256_file(receipt) != RECEIPT:
@@ -162,17 +173,20 @@ def main():
 
     scored = []
     train = []
-    for source, level, band in CASES:
-        gallery = sorted(load(source, "validation_gallery.jsonl"), key=lambda r: (r["n_fields"], r["cad_index"]))
-        ids = [gallery[(len(gallery) - 1) * (2*i+1) // 32] for i in range(16)]
-        targets, excluded = by_length(load(source, "validation_targets.jsonl"), level, width)
-        j = len(targets)//4 if band == "short" else 7*len(targets)//8
-        q_len, uid, r = targets[j]
-        scored.append((source, level, ids, r["texts"][level], uid, q_len, excluded))
-        eligible, excluded_train = by_length(load(source, "pilot_train.jsonl"), level, width)
-        k = len(eligible)//4 if band == "short" else 7*len(eligible)//8
-        batch = [(*r, level) for r in eligible[k:k+16]]
-        train.append((source, batch, excluded_train))
+    for name in selected:
+        source, level, band = CASES[name]
+        if a.stage in ("score", "both"):
+            gallery = sorted(load(source, "validation_gallery.jsonl"), key=lambda r: (r["n_fields"], r["cad_index"]))
+            ids = [gallery[(len(gallery) - 1) * (2*i+1) // 32] for i in range(16)]
+            targets, excluded = by_length(load(source, "validation_targets.jsonl"), level, width)
+            j = len(targets)//4 if band == "short" else 7*len(targets)//8
+            q_len, uid, r = targets[j]
+            scored.append((source, level, ids, r["texts"][level], uid, q_len, excluded))
+        if a.stage in ("train", "both"):
+            eligible, excluded_train = by_length(load(source, "pilot_train.jsonl"), level, width)
+            k = min(len(eligible) - 16, len(eligible)//4 if band == "short" else 7*len(eligible)//8)
+            batch = [(*r, level) for r in eligible[k:k+16]]
+            train.append((source, batch, excluded_train))
     members = sorted({r["cad_member"] for _, _, ids, *_ in scored for r in ids}
                      | {r[2]["cad_member"] for _, batch, _ in train for r in batch})
     store = ZipCandidateStore(a.cad_zip, members)
@@ -203,6 +217,7 @@ def main():
     outcomes = Counter(row["passed"] for row in all_scores if row["kind"] == "layout_checks")
     pilot.write_json(a.out / "summary.json", {
         "scope": "validation scoring and train-only optimizer throughput, released weights as timing proxy",
+        "requested_cases": selected, "requested_stage": a.stage,
         "optimizer_initialization": "new AdamW for each batch; the proxy model retains earlier probe updates",
         "code_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "full_formal_training_checkpoint_created": False, "layout_passes": outcomes[True],
