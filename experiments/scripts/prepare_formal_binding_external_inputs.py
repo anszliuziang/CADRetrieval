@@ -32,15 +32,26 @@ STEP_BOUNDS_TOL = 1e-5
 
 
 def mmcad_helpers(checkout):
+    import idea01
+
     checkout = checkout.resolve(strict=True)
     status = subprocess.check_output(("git", "-C", str(checkout), "status", "--porcelain"), text=True)
     require(development.revision(checkout) == development.E1_REV and not status,
             "expected the clean, pinned E1 MM-CAD checkout")
     scripts = checkout / "experiments" / "scripts"
-    sys.path.insert(0, str(scripts))
-    import run_mmcad_e1_20261120 as prior
+    e1_src = checkout / "experiments" / "src" / "idea01"
+    search_path = sys.path[:]
+    idea01.__path__.append(str(e1_src))
+    try:
+        sys.path.insert(0, str(scripts))
+        import run_mmcad_e1_20261120 as prior
+    finally:
+        sys.path[:] = search_path
+        idea01.__path__.remove(str(e1_src))
 
-    require(Path(prior.__file__).resolve().parent == scripts, "MM-CAD helper loaded from a different checkout")
+    require(Path(prior.__file__).resolve().parent == scripts
+            and Path(prior.e1.__file__).resolve().parent == e1_src,
+            "MM-CAD helper or its E1 dependency loaded from a different checkout")
     return prior
 
 

@@ -35,7 +35,7 @@ def require(condition, detail):
         raise ValueError(detail)
 
 
-def verify_training(folder, registered, levels, method):
+def verify_training(folder, registered, levels, method, *, expected_uid_count=4096):
     pairs = [(row["texts"][level], row["uid"]) for row in registered for level in levels]
     known_edges = set(pairs)
     exposures = rows(folder / "training_exposure.jsonl")
@@ -76,7 +76,7 @@ def verify_training(folder, registered, levels, method):
             counts[f"known_negative_treatment_{direction}"] = counts["known_off_diagonal_positives"]
     require(sorted(visited) == list(range(len(pairs))), f"{folder.name}: training pairs are not an exact permutation")
     summary = read(folder / "training_summary.json")
-    require(summary["actual_training_uids"] == len(registered) == 4096
+    require(summary["actual_training_uids"] == len(registered) == expected_uid_count
             and summary["actual_training_pairs"] == len(pairs)
             and summary["actual_updates"] == len(steps)
             and summary["known_positive_audit"] == dict(counts),
