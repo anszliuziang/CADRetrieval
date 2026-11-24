@@ -1,7 +1,11 @@
 import unittest
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from experiments.scripts.evaluate_formal_binding import (
-    ATTRIBUTES, GRID, collision_view, evaluate_view, exact_sign_flip, family_interval, pair_result, summarize_method,
+    ATTRIBUTES, GRID, collision_view, digest, evaluate_view, exact_sign_flip, family_interval, load_formal_fixture,
+    pair_result, summarize_method,
 )
 
 
@@ -89,6 +93,27 @@ class FormalBindingTests(unittest.TestCase):
         self.assertEqual(details["f2/size_location"]["G_swap"], 1)
         self.assertEqual(by_attribute["size_location"]["families"]["f2"]["order_relation"]["aligned"]["views"], 4)
         self.assertEqual([(row["G"], row["N"], row["difference"]) for row in table], [(0.5, 0.5, 0)] * 2)
+
+    def test_formal_gate_rejects_a_missing_blind_review_ledger(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+
+            def record(name, body):
+                (root / name).write_bytes(body)
+                return {"path": name, "sha256": digest(body)}
+
+            sealed = {
+                "scope": "formal", "sealed_at_utc": "2026-11-24T00:00:00Z",
+                "families": [f"family-{index}" for index in range(12)],
+                "preregistration": record("plan.txt", b"frozen protocol"),
+                "pairs": record("pairs.jsonl", b'{"pair_id":"case","kind":"binding"}\n'),
+                "histories": record("histories.jsonl", b""),
+                "blind_reviews": record("reviews.jsonl", b""),
+            }
+            path = root / "freeze.json"
+            path.write_text(json.dumps(sealed), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Blind approvals"):
+                load_formal_fixture(path, {})
 
 
 if __name__ == "__main__":

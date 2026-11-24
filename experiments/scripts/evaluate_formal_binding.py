@@ -111,6 +111,10 @@ def view_identity_sha(view):
                              separators=(",", ":")).encode("utf-8"))
 
 
+def program_identity_sha(program):
+    return digest(json.dumps(program, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+
+
 def margin(left, right):
     return None if left is None or right is None else left - right
 
@@ -295,7 +299,8 @@ def summarize_method(method, pairs, grid, exclusions, scope, exchangeable, coord
     groups = defaultdict(list)
     for pair in pairs:
         pid = pair["pair_id"]
-        table = {pair_view_key(pair, view)[1:]: grid[pair_view_key(pair, view)] for view in pair["views"]}
+        keys = [pair_view_key(pair, view) for view in pair["views"]]
+        table = {key[1:]: grid[key] for key in keys}
         results[pid] = pair_result(pair, table, exclusions.get(pid))
         groups[pair["attribute"], pair["family"], pair["kind"]].append(pair)
     by_attribute = {}
@@ -342,6 +347,10 @@ def summarize_method(method, pairs, grid, exclusions, scope, exchangeable, coord
         diag = {key: mean(block["diagnostics"][key] for block in ordered)
                 if all(block["diagnostics"][key] is not None for block in ordered) else None
                 for key in ordered[0]["diagnostics"]}
+        leave_one_out = {family: mean(other["difference"] for key, other in blocks.items() if key != family)
+                         for family in blocks}
+        block_numerators = [block["G_count"] - block["G_swap_count"] for block in ordered]
+        signed_total = sum(block_numerators)
         aggregate = {
             "method": method, "attribute": attribute, "scope": scope, "families": len(blocks),
             "pairs": sum(block["pairs"] for block in ordered),
@@ -350,12 +359,12 @@ def summarize_method(method, pairs, grid, exclusions, scope, exchangeable, coord
             "G": mean(block["G_count"] / block["pairs"] for block in ordered),
             "N": mean(block["N_twice_sum"] / (2 * block["pairs"]) for block in ordered),
             "difference": mean(diffs), "difference_ci_95": family_interval(diffs) if is_formal else None,
-            "leave_one_family_out": {family: mean(other["difference"] for key, other in blocks.items()
-                                                   if key != family) for family in blocks},
+            "leave_one_family_out": leave_one_out,
+            "leave_one_family_out_range": [min(leave_one_out.values()), max(leave_one_out.values())],
             "inference": "descriptive",
             "alpha": ALPHA if confirmatory else None, "p_two_sided": None,
             "p_extreme_blocks": None, "p_total_blocks": None,
-            "direction": ("positive" if sum(diffs) > 0 else "negative" if sum(diffs) < 0 else "zero"),
+            "direction": ("positive" if signed_total > 0 else "negative" if signed_total < 0 else "zero"),
             "expanded_binding_views": sum(block["binding"]["views"] for block in ordered),
             "distinct_history_free_views": (
                 4 * sum(block["pairs"] for block in ordered)
@@ -363,10 +372,10 @@ def summarize_method(method, pairs, grid, exclusions, scope, exchangeable, coord
             **diag,
         }
         if confirmatory and exchangeable:
-            test = exact_sign_flip([block["G_count"] - block["G_swap_count"] for block in ordered])
+            test = exact_sign_flip(block_numerators)
             aggregate.update(p_two_sided=test["p_two_sided"], p_extreme_blocks=test["extreme"],
                              p_total_blocks=test["permutations"], inference=(
-                                 "passed" if test["p_two_sided"] <= ALPHA and sum(diffs) > 0 else "did_not_pass"))
+                                 "passed" if test["p_two_sided"] <= ALPHA and signed_total > 0 else "did_not_pass"))
         coordinate_result = None
         if coordinates is not None:
             coordinate_result = summarize_coordinates(pairs, results, coordinates, attribute, aggregate)
@@ -388,8 +397,9 @@ def summarize_coordinates(pairs, results, coverage, attribute, binding_result):
         after = [results[pair["pair_id"]] for pair in subset]
         blocks[family] = {
             "selected": len(block),
+            "raw_replay_verified": sum(pair["coordinate_geometry_verified"] for pair in block),
             "raw_confirmed_conflict": sum(pair["coordinate_conflict"] for pair in block),
-            "effective_replay_eligible": sum(results[pair["pair_id"]]["primary_exclusion"] is None for pair in block),
+            "effective_replay_eligible": sum(coverage[pair["pair_id"]]["status"] == "verified" for pair in block),
             "effective_conflict_eligible": len(subset),
             "G_before_count": sum(row["G"] for row in before),
             "G_after_count": sum(row["G"] for row in after),
@@ -412,6 +422,7 @@ def summarize_coordinates(pairs, results, coverage, attribute, binding_result):
               and all_families and advantage_interval[0] > 0 and diff_interval[0] > -0.05)
     return {
         "selected": sum(row["selected"] for row in blocks.values()),
+        "raw_replay_verified": sum(row["raw_replay_verified"] for row in blocks.values()),
         "raw_confirmed_conflict": sum(row["raw_confirmed_conflict"] for row in blocks.values()),
         "effective_replay_eligible": sum(row["effective_replay_eligible"] for row in blocks.values()),
         "effective_conflict_eligible": sum(row["effective_conflict_eligible"] for row in blocks.values()),
@@ -434,7 +445,6 @@ def load_view_axes(pair_rows, histories):
         require(len(expected) == len(pair["views"]) and
                 (len(expected) == 1 and expected <= set(GRID) if pair["kind"] == "easy" else expected == set(GRID)),
                 f"Incorrect frozen view grid for {pid}")
-        full = pair["kind"] != "easy"
         for item in pair["views"]:
             order, variant = item["order"], item["variant"]
             members = [f"{entity}{order}" for entity in "AB"]
@@ -448,12 +458,11 @@ def load_view_axes(pair_rows, histories):
                     and item["geometry_sha256"] == [history["raw_program_sha256"] for history in source]
                     and item["first_cut"] == [history["cut_order"][0] for history in source],
                     f"Incorrect frozen CAD identity for {pid}/{order}/{variant}")
-            if full:
-                captions = [pair["captions"][entity][variant] for entity in "AB"]
-                require(item["texts"] == captions
-                        and [digest(text.encode("utf-8")) for text in captions] ==
-                        [pair["caption_sha256"][entity][variant] for entity in "AB"],
-                        f"Incorrect frozen text identity for {pid}/{order}/{variant}")
+            captions = [pair["captions"][entity][variant] for entity in "AB"]
+            require(item["texts"] == captions
+                    and [digest(text.encode("utf-8")) for text in captions] ==
+                    [pair["caption_sha256"][entity][variant] for entity in "AB"],
+                    f"Incorrect frozen text identity for {pid}/{order}/{variant}")
             view = {**item, "pair_id": pid}
             views[view_key(view)] = view
     return views
@@ -484,26 +493,48 @@ def load_formal_fixture(freeze_path, receipts):
     require(Counter((row["family"], row["attribute"], row["kind"]) for row in pairs.values()) == expected,
             "Unexpected formal pair, easy-control, or coordinate denominators")
     views = load_view_axes(list(pairs.values()), histories)
+    easy_balance = Counter((pair["family"], pair["attribute"], view["order"], view["variant"])
+                           for pair in pairs.values() if pair["kind"] == "easy" for view in pair["views"])
+    require(easy_balance == {key: 5 for key in product(families, ATTRIBUTES, range(2), VARIANTS[:2])},
+            "Easy controls are not balanced over cut and original caption order")
+    require(all(pid in pairs and history["raw_program_sha256"] == program_identity_sha(history["raw_program"])
+                for (pid, _), history in histories.items()), "Frozen histories have incorrect raw program fingerprints")
     coordinate_parents = set()
     for pid, pair in pairs.items():
+        members = {member for view in pair["views"] for member in view["histories"]}
+        raw_verified = (pair["truth"]["raw_geometry"]["status"] == "verified"
+                        and all(histories[pid, member]["geometry"]["raw"]["status"] == "ok" for member in members))
+        if pair["kind"] != "easy":
+            for entity in "AB":
+                orders = [histories[pid, entity + str(n)]["cut_order"] for n in range(2)]
+                require(len(orders[0]) == 2 and set(orders[0]) == {"near", "far"}
+                        and orders[0] == orders[1][::-1]
+                        and histories[pid, entity + "0"]["raw_program_sha256"] !=
+                        histories[pid, entity + "1"]["raw_program_sha256"],
+                        f"Frozen histories do not reverse distinct cut order for {pid}/{entity}")
         if pair["kind"] == "coordinate":
             parent = pairs[pair["parent_pair_id"]]
+            equivalent = pair["truth"]["same_as_parent"]
+            verified = raw_verified and all(row["status"] == "verified" for row in equivalent.values())
             require(parent["kind"] == "binding" and parent["family"] == pair["family"]
                     and parent["attribute"] == pair["attribute"] and parent["captions"] == pair["captions"]
-                    and parent["pair_id"] not in coordinate_parents and type(pair["coordinate_conflict"]) is bool,
+                    and parent["pair_id"] not in coordinate_parents and type(pair["coordinate_conflict"]) is bool
+                    and equivalent.keys() == members and pair["coordinate_geometry_verified"] is verified
+                    and (not pair["coordinate_conflict"] or verified),
                     f"Incorrect matched coordinate fixture for {pid}")
             coordinate_parents.add(parent["pair_id"])
             continue
+        require(raw_verified, f"Raw geometry must verify the frozen label for {pid}")
         approval = reviews[pid]
         raters = approval["reviewers"]
-        require(approval["resolution"] == "accepted" and len(raters) == 2
+        require(approval["review_id"] == pair["review_id"] and approval["resolution"] == "accepted" and len(raters) == 2
                 and all(rater["blind"] is True and rater["decision"] == "approved"
                         and isinstance(rater["reviewer_id"], str) and rater["reviewer_id"].strip()
                         for rater in raters)
                 and raters[0]["reviewer_id"] != raters[1]["reviewer_id"],
                 f"Two distinct recorded blind approvals are required for {pid}")
     for pid, pair in pairs.items():
-        if pair["kind"] == "coordinate":
+        if pair["kind"] == "coordinate" and pair["coordinate_geometry_verified"]:
             parent = pair["parent_pair_id"]
             reviews[pid] = {**reviews[parent], "pair_id": pid, "inherited_from": parent}
     exchange = freeze["exchangeability"]
@@ -527,7 +558,9 @@ def method_geometry_run(run, base, pairs, receipts):
                     f"Missing geometry replay failure reason for {method}/{pid}")
         if pair["kind"] == "coordinate":
             require(type(row["effective_coordinate_conflict"]) is bool
-                    and (not row["effective_coordinate_conflict"] or pair["coordinate_conflict"]),
+                    and (not row["effective_coordinate_conflict"]
+                         or (row["status"] == "verified" and pair["coordinate_conflict"]))
+                    and (row["status"] == "failed" or pair["coordinate_geometry_verified"]),
                     f"Incorrect effective coordinate coverage for {method}/{pid}")
     return geometry
 
@@ -566,6 +599,11 @@ def method_score_run(run, base, pairs, axes, receipts):
             if value is not None:
                 require(cad_hashes.get(identity, value) == value, f"Changing CAD input for {method}/{identity}")
                 cad_hashes[identity] = value
+        if geometry[key[0]]["status"] == "failed":
+            raw_outcome = result
+            failure = geometry[key[0]]["failure_reason"]
+            result = evaluate_view([None] * 4, [failure] * 4)
+            result["before_geometry_validation"] = {"scores": raw_outcome["scores"], "failures": raw_outcome["failures"]}
         result["effective_inputs"] = {"cad_sha256": hashes, "cell_sha256": joint_hashes}
         grid[key] = result
 
@@ -726,6 +764,7 @@ def write_report(inputs, output):
     summary = {
         "scope": scope, "observed_pairs": len(pair_rows), "observed_views": len(view_rows),
         "input_sha256": inputs["input_sha256"], "method_provenance": sources,
+        "rate_units": "Proportions. Markdown reports percentages or percentage points.",
         "exchangeability": inputs["exchangeability"], "exchangeability_supported": inputs["exchangeable"],
         "bootstrap": {"draws": BOOTSTRAP_DRAWS, "seed": BOOTSTRAP_SEED, "unit": "paired family"}
         if scope == "formal" else None,
