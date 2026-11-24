@@ -422,11 +422,17 @@ def training_batches(per_rank, world_size, pair_count, spectra):
     return batches
 
 
-def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream):
+def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream, cached_frozen=None):
     all_texts = list(dict.fromkeys(row["text"] for row in pairs))
     registration = direct_registration((row["text"], row["uid"]) for row in pairs)
     frozen = None
-    if backbone is not None:
+    if cached_frozen is not None:
+        frozen = torch.empty(cached_frozen.shape, dtype=torch.float32, device=group.device)
+        for start in range(0, len(cached_frozen), 8192):
+            rows = cached_frozen[start:start + 8192]
+            frozen[start:start + len(rows)].copy_(torch.from_numpy(rows.copy()))
+        frozen_index = {text: index for index, text in enumerate(all_texts)}
+    elif backbone is not None:
         frozen, frozen_index = text_inputs.frozen(backbone, all_texts, args.eval_batch_size,
                                                    report_progress=group.primary and args.train_split == "full")
     if group.world_size > 1:
@@ -595,8 +601,25 @@ def run(args, group, axes, features, coverage, spectra, started):
     all_texts = list(dict.fromkeys(row["text"] for row in pairs + queries))
     prefix = upstream["config"].INSTRUCTION if upstream is not None else ""
     window = 384 if upstream is not None else 512
-    text_inputs = TextInputs(tokenizer, all_texts, prefix, window, group.device,
-                             pad_multiple=64 if formal else None, native_truncation=formal)
+    cached_frozen = cache_source = None
+    if getattr(args, "training_bert_cache", None) is None:
+        text_inputs = TextInputs(tokenizer, all_texts, prefix, window, group.device,
+                                 pad_multiple=64 if formal else None, native_truncation=formal)
+    else:
+        from experiments.src.idea01.formal_command_bert_cache import open_training_cache
+
+        training_texts = list(dict.fromkeys(row["text"] for row in pairs))
+        cached_frozen, training_rows, cache_source = open_training_cache(
+            args.training_bert_cache, training_texts, files["train.jsonl"], model_source, tokenizer, group,
+        )
+        validation_texts = list(dict.fromkeys(row["text"] for row in queries))
+        text_inputs = TextInputs(tokenizer, validation_texts, prefix, window, group.device,
+                                 pad_multiple=64, native_truncation=True)
+        seen = set(training_texts)
+        text_inputs.rows = training_rows + [row for text, row in zip(validation_texts, text_inputs.rows, strict=True)
+                                            if text not in seen]
+        text_inputs.overlength.update(text for text, row in zip(training_texts, training_rows, strict=True)
+                                      if row["truncated"])
     cad = torch.from_numpy(features)
     mean = std = None
     if upstream is not None:
@@ -678,6 +701,8 @@ def run(args, group, axes, features, coverage, spectra, started):
             "frozen_text_encoding": "unique exact strings with length-bucketed batches within each split",
             "scheduler": "constant",
         })
+    if cache_source is not None:
+        config["training_bert_cache"] = cache_source
     if group.primary:
         write_json(args.output / "config.json", config)
         write_rows(args.output / "text_inputs.jsonl", text_inputs.rows)
@@ -688,7 +713,7 @@ def run(args, group, axes, features, coverage, spectra, started):
         torch.manual_seed(args.seed + group.rank)
         group.backend.manual_seed_all(args.seed + group.rank)
     phase_start = perf_counter()
-    exposure, training = fit(args, group, towers, backbone, text_inputs, cad[:train_size], pairs, upstream)
+    exposure, training = fit(args, group, towers, backbone, text_inputs, cad[:train_size], pairs, upstream, cached_frozen)
     fit_seconds = perf_counter() - phase_start
     peak = int(group.backend.max_memory_allocated(group.device))
     peak_by_rank = [peak]
@@ -782,6 +807,7 @@ def main():
     parser.add_argument("--official-zip", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--bert-dir", type=Path)
+    parser.add_argument("--training-bert-cache", type=Path, help="Merged read-only Q05 cache for full T training")
     parser.add_argument("--qwen-dir", type=Path)
     parser.add_argument("--upstream", type=Path, help="Clean SpectraBRep release tree for the pinned commit")
     parser.add_argument("--device", default="npu", help="Training accelerator, for example npu:0 or cuda:0")
@@ -821,6 +847,11 @@ def main():
         parser.error("--shared-feature-store is for formal full training and replaces --prepared-cad")
     if args.batch_size is None:
         args.batch_size = 16 if args.method == "spectrabrep" else 32
+    if args.training_bert_cache is not None and (
+        not formal or args.source != "t2cad-v1.0" or args.prepare_cad_only or args.attention != "eager"
+        or args.eval_batch_size != 32 or args.batch_size * int(os.environ.get("WORLD_SIZE", "1")) != 32
+    ):
+        parser.error("--training-bert-cache requires formal T training, eager attention, and B32 train and evaluation")
     if min(args.batch_size, args.eval_batch_size, args.workers,
            args.expected_train_uids, args.expected_targets, args.expected_gallery) < 1:
         parser.error("Batch sizes, workers, and manifest sizes must be positive")
