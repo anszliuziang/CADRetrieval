@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import socket
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -183,7 +184,16 @@ def ensure_stop(process):
         stop_children(children, signal.SIGKILL)
 
 
-def execute(control, label, argv, devices, deadline):
+def verify_host_port_block(base):
+    ephemeral_start, ephemeral_end = map(int, Path("/proc/sys/net/ipv4/ip_local_port_range").read_text().split())
+    if base <= ephemeral_end and base + 15 >= ephemeral_start:
+        raise ValueError(f"HCCL host block {base}–{base + 15} overlaps the ephemeral port range")
+    for port in range(base, base + 16):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("0.0.0.0", port))
+
+
+def execute(control, label, argv, devices, deadline, *, hccl_base_port=None):
     output = control / label
     output.mkdir()
     if devices:
@@ -195,15 +205,20 @@ def execute(control, label, argv, devices, deadline):
     environment = os.environ.copy()
     if devices:
         environment["ASCEND_RT_VISIBLE_DEVICES"] = ",".join(map(str, devices))
+    if hccl_base_port is not None:
+        verify_host_port_block(hccl_base_port)
+        environment["HCCL_IF_BASE_PORT"] = str(hccl_base_port)
     start = monotonic()
     receipt = {"argv": argv, "started_utc": utc(), "visible_devices": devices, "phase_limit_seconds": remaining}
+    if hccl_base_port is not None:
+        receipt["hccl_if_base_port"] = hccl_base_port
     timed_out = False
     with (output / "stdout.log").open("xb") as stdout, (output / "stderr.log").open("xb") as stderr:
         process = subprocess.Popen(argv, env=environment, stdout=stdout, stderr=stderr, start_new_session=True)
         receipt["pid"] = process.pid
         try:
             save_json(output / "launch.json", receipt)
-            actual_code = process.wait(timeout=remaining)
+            actual_code = process.wait(timeout=max(0, deadline - monotonic() - 20))
         except subprocess.TimeoutExpired:
             timed_out = True
             actual_code = ensure_stop(process)
@@ -223,13 +238,27 @@ def run(args, control, spec):
     devices = spec["devices"]
     admission = verify_admission(runtime, source, spec)
     save_json(control / "admission.json", admission)
-    deadline = monotonic() + spec["hours"] * 3600
+    available = spec["hours"] * 3600
+    if args.retry_host_port:
+        previous = control.with_name(source)
+        exit_record = read_json(previous / "formal_first_two/exit.json")
+        err = (previous / "formal_first_two/stderr.log").read_text(encoding="utf-8", errors="replace")
+        if (exit_record["exit_code"] != 1 or exit_record.get("timed_out") or exit_record.get("interrupted")
+                or "EJ0003" not in err or "Failed to bind the IP port" not in err
+                or any((previous / "formal" / name).exists() for name in ("run.json", "checkpoint.json", "steps.jsonl"))):
+            raise ValueError("A host-port retry requires a failed initial bind with zero committed updates")
+        started = datetime.fromtimestamp((previous / "admission.json").stat().st_mtime, tz=timezone.utc)
+        available -= (datetime.now(timezone.utc) - started).total_seconds()
+    deadline = monotonic() + available
     formal = control / "formal"
     witness = control / "resume_witness"
 
     def train(label, dest, steps, *, resume=False, phase_cap=None):
         limit = min(deadline, monotonic() + phase_cap) if phase_cap else deadline
-        execute(control, label, make_native_argv(runtime, source, devices, dest, steps, resume=resume), devices, limit)
+        phases = ("formal_first_two", "witness_first", "witness_resume", "formal_first_epoch")
+        base = args.retry_host_port + 16 * phases.index(label) if args.retry_host_port else None
+        execute(control, label, make_native_argv(runtime, source, devices, dest, steps, resume=resume), devices, limit,
+                hccl_base_port=base)
 
     train("formal_first_two", formal, 2, phase_cap=3600)
     train("witness_first", witness, 1, phase_cap=3600)
@@ -263,8 +292,11 @@ def main():
     parser.add_argument("--source", choices=tuple(SOURCES), required=True)
     parser.add_argument("--host", required=True)
     parser.add_argument("--expected-code", required=True)
+    parser.add_argument("--retry-host-port", type=int, help="Use four distinct HCCL host port blocks after a failed initial bind")
     args = parser.parse_args()
     spec = SOURCES[args.source]
+    if args.retry_host_port is not None and (len(spec["devices"]) != 2 or not 1024 <= args.retry_host_port <= 65472):
+        parser.error("A host-port retry requires two devices and four complete nonprivileged port blocks")
     if args.host != spec["host"]:
         raise ValueError("This source is assigned to a different host")
     if subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() != args.expected_code:
@@ -274,10 +306,14 @@ def main():
     if subprocess.check_output(["git", "status", "--porcelain"], text=True).strip():
         raise ValueError("The executing worktree is dirty")
     control = args.runtime / "runs/idea01_four_tables_native_formal_20261124" / args.source
+    if args.retry_host_port:
+        control = control.with_name(control.name + "_host_port_retry")
     control.mkdir(parents=True, exist_ok=False)
     start = {"source": args.source, "host": args.host, "pid": os.getpid(), "code_sha": args.expected_code,
              "registered_utc": utc(), "devices": spec["devices"], "first_epoch_hours": spec["hours"],
              "max_card_hours_including_witness": spec["hours"] * len(spec["devices"])}
+    if args.retry_host_port:
+        start["retry_hccl_if_base_port"] = args.retry_host_port
     save_json(control / "registration.json", start)
     print(json.dumps(start), flush=True)
 
