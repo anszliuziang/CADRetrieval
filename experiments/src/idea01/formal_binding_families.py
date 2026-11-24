@@ -9,7 +9,8 @@ import re
 from . import in_domain_pilot_geometry as pilot
 
 
-SEED = "idea01-table4-author-20261124-v1"
+BANK_VERSION = "v2"
+SEED = f"idea01-table4-author-20261124-{BANK_VERSION}"
 SOURCE = "Original procedural CAD constructed for this study on 2026-11-24"
 EXCLUDED_DEVELOPMENT_FAMILIES = tuple(pilot.FAMILIES)
 ATTRIBUTES = tuple(pilot.ATTRIBUTES)
@@ -128,6 +129,7 @@ class Slot:
     view_order: int
     view_variant: str
     easy_equal_high: bool
+    bbox_far_closer: bool
     coordinate: bool
 
     @property
@@ -153,20 +155,25 @@ def slots():
                         view_order = high ^ ((phases >> 2) & 1)
                         caption_near = low ^ high ^ ((phases >> 3) & 1)
                         equal_high = bool(low ^ ((phases >> 4) & 1))
+                        center_phase = (block + seed_number(*cell, "bbox")) & 1
+                        bbox_far_closer = a_marked ^ first0_near ^ bool(center_phase)
                         variant = "near_first" if caption_near else "far_first"
                         index = 4 * block + offset
                         assignments[index] = (
-                            quadrant, a_marked, first0_near, view_order, variant, equal_high,
+                            quadrant, a_marked, first0_near, view_order, variant, equal_high, bbox_far_closer,
                         )
                 coordinate = set()
                 if kind == "binding":
                     for a_marked in (False, True):
                         for first_near in (False, True):
-                            ordered = sorted(
-                                (i for i, params in assignments.items() if params[1:3] == (a_marked, first_near)),
-                                key=lambda i: seed_number(*cell, "coordinate", i),
-                            )
-                            coordinate.update(ordered[:3 if a_marked == first_near else 2])
+                            for bbox_far in (False, True):
+                                ordered = sorted(
+                                    (i for i, params in assignments.items()
+                                     if params[1:3] == (a_marked, first_near) and params[-1] == bbox_far),
+                                    key=lambda i: seed_number(*cell, "coordinate", i),
+                                )
+                                number = 2 if a_marked == first_near and bbox_far == a_marked else 1
+                                coordinate.update(ordered[:number])
                 for index, params in assignments.items():
                     yield Slot(*cell, index, *params, index in coordinate)
 
@@ -192,7 +199,7 @@ class Design:
 
     @property
     def pair_id(self) -> str:
-        return self.slot.id.replace("/", "-") + f"-r{self.rank}"
+        return self.slot.id.replace("/", "-") + f"-{BANK_VERSION}-r{self.rank}"
 
     @property
     def family(self) -> str:
@@ -233,13 +240,16 @@ def design_at(slot: Slot, rank: int) -> Design:
     if not 0 <= rank <= BACKUP_COUNT:
         raise ValueError("invalid frozen backup rank")
     dimensions = [seed_number(slot.id, rank, "dimension", i) for i in range(8)]
-    width = 192 + slot.index + 4 * rank
-    height = 108 + 2 * (dimensions[0] % 6)
+    width = 272 + slot.index + 4 * rank
+    height = 140 + 2 * (dimensions[0] % 6)
     y = height // 2 + dimensions[1] % 7 - 3
     small = 7 + dimensions[5] % 3
+    # The bbox factor changes the far bore's proximity to the stock center.
+    # Both bands stay beyond the true anchor's separation margin for every motif.
+    far_x = 156 + dimensions[6] % 6 if slot.bbox_far_closer else width - 30 - dimensions[6] % 3
     return Design(slot, rank, Dimensions(
         width, height, 14 + dimensions[2] % 5, dimensions[3] % 5,
-        (89 + dimensions[4] % 4, y), (width - 30 - dimensions[6] % 3, y),
+        (89 + dimensions[4] % 4, y), (far_x, y),
         small + 5, small, 11 + dimensions[7] % 2,
     ))
 
@@ -516,9 +526,15 @@ def check_design_balance(all_slots):
                 axes = Counter(slot.quarter_turns for slot in group)
                 if len(group) != PRIMARY_COUNT or axes != dict.fromkeys(range(4), 5):
                     raise ValueError("invalid orientation balance")
-                for field in ("a_marked", "first0_near", "view_order", "view_variant", "easy_equal_high"):
+                for field in ("a_marked", "first0_near", "view_order", "view_variant", "easy_equal_high",
+                              "bbox_far_closer"):
                     if sorted(Counter(getattr(slot, field) for slot in group).values()) != [10, 10]:
                         raise ValueError(f"invalid binary balance for {field}")
+                for field in ("a_marked", "first0_near", "easy_equal_high"):
+                    if Counter((getattr(slot, field), slot.bbox_far_closer) for slot in group) != dict.fromkeys(
+                        ((False, False), (False, True), (True, False), (True, True)), 5
+                    ):
+                        raise ValueError(f"bbox-center factor must cross {field} independently")
                 if sum(slot.first0_near != bool(slot.view_order) for slot in group) != 10:
                     raise ValueError("invalid selected first-cut balance")
                 if Counter((slot.view_order, slot.view_variant) for slot in group) != dict.fromkeys(
@@ -528,3 +544,5 @@ def check_design_balance(all_slots):
                 expected = COORDINATE_COUNT if kind == "binding" else 0
                 if sum(slot.coordinate for slot in group) != expected:
                     raise ValueError("invalid coordinate subset size")
+                if sum(slot.coordinate and slot.bbox_far_closer for slot in group) != expected // 2:
+                    raise ValueError("invalid bbox-center balance in coordinate subset")

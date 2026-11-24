@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import formal_binding_families as families
 from . import formal_binding_occ as occ
+from . import in_domain_pilot_geometry as pilot
 
 
 REVIEW_INSTRUCTIONS = """# Table 4 geometry and wording review
@@ -52,7 +53,7 @@ def _projected_edges(shape, direction):
     views = HLRBRep_HLRToShape(visibility)
     edges = []
     for compound in (views.VCompound(), views.OutLineVCompound(), views.Rg1LineVCompound()):
-        if compound.IsNull():
+        if compound is None or compound.IsNull():
             continue
         for edge in TopologyExplorer(compound).edges():
             curve = BRepAdaptor_Curve(edge)
@@ -93,9 +94,15 @@ def _blind_order(options, *tags):
     return sorted(options, key=lambda item: families.seed_number("blind", *tags, item))
 
 
-def export(review_dir, design, pair, shapes, use_previews=True):
+def item_sha256(item):
+    payload = json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return sha256(payload.encode()).hexdigest()
+
+
+def export(review_dir, design, pair, shapes, histories, use_previews=True):
     """Build neutral cases and return a separate private answer key."""
-    opaque = f"r{families.seed_number('review-id', design.pair_id):016x}"
+    wording_sha = pilot.fingerprint(pair["caption_sha256"])
+    opaque = f"r{families.seed_number('review-id', design.pair_id, wording_sha):016x}"
     filenames = []
     part_rows = []
     private_parts = {}
@@ -107,7 +114,8 @@ def export(review_dir, design, pair, shapes, use_previews=True):
             step = (review_dir / relative).with_suffix(".step")
             preview = (review_dir / relative).with_suffix(".png")
             filenames.append(step)
-            shape = shapes[entity + "0"]
+            member = entity + "0"
+            shape = shapes[member]
             restored = _step(shape, step)
             evidence = occ.compare_same_body(shape, restored)
             measured = occ.measure(restored, design.family, design.slot.attribute, design.slot.kind,
@@ -128,7 +136,11 @@ def export(review_dir, design, pair, shapes, use_previews=True):
             part_rows.append({"part_id": label, "step": relative.with_suffix(".step").as_posix(), "image": rendered,
                               "step_sha256": sha256(step.read_bytes()).hexdigest(),
                               "image_sha256": sha256(preview.read_bytes()).hexdigest() if rendered else None})
-            private_parts[label] = {"entity": entity, "roundtrip_geometry": evidence}
+            private_parts[label] = {"entity": entity, "source_history": member,
+                                    "raw_program_sha256": histories[member]["raw_program_sha256"],
+                                    "step_sha256": part_rows[-1]["step_sha256"],
+                                    "image_sha256": part_rows[-1]["image_sha256"],
+                                    "roundtrip_geometry": evidence}
     except Exception:
         for path in filenames:
             path.unlink(missing_ok=True)
@@ -146,11 +158,14 @@ def export(review_dir, design, pair, shapes, use_previews=True):
         instructions.append({"view_id": label, "caption_match": {item["caption_id"]: None for item in captions}})
         private_views[label] = {"variant": variant, "entities": {f"C{i}": entity for i, entity in enumerate(choices, start=1)}}
     item = {"review_id": opaque, "parts": part_rows, "wording_views": presentation}
-    blank = {"review_id": opaque, "reviewer_id": None, "review_date": None, "part_visibility": {
+    item_digest = item_sha256(item)
+    blank = {"review_id": opaque, "review_item_sha256": item_digest,
+             "reviewer_id": None, "review_date": None, "part_visibility": {
         part["part_id"]: {"anchor_visible": None, "both_target_holes_visible": None} for part in part_rows
     }, "wording_judgments": instructions, "equivalent_wording": None, "notes": None,
         "choices": ["P1", "P2", "both", "neither", "unclear"]}
-    private = {"review_id": opaque, "pair_id": design.pair_id, "parts": private_parts, "views": private_views,
+    private = {"review_id": opaque, "review_item_sha256": item_digest,
+               "pair_id": design.pair_id, "parts": private_parts, "views": private_views,
                "preview_warnings": media_warnings}
     return item, blank, private
 

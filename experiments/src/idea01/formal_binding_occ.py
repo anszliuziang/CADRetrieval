@@ -346,6 +346,18 @@ def _anchor(shape, family, planes, horizontal, bores, bounds, tolerance):
     return face["center"][:2], {"face_center_xyz": face["center"], "face_area": face["area"]}, bores
 
 
+def _bbox_center_rule(bounds, near, far, tolerance):
+    center = tuple((bounds[i] + bounds[i + 3]) / 2 for i in range(3))
+    centers = [(*hole["center_xy"], sum(hole["through_span"]) / 2) for hole in (near, far)]
+    result = {"bbox_center_xyz": center, "bore_midpoints_xyz": centers}
+    for name, dimensions in (("plan", 2), ("spatial", 3)):
+        distances = [math.dist(center[:dimensions], point[:dimensions]) for point in centers]
+        delta = distances[1] - distances[0]
+        nearest = "tie" if abs(delta) <= tolerance else ("near" if delta > 0 else "far")
+        result[name] = {"near_distance": distances[0], "far_distance": distances[1], "nearest": nearest}
+    return result
+
+
 def measure(shape, family: str, attribute: str, kind: str, expected) -> dict:
     """Measure the finished B-Rep using the frozen family rule and no design parameters."""
     bounds = pilot._bounds(shape)
@@ -385,6 +397,7 @@ def measure(shape, family: str, attribute: str, kind: str, expected) -> dict:
     return {"status": "ok" if answer == expected else "binding_mismatch", "volume": volume, "bounds": bounds,
             "anchor_xy": anchor, "anchor_evidence": anchor_details, "near": near, "far": far,
             "measured_binding": answer, "expected_binding": expected, "surface_types": surfaces,
+            "bbox_center_shortcut": _bbox_center_rule(bounds, near, far, tolerance),
             "distance_gap": distances[1] - distances[0], "distance_tolerance": MIN_RELATIVE_DISTANCE_GAP * scale,
             **details}
 

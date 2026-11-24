@@ -121,12 +121,18 @@ def caption_hashes(captions):
 
 def replay_panel(implementation, design, rows):
     shapes = {}
+    bbox_expected = "far" if design.slot.bbox_far_closer else "near"
     for member, row in rows.items():
         try:
             body, volumes = occ.replay_raw(implementation, row["raw_program"])
             result = occ.measure(body, design.family, design.slot.attribute, design.slot.kind,
                                  design.expected(member[0]))
             result["volume_after_each_feature"] = volumes
+            result["bbox_center_shortcut"]["expected_nearest"] = bbox_expected
+            if result["status"] == "ok" and any(
+                result["bbox_center_shortcut"][view]["nearest"] != bbox_expected for view in ("plan", "spatial")
+            ):
+                result["status"] = "bbox_center_balance_mismatch"
             if result["status"] == "ok":
                 shapes[member] = body
         except Exception as exc:
@@ -139,10 +145,14 @@ def replay_panel(implementation, design, rows):
 def pair_record(design, rows, captions, truth, coordinate=False):
     slot = design.slot
     pair_id = design.pair_id + ("-coord" if coordinate else "")
+    bbox = {
+        member: row["geometry"]["raw"].get("bbox_center_shortcut") for member, row in rows.items()
+    }
     return {"pair_id": pair_id, "family": design.family, "attribute": slot.attribute,
             "kind": "coordinate" if coordinate else slot.kind, "primary_slot": slot.id, "backup_rank": design.rank,
             "views": pair_views(design, captions, rows), "captions": captions,
             "caption_sha256": caption_hashes(captions), "truth": truth,
+            "bbox_center_shortcut": bbox,
             "fixed_generation_view": {"order": slot.view_order, "variant": slot.view_variant},
             "pose_quarter_turns": slot.quarter_turns}
 
@@ -199,7 +209,7 @@ def smoke_slots(all_slots):
     selected = {}
     for slot in all_slots:
         if slot.coordinate or slot.kind == "easy":
-            selected.setdefault(group_key(slot), slot)
+            selected.setdefault((*group_key(slot), slot.bbox_far_closer), slot)
     return list(selected.values())
 
 
@@ -210,12 +220,17 @@ def preregister(out, all_slots, templates, metadata):
         source[path.name] = sha(path)
     source[Path(__file__).name] = sha(Path(__file__))
     catalog = {
-        "schema": "idea01-formal-binding-catalog-v1", "author_source": families.SOURCE, "seed": families.SEED,
+        "schema": "idea01-formal-binding-catalog-v2", "author_source": families.SOURCE, "seed": families.SEED,
         "source_sha256": source, "families": {name: asdict(item) for name, item in families.FAMILIES.items()},
         "excluded_development_families": families.EXCLUDED_DEVELOPMENT_FAMILIES, "attributes": families.ATTRIBUTES,
         "planned_per_family_attribute_kind": families.PRIMARY_COUNT, "backups_per_slot": families.BACKUP_COUNT,
         "coordinate_subset_per_family_attribute": families.COORDINATE_COUNT,
         "anchor_distance": "Euclidean distance from the measured target bore center to the projected anchor in world XY.",
+        "bbox_center_control": (
+            "Each family, attribute, and kind has ten cases per nearest-to-bbox-center role. "
+            "The role is crossed with entity A marking and first cutter. "
+            "Both the plan projection and the spatial bore midpoint must match the assigned role on all histories."
+        ),
         "raw_local_coordinate_rule": (
             "Compare the two cutter profile centers in local XY to the measured anchor in the fixed baseline reference sketch. "
             "The transformed sketches rotate 180 degrees around their common center midpoint with compensating placement."
@@ -259,9 +274,9 @@ def prepare(out, slots, implementation, templates, excluded, *, previews):
     (review_dir / "README.md").write_text(review.REVIEW_INSTRUCTIONS, encoding="utf-8", newline="\n")
     files = {name: out / f"{name}.jsonl" for name in ("pairs", "histories", "geometry_attempts", "review_key")}
     files["items"] = review_dir / "items.jsonl"
-    files["decision_template"] = review_dir / "decisions_template.jsonl"
     group_stats = {group_key(slot): Counter() for slot in slots}
     review_failures = []
+    decisions = []
     with ExitStack() as stack:
         streams = {name: stack.enter_context(path.open("xb")) for name, path in files.items()}
         for slot in slots:
@@ -287,27 +302,38 @@ def prepare(out, slots, implementation, templates, excluded, *, previews):
                 stats["replaced"] += rank > 0
                 captions = families.captions(design, templates)
                 pair = pair_record(design, rows, captions, {"raw_geometry": truth})
+                bbox_role = rows["A0"]["geometry"]["raw"]["bbox_center_shortcut"]["plan"]["nearest"]
+                stats[f"bbox_center_{bbox_role}"] += 1
+                stats[f"bbox_center_{bbox_role}_a_marked_{int(slot.a_marked)}"] += 1
                 try:
-                    item, blank, key = review.export(review_dir, design, pair, shapes, use_previews=previews)
+                    item, blank, key = review.export(review_dir, design, pair, shapes, rows, use_previews=previews)
                 except Exception as exc:
                     review_failures.append({"pair_id": design.pair_id, "error": f"{type(exc).__name__}: {exc}"})
                 else:
                     stats["review_packet"] += 1
                     stats["preview_warnings"] += len(key["preview_warnings"])
                     pair["review_id"] = item["review_id"]
-                    for stream, record in (("items", item), ("decision_template", blank), ("review_key", key)):
-                        pilot.jsonl_write(streams[stream], record)
+                    decisions.append(blank)
+                    pilot.jsonl_write(streams["items"], item)
+                    pilot.jsonl_write(streams["review_key"], key)
                 write_pair(streams, pair, rows)
                 if slot.coordinate:
                     coordinate, transformed = coordinate_record(implementation, design, captions, rows, shapes)
                     write_pair(streams, coordinate, transformed)
                     stats["coordinate_geometry_verified"] += coordinate["coordinate_geometry_verified"]
                     stats["coordinate_conflict"] += coordinate["coordinate_conflict"]
+                    if coordinate["coordinate_geometry_verified"]:
+                        stats[f"coordinate_bbox_center_{bbox_role}"] += 1
                 break
             else:
                 stats["no_valid_candidate"] += 1
     groups = [{"family": family, "attribute": attribute, "kind": kind, **counts}
               for (family, attribute, kind), counts in group_stats.items()]
+    files["decision_template"] = review_dir / "decisions_template.jsonl"
+    packet_hash = sha(files["items"])
+    with files["decision_template"].open("xb") as stream:
+        for entry in decisions:
+            pilot.jsonl_write(stream, {**entry, "review_packet_sha256": packet_hash})
     files["review_index"] = review.write_index(review_dir)
     return groups, review_failures, files
 
@@ -316,7 +342,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--text2cad-root", type=Path, help="Verified Text2CAD source tree containing CadSeqProc")
-    parser.add_argument("--smoke", action="store_true", help="Check one slot per family, attribute and kind")
+    parser.add_argument("--smoke", action="store_true",
+                        help="Check one slot per family, attribute, kind and bbox-center role")
     parser.add_argument("--pre-register-only", action="store_true", help="Write the frozen catalog and candidate ledger")
     parser.add_argument("--no-previews", action="store_true", help="Export STEP for review without preview images")
     parser.add_argument("--paraphrases", type=Path, help="JSON with writer and both rephrased wording templates")
@@ -349,7 +376,8 @@ def main():
         blocks = [row for row in groups if row["family"] == name]
         family_coverage[name] = {key: sum(row.get(key, 0) for row in blocks)
                                  for key in ("requested", "verified", "review_packet", "preview_warnings",
-                                             "coordinate_requested", "coordinate_geometry_verified", "coordinate_conflict")}
+                                             "coordinate_requested", "coordinate_geometry_verified", "coordinate_conflict",
+                                             "bbox_center_near", "bbox_center_far")}
     summary = {**initial, "mode": "smoke" if args.smoke else "full", "pythonocc": OCC.VERSION,
                "cadseqproc": provenance, "family_coverage": family_coverage, "groups": groups,
                "raw_geometry_missing_slots": no_valid,
