@@ -3,6 +3,7 @@ from math import log
 import torch
 
 from experiments.src.idea01.in_domain_pilot_retrievers import (
+    CommandTower,
     direct_registration,
     effective_command_input,
     known_positive_counts,
@@ -59,3 +60,24 @@ def test_official_sequence_input_preserves_order_terminals_flags_and_indices():
     command = effective_command_input(payload)
     assert command.dtype == torch.int32
     assert command.tolist() == [[1, 0, 0, 0], [19, 20, 0, 0], [5, 0, 1, 0], [1, 0, 0, 1]]
+
+
+def test_linear_command_convolution_preserves_outputs_and_parameter_gradients():
+    torch.manual_seed(17)
+    native = CommandTower(width=8, depth=2).eval()
+    linear = CommandTower(width=8, depth=2, convolution="linear").eval()
+    linear.load_state_dict(native.state_dict(), strict=True)
+    commands = torch.tensor([
+        [[1, 0, 0, 0], [19, 20, 0, 0], [5, 0, 1, 0], [1, 0, 0, 1], [0, 0, 0, 0]],
+        [[1, 0, 0, 0], [18, 17, 1, 0], [11, 20, 1, 0], [5, 0, 1, 0], [1, 0, 0, 1]],
+    ])
+    expected, actual = native(commands), linear(commands)
+    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
+    weights = torch.randn_like(expected)
+    (expected * weights).sum().backward()
+    (actual * weights).sum().backward()
+    for (name, parameter), (alt_name, alt_parameter) in zip(
+        native.named_parameters(), linear.named_parameters(), strict=True
+    ):
+        assert name == alt_name
+        torch.testing.assert_close(alt_parameter.grad, parameter.grad, rtol=1e-5, atol=1e-5, msg=name)
