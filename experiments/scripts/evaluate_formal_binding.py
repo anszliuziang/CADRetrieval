@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Evaluate fixed Table 4 grids, or replay the pinned 40-pair development archive."""
+"""Evaluate fixed Table 4 grids, or replay the pinned 40-pair development archive.
+
+Formal mode takes two JSON receipts. The freeze receipt supplies the formal
+scope, seal time, family IDs, exchangeability declaration, and references to
+pairs, histories, blind reviews and preregistration. The runs receipt supplies
+one entry per attempted method, with score, model geometry, execution and
+applicable training-selection references. Each reference has path and sha256.
+
+Score JSONL positions are AA, AB, BA, BB. Every row includes pair_id, order,
+variant, view_sha256, scores, failures, cad_input_sha256 and cell_input_sha256.
+The view digest uses the complete frozen view object plus its pair_id.
+"""
 
 import argparse
 from collections import Counter, defaultdict
@@ -42,7 +53,8 @@ FORMAL_METHODS = {
 CONFIRMATORY = {"text2cad_t", "hiercad_t"}
 FLIP_FIELDS = (
     "strict_cad_pass_changes", "strict_caption_pass_changes",
-    "cad_choice_oppositions", "caption_choice_oppositions", "D_sign_oppositions",
+    "cad_choice_oppositions", "caption_choice_oppositions", "cad_choice_changes",
+    "caption_choice_changes", "D_sign_oppositions",
 )
 
 
@@ -88,6 +100,10 @@ def keyed(rows, key):
 
 def view_key(row):
     return row["pair_id"], row["order"], row["variant"]
+
+
+def pair_view_key(pair, view):
+    return pair["pair_id"], view["order"], view["variant"]
 
 
 def view_identity_sha(view):
@@ -211,6 +227,7 @@ def flip_counts(table):
                 for x, y in zip(a[f"{axis}_margins"], b[f"{axis}_margins"], strict=True):
                     if x is not None and y is not None:
                         counts[f"{axis}_choice_oppositions"] += (x < 0 < y) or (y < 0 < x)
+                        counts[f"{axis}_choice_changes"] += ((x > 0) - (x < 0)) != ((y > 0) - (y < 0))
                         counts[f"{axis}_choice_comparisons"] += 1
             if a["D"] is not None and b["D"] is not None:
                 counts["D_sign_oppositions"] += (a["D"] < 0 < b["D"]) or (b["D"] < 0 < a["D"])
@@ -278,7 +295,7 @@ def summarize_method(method, pairs, grid, exclusions, scope, exchangeable, coord
     groups = defaultdict(list)
     for pair in pairs:
         pid = pair["pair_id"]
-        table = {(view["order"], view["variant"]): grid[view_key(view)] for view in pair["views"]}
+        table = {pair_view_key(pair, view)[1:]: grid[pair_view_key(pair, view)] for view in pair["views"]}
         results[pid] = pair_result(pair, table, exclusions.get(pid))
         groups[pair["attribute"], pair["family"], pair["kind"]].append(pair)
     by_attribute = {}
@@ -289,8 +306,8 @@ def summarize_method(method, pairs, grid, exclusions, scope, exchangeable, coord
             if (attr, kind) != (attribute, "binding"):
                 continue
             values = [results[pair["pair_id"]] for pair in block]
-            flat = [grid[view_key(view)] for pair in block for view in pair["views"]]
-            easy = [grid[view_key(view)] for pair in groups.get((attribute, family, "easy"), [])
+            flat = [grid[pair_view_key(pair, view)] for pair in block for view in pair["views"]]
+            easy = [grid[pair_view_key(pair, view)] for pair in groups.get((attribute, family, "easy"), [])
                     for view in pair["views"]]
             g = sum(value["G"] for value in values)
             swapped = sum(value["G_swap"] for value in values)
@@ -310,13 +327,14 @@ def summarize_method(method, pairs, grid, exclusions, scope, exchangeable, coord
                 "exclusions": dict(Counter(v["primary_exclusion"] for v in values if v["primary_exclusion"])),
                 "binding": counts, "easy": easy_counts, "flip_counts": diffs,
                 "order_relation": {
-                    name: summarize_views([grid[view_key(v)] for pair in block for v in pair["views"]
+                    name: summarize_views([grid[pair_view_key(pair, v)] for pair in block for v in pair["views"]
                                            if order_relation(v) == name])
                     for name in ("aligned", "conflict")
                 },
                 "diagnostics": {**method_diagnostics(counts), **method_diagnostics(easy_counts, "easy_")},
             }
         require(bool(blocks), f"No binding pairs for {attribute}")
+        blocks = dict(sorted(blocks.items()))
         ordered = list(blocks.values())
         diffs = [block["difference"] for block in ordered]
         is_formal = scope == "formal"
@@ -380,6 +398,7 @@ def summarize_coordinates(pairs, results, coverage, attribute, binding_result):
                 sum(row["G"] for row in after) - sum(results[p["parent_pair_id"]]["G"] for p in block)
             ) / len(block),
         }
+    blocks = dict(sorted(blocks.items()))
     covered = [row for row in blocks.values() if row["effective_conflict_eligible"]]
     before = [row["G_before_count"] / row["effective_conflict_eligible"] for row in covered]
     after = [row["G_after_count"] / row["effective_conflict_eligible"] for row in covered]
@@ -458,7 +477,8 @@ def load_formal_fixture(freeze_path, receipts):
     pairs = keyed(load_rows("pairs"), lambda row: row["pair_id"])
     histories = keyed(load_rows("histories"), lambda row: (row["pair_id"], row["history"]))
     reviews = keyed(load_rows("blind_reviews"), lambda row: row["pair_id"])
-    require(pairs.keys() == reviews.keys(), "Blind approvals must cover exactly the frozen pairs")
+    require(reviews.keys() == {pid for pid, pair in pairs.items() if pair["kind"] != "coordinate"},
+            "Blind approvals must cover exactly the frozen binding and easy pairs")
     expected = {(f, a, k): n for f, a in product(families, ATTRIBUTES)
                 for k, n in (("binding", 20), ("easy", 20), ("coordinate", 10))}
     require(Counter((row["family"], row["attribute"], row["kind"]) for row in pairs.values()) == expected,
@@ -466,6 +486,14 @@ def load_formal_fixture(freeze_path, receipts):
     views = load_view_axes(list(pairs.values()), histories)
     coordinate_parents = set()
     for pid, pair in pairs.items():
+        if pair["kind"] == "coordinate":
+            parent = pairs[pair["parent_pair_id"]]
+            require(parent["kind"] == "binding" and parent["family"] == pair["family"]
+                    and parent["attribute"] == pair["attribute"] and parent["captions"] == pair["captions"]
+                    and parent["pair_id"] not in coordinate_parents and type(pair["coordinate_conflict"]) is bool,
+                    f"Incorrect matched coordinate fixture for {pid}")
+            coordinate_parents.add(parent["pair_id"])
+            continue
         approval = reviews[pid]
         raters = approval["reviewers"]
         require(approval["resolution"] == "accepted" and len(raters) == 2
@@ -474,13 +502,10 @@ def load_formal_fixture(freeze_path, receipts):
                         for rater in raters)
                 and raters[0]["reviewer_id"] != raters[1]["reviewer_id"],
                 f"Two distinct recorded blind approvals are required for {pid}")
+    for pid, pair in pairs.items():
         if pair["kind"] == "coordinate":
-            parent = pairs[pair["parent_pair_id"]]
-            require(parent["kind"] == "binding" and parent["family"] == pair["family"]
-                    and parent["attribute"] == pair["attribute"] and parent["captions"] == pair["captions"]
-                    and parent["pair_id"] not in coordinate_parents and type(pair["coordinate_conflict"]) is bool,
-                    f"Incorrect matched coordinate fixture for {pid}")
-            coordinate_parents.add(parent["pair_id"])
+            parent = pair["parent_pair_id"]
+            reviews[pid] = {**reviews[parent], "pair_id": pid, "inherited_from": parent}
     exchange = freeze["exchangeability"]
     exchangeable = (exchange["independent_families"] is True and exchange["label_exchangeable"] is True
                     and bool(exchange["basis_in_preregistration"].strip()))
@@ -513,8 +538,11 @@ def method_score_run(run, base, pairs, axes, receipts):
     require(run["training_source"] == source and run["status"] == "attempted"
             and (encoding == "rule" or is_digest(run["checkpoint_sha256"])),
             f"Incorrect run status, training source, or checkpoint for {method}")
-    if method in CONFIRMATORY or source == "ct-deepcad":
-        read_reference(base, run["training_selection"], receipts)
+    executed = read_reference(base, run["execution_receipt"], receipts)
+    require(bool(executed.strip()), f"Empty execution receipt for {method}")
+    if source in ("t2cad-v1.0", "ct-deepcad"):
+        selected = read_reference(base, run["training_selection"], receipts)
+        require(bool(selected.strip()), f"Empty training-selection receipt for {method}")
     geometry = method_geometry_run(run, base, pairs, receipts)
     raw = keyed(json_lines(read_reference(base, run["score_rows"], receipts)), view_key)
     require(raw.keys() == axes.keys(), f"Score rows must match the entire frozen grid for {method}")
@@ -683,7 +711,7 @@ def write_report(inputs, output):
                         for method, values in details.items()},
         })
         for item in pair["views"]:
-            key = pid, item["order"], item["variant"]
+            key = pair_view_key(pair, item)
             view = views[key]
             view_rows.append({
                 "scope": scope, **description, **view, "view_sha256": view_identity_sha(view),

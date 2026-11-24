@@ -1,7 +1,7 @@
 import unittest
 
 from experiments.scripts.evaluate_formal_binding import (
-    GRID, collision_view, evaluate_view, exact_sign_flip, family_interval, pair_result,
+    ATTRIBUTES, GRID, collision_view, evaluate_view, exact_sign_flip, family_interval, pair_result, summarize_method,
 )
 
 
@@ -70,6 +70,25 @@ class FormalBindingTests(unittest.TestCase):
         self.assertEqual(unanimous, {"extreme": 2, "permutations": 4096, "p_two_sided": 2 / 4096})
         self.assertEqual(exact_sign_flip([1] + [0] * 11)["p_two_sided"], 1)
         self.assertEqual(family_interval([0.25] * 12), [0.25, 0.25])
+
+    def test_pair_scoped_views_join_in_family_summary(self):
+        pairs = []
+        grid = {}
+        views = [{"order": order, "variant": variant, "first_cut": [["near", "far"][order]] * 2}
+                 for order, variant in GRID]
+        for family in ("f1", "f2"):
+            for attribute in ATTRIBUTES:
+                pid = f"{family}/{attribute}"
+                pairs.append({"family": family, "attribute": attribute, "pair_id": pid, "kind": "binding",
+                              "views": views})
+                scores = [2, 0, 0, 2] if family == "f1" else [0, 2, 2, 0]
+                for order, variant in GRID:
+                    grid[pid, order, variant] = evaluate_view(scores)
+        details, by_attribute, table = summarize_method("text2cad_release", pairs, grid, {}, "development", False)
+        self.assertEqual(details["f1/size_location"]["G"], 1)
+        self.assertEqual(details["f2/size_location"]["G_swap"], 1)
+        self.assertEqual(by_attribute["size_location"]["families"]["f2"]["order_relation"]["aligned"]["views"], 4)
+        self.assertEqual([(row["G"], row["N"], row["difference"]) for row in table], [(0.5, 0.5, 0)] * 2)
 
 
 if __name__ == "__main__":

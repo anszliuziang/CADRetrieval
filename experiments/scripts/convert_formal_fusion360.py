@@ -379,10 +379,14 @@ def configure_worker(archive_path, text2cad, hiercad):
     import torch
 
     from idea01 import text2cad_e1_geometry as g
+    from idea01.in_domain_pilot_geometry import activate_text2cad
     from idea01.in_domain_pilot_native import use_hiercad_repo
 
     torch.set_num_threads(1)
     os.environ["TEXT2CAD_SOURCE"] = str(text2cad)
+    _, text2cad_receipt = activate_text2cad(text2cad)
+    if text2cad_receipt["revision"] != TEXT2CAD_REVISION:
+        raise ValueError("Unexpected verified Text2CAD geometry revision")
     g.sequence_class()
     g.causal_mask()
     use_hiercad_repo(hiercad)
@@ -496,7 +500,9 @@ def main():
     with ZipFile(args.autodesk_zip) as archive:
         if sha256_bytes(archive.read("r1.0.1/train_test.json")) != SPLIT_SHA256:
             raise ValueError("Autodesk archive official split mismatch")
-    text2cad = check_checkout(args.text2cad_repo, TEXT2CAD_REVISION)
+    # Prior pilot assets provide a verified release export without Git metadata.
+    # The worker uses the existing upstream Git-blob verifier on the loaded code.
+    text2cad = args.text2cad_repo.resolve(strict=True)
     hiercad = check_checkout(args.hiercad_repo, HIERCAD_REVISION)
     records, programs = open_catalog(args.catalog)
     if args.pilot_per_split:
