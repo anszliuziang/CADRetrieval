@@ -45,16 +45,34 @@ logged() {
     return "$code"
 }
 
-if [[ "$kind" == spectra ]]; then
-    free_card 1
+if [[ "$kind" == spectra || "$kind" == spectra4 ]]; then
     gate="$rt/runs/idea01_four_tables_spectra_formal_gate_20261124/t2cad-v1.0"
     test "$(cat "$gate/exit_code.txt")" = 0
-    ASCEND_RT_VISIBLE_DEVICES=1 logged "$out/timing" 44m "$py" -B -u -m experiments.scripts.run_in_domain_pilot_retrievers \
+    if [[ "$kind" == spectra4 ]]; then
+        for chip in 2 3 4 5; do free_card "$chip"; done
+        for port in 22711 $(seq 22880 22895); do
+            if grep -Eq ":${port}[[:space:]]" "$out/listeners_before.txt"; then
+                printf 'Reserved probe port %s is already bound\n' "$port" >&2
+                exit 11
+            fi
+        done
+        export ASCEND_RT_VISIBLE_DEVICES=2,3,4,5 HCCL_IF_BASE_PORT=22880
+        prefix=("$py" -B -u -m torch.distributed.run --nnodes=1 --nproc_per_node=4
+                --master_addr=127.0.0.1 --master_port=22711 --max_restarts=0 -m)
+        logged "$out/hccl" 95s "${prefix[@]}" experiments.scripts.probe_yunnao_910a hccl
+        per_rank=4 updates=4 limit=24m
+    else
+        free_card 1
+        export ASCEND_RT_VISIBLE_DEVICES=1
+        prefix=("$py" -B -u -m)
+        per_rank=16 updates=12 limit=44m
+    fi
+    logged "$out/timing" "$limit" "${prefix[@]}" experiments.scripts.run_in_domain_pilot_retrievers \
         --source t2cad-v1.0 --method spectrabrep --train-split full --manifest-root "$manifests" --official-zip "$cad" \
         --shared-feature-store "$rt/runs/idea01_four_tables_effective_inputs_20261124/deepcad_spectra" \
         --qwen-dir "$assets/qwen3_embedding_0_6b" --upstream "$assets/spectrabrep" --precision fp32 --attention eager \
-        --device npu:0 --batch-size 16 --eval-batch-size 16 --require-full-validation-text --seed 17 \
-        --spectra-timing-updates 12 --output "$out/timing/results"
+        --device npu:0 --batch-size "$per_rank" --eval-batch-size 16 --require-full-validation-text --seed 17 \
+        --spectra-timing-updates "$updates" --output "$out/timing/results"
     test -s "$out/timing/results/spectra_timing_probe.json"
     exit 0
 fi

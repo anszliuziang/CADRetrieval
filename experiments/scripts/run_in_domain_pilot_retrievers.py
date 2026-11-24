@@ -446,6 +446,12 @@ def spectra_timing_prefix(batches, updates):
     return batches[:updates]
 
 
+def valid_formal_spectra_layout(batch_size, world_size, timing_updates):
+    if world_size == 1:
+        return batch_size in (None, 16)
+    return timing_updates is not None and world_size == 4 and batch_size == 4
+
+
 def fit(args, group, towers, backbone, text_inputs, cad, pairs, upstream, cached_frozen=None):
     all_texts = list(dict.fromkeys(row["text"] for row in pairs))
     registration = direct_registration((row["text"], row["uid"]) for row in pairs)
@@ -655,7 +661,8 @@ def run(args, group, axes, features, coverage, spectra, started):
     witness = args.spectra_update_witness
     timing_updates = getattr(args, "spectra_timing_updates", None)
     if witness or timing_updates is not None:
-        prefix_order = training_order(len(pairs), args.seed)[:args.batch_size * (timing_updates or 1)]
+        prefix_pairs = args.batch_size * group.world_size * (timing_updates or 1)
+        prefix_order = training_order(len(pairs), args.seed)[:prefix_pairs]
         all_texts = list(dict.fromkeys(pairs[i]["text"] for i in prefix_order))
     else:
         all_texts = list(dict.fromkeys(row["text"] for row in pairs + queries))
@@ -951,10 +958,12 @@ def main():
             parser.error("Full command training requires the certified BERT backbone")
         if args.method == "spectrabrep" and (
             args.shared_feature_store is None or args.attention != "eager"
-            or args.device.partition(":")[0] != "npu" or world_size != 1
-            or args.batch_size not in (None, 16) or args.bert_dir is not None or args.training_bert_cache is not None
+            or args.device.partition(":")[0] != "npu"
+            or not valid_formal_spectra_layout(args.batch_size, world_size, args.spectra_timing_updates)
+            or args.bert_dir is not None or args.training_bert_cache is not None
         ):
-            parser.error("Full SpectraBRep uses single-NPU B16, eager attention and --shared-feature-store")
+            parser.error("Full SpectraBRep uses single-NPU B16, eager attention and --shared-feature-store. "
+                         "A T timing prefix may use four NPUs at four pairs each.")
         if args.expected_train_uids not in (None, expected_train):
             parser.error("Full training uses the certified source UID count")
         args.expected_train_uids = expected_train
