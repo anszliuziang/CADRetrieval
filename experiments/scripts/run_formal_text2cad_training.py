@@ -277,6 +277,12 @@ def stats_for(levels):
                 fields=[0, 0], smoothed_sum=[0., 0.], nll_sum=[0., 0.])
 
 
+def continue_training(state, stop_after_updates, batches):
+    return not state["completed"] and (
+        state["next_batch"] == batches or stop_after_updates is None or state["updates"] < stop_after_updates
+    )
+
+
 def head_losses(logits, targets, mask):
     require(logits.dtype == torch.float32, "FP32 logits required")
     counts, smoothed, nll = [], [], []
@@ -570,8 +576,9 @@ def run(args):
         state["next_batch"] = batches - 1
     elif args.audit_batch == "third":
         state["next_batch"] = 2
-    while not state["completed"] and (args.stop_after_updates is None or state["updates"] < args.stop_after_updates):
+    while continue_training(state, args.stop_after_updates, batches):
         epoch = state["epoch"]
+        trained_on_entry = state["next_batch"] == batches
         order = epoch_order(size, epoch)
         model.train(not bool(args.audit_batch))
         embedder.eval()
@@ -613,6 +620,10 @@ def run(args):
         row["train"]["nll"] = sum(row["train"]["nll_sum"])/sum(counts)
         row["train"]["smoothed_loss"] = sum(v/c for v,c in zip(row["train"]["smoothed_sum"], counts))/2
         if epoch in candidates or epoch == milestone * 2:
+            # Commit exposure before validation. A resume at this cursor
+            # skips training updates and re-enters evaluation for this epoch.
+            if not trained_on_entry:
+                save(args, recipe, model, optimizer, state, device, rank, world)
             decision, details = validate(model, store, indices, targets, levels, rank, world,
                                          args.validation_batch, device, support)
             row["validation"] = decision

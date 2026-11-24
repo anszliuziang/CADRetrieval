@@ -29,6 +29,13 @@ def test_spectra_probe_counts_real_pairs_in_the_prefix():
         retrieval.spectra_timing_prefix(batches, 3)
 
 
+def test_epoch_end_cursor_revalidates_after_resume_at_the_update_limit():
+    pending = dict(completed=False, updates=155, next_batch=155)
+    assert native.continue_training(pending, 155, 155)
+    assert not native.continue_training(dict(pending, next_batch=0), 155, 155)
+    assert not native.continue_training(dict(pending, completed=True), 155, 155)
+
+
 def test_actual_tokenizer_keeps_effective_ids_and_truncation(tmp_path):
     vocab = tmp_path / "vocab.txt"
     vocab.write_text("[PAD]\n[UNK]\n[CLS]\n[SEP]\n[MASK]\na\nb\n", encoding="utf-8")
