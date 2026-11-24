@@ -3,8 +3,8 @@
 ## 2026-11-24 远程执行环境
 
 - 以 [ACTIVE_TASK](experiments/ACTIVE_TASK.md) 和其中的计划为准。源码、脚本、配置和文档在本地 Git 编辑，服务端从干净的固定提交运行。模型推理、训练和结果复算都在远端执行。`yunnao-share2` 已退出本项目的计算安排。
-- **算力调度（2026-11-24）**。后续实验默认先排 `yunnao-910a`，启动前核对设备占用和任务环境。910A 满载时再检查 `yunnao-share4` 的空闲资源，安排可独立运行的后续作业。share4 有其他任务。`yunnao-share4` 和 `yunnao-910a` 各自的相邻 SSH 连接启动至少间隔 30 秒。
-- `ssh yunnao-910a` 是八卡 32 GiB 的 910ProA。项目 checkout 位于 `/home/ma-user/work/CADRetrieval`。独立环境、资产、固定执行工作树和产物位于 `/home/ma-user/work/CADRetrieval_runtime`。Text2CAD 用 CANN 8.0.0 和 PyTorch 2.4.0 配合 `torch-npu==2.4.0.post2`。FP32 运行显式设置进程级 `ACL_PRECISION_MODE=must_keep_origin_dtype`，按[运行手册](experiments/plans/IDEA01_910A_RUNBOOK_2026-11-23.md)先核对占用、真实数值回放与退出。该机 BF16 能力查询返回不支持。
+- **算力调度（2026-11-24）**。后续实验优先排 `YN-910a-1` 至 `YN-910a-6`，每台启动前核对设备占用和任务环境。原 `yunnao-910a` 已改名为 `YN-910a-1`，历史报告保留原别名。本机 OpenSSH 使用小写 `a` 的配置别名。同一主机相邻 SSH 连接启动至少间隔 30 秒，可向不同主机并行连接。910A 满载时再检查 `yunnao-share4` 的空闲资源，share4 有其他任务。
+- 六台 910A 各有八张 32 GiB 的 910ProA。发布用固定执行工作树、独立环境、数据和产物位于 `/home/ma-user/work/CADRetrieval_runtime`。1 号的历史 checkout 仍位于 `/home/ma-user/work/CADRetrieval`。Text2CAD 用 CANN 8.0.0 和 PyTorch 2.4.0 配合 `torch-npu==2.4.0.post2`。FP32 运行显式设置进程级 `ACL_PRECISION_MODE=must_keep_origin_dtype`，按[运行手册](experiments/plans/IDEA01_910A_RUNBOOK_2026-11-23.md)先核对占用、真实数值回放与退出。910A 的 BF16 实测能力见[运行报告](experiments/submissions/idea01_yunnao_910a_qualification_20261123/RUNTIME_AND_BINDING_RESULTS.md)。[六台排程和验收](experiments/plans/IDEA01_SIX_910A_FLEET_2026-11-24.md)
 - `ssh yunnao-share4` 使用已复现的 910C 环境承担 HierCAD 的 BF16 工作。合并状态、环境和下载核验到一次远端操作，启动前确认芯片健康和空闲，避免占用他人进程。
 - [910A 与开发辨认报告](experiments/submissions/idea01_yunnao_910a_qualification_20261123/RUNTIME_AND_BINDING_RESULTS.md)记录实际验证范围、运行原件位置和后续待填项。
 
