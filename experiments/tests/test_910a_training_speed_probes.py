@@ -45,3 +45,12 @@ def test_actual_tokenizer_keeps_effective_ids_and_truncation(tmp_path):
         truncated = native.encode_training_texts(tokenizer, long_text, multiple)
         assert truncated["input_ids"].shape[1] == 512
         assert truncated["input_ids"][0, -1] == tokenizer.sep_token_id
+
+
+def test_distributed_spectra_timing_keeps_global_batch_and_full_gate():
+    assert retrieval.valid_formal_spectra_layout(None, 1, None)
+    assert retrieval.valid_formal_spectra_layout(16, 1, None)
+    assert not retrieval.valid_formal_spectra_layout(4, 4, None)
+    assert retrieval.valid_formal_spectra_layout(4, 4, 4)
+    assert not retrieval.valid_formal_spectra_layout(16, 4, 4)
+    assert not retrieval.valid_formal_spectra_layout(None, 4, 4)
