@@ -17,7 +17,7 @@ FIXTURE_PINS = {
     "geometry_histories.jsonl": "b7767bf41d902d86b506df48f20b153061b16dc85d9277852729fd33103f2b3a",
 }
 VARIANTS = ("near_first", "far_first", "near_first_rephrased", "far_first_rephrased")
-METHODS = {"mmcad": (768, ".npz"), "openshape": (1280, ".npy"), "clip": (512, ".png")}
+DIMS = {"mmcad": 768, "openshape": 1280, "clip": 512, "clip_top": 512}
 
 
 def check(ok, context):
@@ -88,7 +88,7 @@ def geometry_axes(fixture, prepared):
 
 
 def audit_method(method, output, prepared, pairs, cad, texts, exit_file):
-    dim, _ = METHODS[method]
+    dim = DIMS[method]
     check(exit_file.read_text(encoding="utf-8").strip() == "0", f"{method} did not exit successfully")
     axis = read_json(output / "axes.json")
     result = read_json(output / "result.json")
@@ -103,6 +103,25 @@ def audit_method(method, output, prepared, pairs, cad, texts, exit_file):
         check(options["strict"]["missing"] == 0 and options["strict"]["unexpected"] == 0
               and len(options["gate"]) == 3 and all(x["cosine"] > .999 for x in options["gate"]),
               "MM-CAD weight/reference mismatch")
+    if method == "clip_top":
+        from PIL import Image
+
+        path = output / "visibility.json"
+        check(file_hash(path) == options["visibility_sha256"], "Changed top-view manifest")
+        visibility = read_json(path)
+        rows = visibility["renders"]
+        check(visibility["axis"] == "+Z" and len(rows) == len(cad), "Wrong top-view grid")
+        geometry = read_json(prepared / "inputs.json")["cad"]
+        for info, solid in zip(rows, geometry, strict=True):
+            path = output / "top_renders" / (solid["stem"] + ".png")
+            check(info["case"] == solid["stem"] and info["mesh_sha256"] == solid["files"][".stl"]
+                  and file_hash(path) == info["sha256"], "Changed top-view input")
+            with Image.open(path) as image:
+                check(image.size == (448, 448), "Wrong rendered image size")
+                image = np.asarray(image)
+            check(len(info["hole_center_pixels"]) == 2 and all(
+                np.all(image[y-1:y+2, x-1:x+2] == 255) for x, y in info["hole_center_pixels"]
+            ), "Through-hole centers not visible")
     with np.load(output / "embeddings.npz", allow_pickle=False) as z:
         x, y, scores = z["text"], z["cad"], z["similarities"]
     check(x.shape == (len(texts), dim) and y.shape == (len(cad), dim) and scores.shape == (len(texts), len(cad)),
@@ -160,19 +179,20 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--fixture", type=Path, required=True)
     p.add_argument("--prepared", type=Path, required=True)
-    for method in METHODS:
-        p.add_argument(f"--{method}", type=Path, required=True)
+    for method in DIMS:
+        p.add_argument(f"--{method.replace('_', '-')}", type=Path)
     p.add_argument("--out", type=Path, required=True)
     a = p.parse_args()
     pairs, cad, texts, count = geometry_axes(a.fixture, a.prepared)
     results = {method: audit_method(method, path, a.prepared, pairs, cad, texts,
                                    path.parent / f"{method}.exit")
-               for method in METHODS for path in (getattr(a, method),)}
+               for method in DIMS for path in (getattr(a, method),) if path is not None}
+    check(results, "Select at least one score artifact")
     with a.out.open("x", encoding="utf-8", newline="\n") as stream:
         json.dump({"all_passed": True, "geometry_files_checked": count, "models": results}, stream,
                   indent=2, allow_nan=False)
         stream.write("\n")
-    print(f"Verified {count} geometry files, 3 models and 3,840 expanded score cells", flush=True)
+    print(f"Verified {count} geometry files and {len(results)} score artifacts", flush=True)
 
 
 if __name__ == "__main__":

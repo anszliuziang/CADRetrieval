@@ -335,6 +335,52 @@ def clip(args, paths, texts):
             "render_spec_sha256": digest(ROOT / "experiments/configs/clip_g5_render_spec_20261115.json")}
 
 
+def top_images(args, cad_rows):
+    """Produce one fixed XY projection, then use the measured centers to check visibility."""
+    import trimesh
+    from PIL import Image, ImageDraw
+
+    directory = args.out / "top_renders"
+    directory.mkdir()
+    paths, evidence = [], []
+    size = 448
+    for row in cad_rows:
+        source = args.inputs / (row["stem"] + ".stl")
+        if digest(source) != row["files"][".stl"]:
+            raise ValueError(f"Changed source mesh: {source}")
+        mesh = trimesh.load_mesh(source)
+        xy = np.asarray(mesh.vertices)[:, :2]
+        low, high = xy.min(axis=0), xy.max(axis=0)
+        center = (low + high) / 2
+        scale = size * 0.8 / (high - low).max()
+
+        def project(points):
+            return (points - center) * (scale * np.array([1, -1])) + (size - 1) / 2
+
+        canvas = Image.new("RGB", (2 * size, 2 * size), "white")
+        draw = ImageDraw.Draw(canvas)
+        uv = 2 * project(xy)
+        for face in mesh.faces:
+            draw.polygon([tuple(uv[i]) for i in face], fill="#9db8d9")
+        rendered = canvas.resize((size, size), Image.Resampling.LANCZOS)
+        path = directory / (row["stem"] + ".png")
+        rendered.save(path)
+        result = np.asarray(rendered)
+        measured = row["measured_in_step"]
+        centers = [np.rint(project(np.asarray(measured[k]["center_xy"]))).astype(int).tolist()
+                   for k in ("near", "far")]
+        visible_pixels = [bool((result[y-1:y+2, x-1:x+2] == 255).all()) for x, y in centers]
+        if not all(visible_pixels) or all(k[0] == k[1] for k in rendered.getextrema()):
+            raise ValueError(f"Unverified visible through holes: {path}")
+        paths.append(path)
+        evidence.append({"case": row["stem"], "sha256": digest(path),
+                         "mesh_sha256": row["files"][".stl"], "hole_center_pixels": centers,
+                         "center_3x3_white": visible_pixels})
+    save_json(args.out / "visibility.json", {"axis": "+Z", "size": 448, "stock_fraction": 0.8,
+                                             "supersample": 2, "renders": evidence})
+    return paths
+
+
 def evaluate(pairs, texts, cad_rows, similarities, output):
     positions = {(row["pair_id"], row["entity"]): i for i, row in enumerate(cad_rows)}
     text_index = {text: i for i, text in enumerate(texts)}
@@ -367,7 +413,7 @@ def evaluate(pairs, texts, cad_rows, similarities, output):
 
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
-    cli.add_argument("stage", choices=("prepare", "mmcad", "openshape", "clip"))
+    cli.add_argument("stage", choices=("prepare", "mmcad", "openshape", "clip", "clip_top"))
     cli.add_argument("--runtime", type=Path, required=True)
     cli.add_argument("--reference", type=Path, required=True)
     cli.add_argument("--out", type=Path, required=True)
@@ -387,12 +433,19 @@ def main():
         keys = [(row["pair_id"], row["entity"]) for row in cad_rows]
         if prepared["texts"] != texts or keys != [(p["pair_id"], e) for p, e in product(pairs, ENTITIES)]:
             raise ValueError("Prepared geometry/text axes differ")
-        suffix, encoder = {"mmcad": (".npz", mmcad), "openshape": (".npy", openshape),
-                           "clip": (".png", clip)}[args.stage]
-        paths = [args.inputs / (row["stem"] + suffix) for row in cad_rows]
-        if any(digest(p) != row["files"][suffix] for p, row in zip(paths, cad_rows, strict=True)):
-            raise ValueError("Prepared encoder input differs from the measured geometry manifest")
+        if args.stage == "clip_top":
+            paths, encoder = top_images(args, cad_rows), clip
+        else:
+            suffix, encoder = {"mmcad": (".npz", mmcad), "openshape": (".npy", openshape),
+                               "clip": (".png", clip)}[args.stage]
+            paths = [args.inputs / (row["stem"] + suffix) for row in cad_rows]
+            if any(digest(p) != row["files"][suffix] for p, row in zip(paths, cad_rows, strict=True)):
+                raise ValueError("Prepared encoder input differs from the measured geometry manifest")
         cad, text, counts, dimension, details = encoder(args, paths, texts)
+        if args.stage == "clip_top":
+            details.pop("render_spec_sha256")
+            details.update(render="stock-oriented single +Z view",
+                           visibility_sha256=digest(args.out / "visibility.json"))
         cad, text = unit_rows(cad, len(keys), dimension), unit_rows(text, len(texts), dimension)
         if len(counts) != len(texts) or any(n > details["window"] for n in counts):
             raise ValueError(f"Frozen captions exceed {args.stage} context: {counts}")
