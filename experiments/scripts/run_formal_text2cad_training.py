@@ -141,18 +141,24 @@ class TrainingEmbedder(TextEmbedder):
     truncate = False
     profile = False
     pad_multiple = None
+    validation_pad_multiple = None
 
     @lru_cache(maxsize=65536)
     def length(self, text):
         return len(self.tokenizer(text, truncation=False, verbose=False)["input_ids"])
 
     def get_embedding(self, texts):
-        if not self.truncate:
+        if not self.truncate and self.validation_pad_multiple is None:
             return super().get_embedding(texts)
+        multiple = self.pad_multiple if self.truncate else self.validation_pad_multiple
+        if not self.truncate:
+            texts = [texts] if isinstance(texts, str) else list(texts)
+            require(all(self.length(text) <= 512 for text in texts),
+                    "Validation padding requires complete texts within the 512-token window")
         if self.profile:
             synchronize(self.device)
             started = time.monotonic()
-        packed = encode_training_texts(self.tokenizer, texts, self.pad_multiple)
+        packed = encode_training_texts(self.tokenizer, texts, multiple)
         inputs = packed.to(self.device)
         with torch.no_grad():
             result = self.model(**inputs)[0], inputs["attention_mask"] == 0
@@ -517,6 +523,7 @@ def run(args):
     verify_bert_asset_shas(args.bert)
     embedder = TrainingEmbedder.from_local(args.bert, 512, device)
     embedder.pad_multiple = getattr(args, "train_text_pad_multiple", None)
+    embedder.validation_pad_multiple = getattr(args, "validation_text_pad_multiple", None)
     verify_bert_model_load(embedder, args.bert)
     require(embedder.tokenizer.truncation_side == embedder.tokenizer.padding_side == "right", "Wrong tokenizer sides")
     seed_all(SEED, device)
@@ -549,6 +556,8 @@ def run(args):
                   code_sha=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
     if embedder.pad_multiple is not None:
         recipe["training_text_pad_multiple"] = embedder.pad_multiple
+    if embedder.validation_pad_multiple is not None:
+        recipe["validation_text_pad_multiple"] = embedder.validation_pad_multiple
     if getattr(args, "npu_kernels", None) is not None:
         recipe["npu_jit_compile"] = args.npu_kernels == "jit"
     layout = gather(dict(rank=rank, device=str(device), hostname=socket.gethostname(), pid=os.getpid(),
@@ -671,10 +680,15 @@ def main():
                    help="One dropout-free real batch for comparing training layouts")
     p.add_argument("--save-every", type=int, default=250)
     p.add_argument("--validation-batch", type=int, default=8)
+    p.add_argument("--validation-text-pad-multiple", type=int, choices=(64,),
+                   help="Use the verified 64-token validation buckets for Fusion")
     p.add_argument("--smoke-validation-count", type=int, default=0,
                    help="After the bounded update, score the first N registered validation rows per level")
     p.add_argument("--resume", action="store_true")
     args = p.parse_args()
+    if args.validation_text_pad_multiple is not None:
+        require(args.source == FUSION and not args.train_only,
+                "Validation padding is enabled only for the registered Fusion validation")
     if args.npu_kernels is not None:
         require(args.device == "npu" and args.train_only and not args.resume,
                 "Explicit compilation mode requires a fresh train-only NPU probe")

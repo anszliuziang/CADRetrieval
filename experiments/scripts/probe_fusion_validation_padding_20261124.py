@@ -33,8 +33,8 @@ def select_witness_batches(widths):
 @torch.no_grad()
 def score(model, store, indices, targets, rows, device, pad):
     embedder = model.base_text_embedder
-    embedder.truncate = pad
-    embedder.pad_multiple = 64 if pad else None
+    embedder.truncate = False
+    embedder.validation_pad_multiple = 64 if pad else None
     texts = [targets[row["index"]].texts[0] for row in rows]
     tokenized = native.encode_training_texts(embedder.tokenizer, texts, 64 if pad else None)
     token_count = tokenized["attention_mask"].sum(axis=1).tolist()

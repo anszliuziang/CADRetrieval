@@ -36,6 +36,26 @@ def test_epoch_end_cursor_revalidates_after_resume_at_the_update_limit():
     assert not native.continue_training(dict(pending, completed=True), 155, 155)
 
 
+def test_validation_padding_matches_native_effective_tokens_and_rejects_long_text(tmp_path):
+    vocab = tmp_path / "vocab.txt"
+    vocab.write_text("[PAD]\n[UNK]\n[CLS]\n[SEP]\n[MASK]\na\nb\n", encoding="utf-8")
+    tokenizer = BertTokenizer(vocab_file=str(vocab))
+
+    class TokenEcho(torch.nn.Module):
+        def forward(self, input_ids, **unused):
+            return (input_ids.unsqueeze(-1).float(),)
+
+    embedder = native.TrainingEmbedder(512, "cpu", TokenEcho(), tokenizer)
+    texts = ["a b a b", "b"]
+    original, original_pad = embedder.get_embedding(texts)
+    embedder.validation_pad_multiple = 64
+    padded, padded_mask = embedder.get_embedding(iter(texts))
+    assert padded.shape[1] == 64
+    assert torch.equal(padded[~padded_mask], original[~original_pad])
+    with pytest.raises(ValueError, match="complete texts"):
+        embedder.get_embedding(["a " * 512])
+
+
 def test_actual_tokenizer_keeps_effective_ids_and_truncation(tmp_path):
     vocab = tmp_path / "vocab.txt"
     vocab.write_text("[PAD]\n[UNK]\n[CLS]\n[SEP]\n[MASK]\na\nb\n", encoding="utf-8")
