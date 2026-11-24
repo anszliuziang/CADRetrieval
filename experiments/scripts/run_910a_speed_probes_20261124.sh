@@ -51,28 +51,28 @@ if [[ "$kind" == spectra || "$kind" == spectra4 ]]; then
     if [[ "$kind" == spectra4 ]]; then
         # The 910A four-rank topology requires all four physical IDs in one group.
         for chip in 4 5 6 7; do free_card "$chip"; done
-        for port in 22712 $(seq 22896 22911); do
+        for port in 22713 $(seq 22912 22927); do
             if grep -Eq ":${port}[[:space:]]" "$out/listeners_before.txt"; then
                 printf 'Reserved probe port %s is already bound\n' "$port" >&2
                 exit 11
             fi
         done
-        export ASCEND_RT_VISIBLE_DEVICES=4,5,6,7 HCCL_IF_BASE_PORT=22896
+        export ASCEND_RT_VISIBLE_DEVICES=4,5,6,7 HCCL_IF_BASE_PORT=22912
         prefix=("$py" -B -u -m torch.distributed.run --nnodes=1 --nproc_per_node=4
-                --master_addr=127.0.0.1 --master_port=22712 --max_restarts=0 -m)
+                --master_addr=127.0.0.1 --master_port=22713 --max_restarts=0 -m)
         logged "$out/hccl" 95s "${prefix[@]}" experiments.scripts.probe_yunnao_910a hccl
-        per_rank=4 updates=4 limit=24m
+        per_rank=4 updates=4 limit=24m device_label=npu
     else
         free_card 1
         export ASCEND_RT_VISIBLE_DEVICES=1
         prefix=("$py" -B -u -m)
-        per_rank=16 updates=12 limit=44m
+        per_rank=16 updates=12 limit=44m device_label=npu:0
     fi
     logged "$out/timing" "$limit" "${prefix[@]}" experiments.scripts.run_in_domain_pilot_retrievers \
         --source t2cad-v1.0 --method spectrabrep --train-split full --manifest-root "$manifests" --official-zip "$cad" \
         --shared-feature-store "$rt/runs/idea01_four_tables_effective_inputs_20261124/deepcad_spectra" \
         --qwen-dir "$assets/qwen3_embedding_0_6b" --upstream "$assets/spectrabrep" --precision fp32 --attention eager \
-        --device npu:0 --batch-size "$per_rank" --eval-batch-size 16 --require-full-validation-text --seed 17 \
+        --device "$device_label" --batch-size "$per_rank" --eval-batch-size 16 --require-full-validation-text --seed 17 \
         --spectra-timing-updates "$updates" --output "$out/timing/results"
     test -s "$out/timing/results/spectra_timing_probe.json"
     exit 0
